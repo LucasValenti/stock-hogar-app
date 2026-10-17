@@ -2,6 +2,7 @@
 // Lo implementan la base en memoria (pruebas y maquetas) y Supabase.
 
 import type {
+  Anotacion,
   Categoria,
   Cierre,
   FilaReparto,
@@ -10,6 +11,7 @@ import type {
   Integrante,
   ModoGasto,
   Producto,
+  Tildado,
   Transferencia,
 } from '@/logica/tipos';
 
@@ -27,6 +29,13 @@ export type GastoAGuardar = {
   mp_operacion?: string | null;
   /** Destinatario del comprobante (normalizado): aprende su categoría. */
   destino?: string | null;
+  /**
+   * Solo en modo 'total': productos que suman stock sin precio propio. Al editar, mandar siempre la clave:
+   * `[]` saca los que tenía y, si falta, se conservan (así edita la web vieja sin romperlos).
+   */
+  tildados?: Tildado[];
+  /** Ids de las anotaciones tildadas: se borran en la misma operación que guarda el gasto. */
+  anotaciones?: string[];
 };
 
 // Una compra por productos exige precio en cada ítem; los tildados de una compra por total viajan aparte (p_gasto.tildados).
@@ -39,8 +48,12 @@ export type ItemResumen = Pick<GastoItem, 'cantidad' | 'precio_unitario'> & {
 
 export type GastoConItems = Omit<Gasto, 'gasto_items'> & { gasto_items: ItemResumen[] };
 
+/** Sin `unidad` queda en 'unidad' (el default de la base). */
 export type ProductoNuevo = Pick<Producto, 'nombre' | 'categoria_id'> &
-  Partial<Pick<Producto, 'codigo_barras' | 'marca' | 'stock' | 'oculto'>>;
+  Partial<Pick<Producto, 'codigo_barras' | 'marca' | 'stock' | 'oculto' | 'unidad'>>;
+
+/** Lo que se edita de un producto. El stock, el código y lo oculto tienen sus propias operaciones. */
+export type ProductoAEditar = Pick<Producto, 'id' | 'nombre' | 'marca' | 'categoria_id' | 'unidad'>;
 
 /** Con `id` actualiza esos campos; sin `id`, da de alta. */
 export type IntegranteAGuardar = Partial<Omit<Integrante, 'creado'>>;
@@ -66,11 +79,20 @@ export interface Datos {
   mesesCerrados(): Promise<Set<string>>;
   cierre(mes: string): Promise<Cierre | null>;
   crearProducto(p: ProductoNuevo): Promise<Producto>;
+  /** Cambia nombre, marca, categoría y unidad; nunca toca el stock ni la fecha de último movimiento. */
+  editarProducto(p: ProductoAEditar): Promise<Producto>;
   borrarProducto(id: string): Promise<void>;
   ocultarProducto(id: string, oculto: boolean): Promise<void>;
   /** Devuelve el stock nuevo; nunca baja de 0. */
   ajustarStock(productoId: string, delta: number): Promise<number>;
-  /** Devuelve el id del gasto guardado. */
+  /** «Sigue habiendo»: renueva la fecha de último movimiento sin tocar el stock. */
+  confirmarHay(productoId: string): Promise<void>;
+  /** Notas sueltas para la próxima compra, de la más vieja a la más nueva. */
+  anotaciones(): Promise<Anotacion[]>;
+  /** El texto se guarda sin espacios sobrantes; de 1 a 120 caracteres. */
+  crearAnotacion(texto: string): Promise<Anotacion>;
+  borrarAnotacion(id: string): Promise<void>;
+  /** Devuelve el id del gasto guardado. Con `tildados` y `anotaciones` suma stock y borra notas en la misma operación. */
   guardarGasto(gasto: GastoAGuardar, items: ItemAGuardar[]): Promise<string>;
   borrarGasto(id: string): Promise<void>;
   gastoPorOperacion(operacion: string): Promise<GastoDeOperacion | null>;
@@ -86,6 +108,6 @@ export interface Datos {
     integrantes: IntegranteDelCalculo[],
   ): Promise<void>;
   reabrirMes(mes: string): Promise<void>;
-  /** Avisa ante cualquier cambio; devuelve la función para dejar de escuchar. */
+  /** Avisa ante cualquier cambio (también de anotaciones); devuelve la función para dejar de escuchar. */
   escucharCambios(alCambiar: () => void): () => void;
 }

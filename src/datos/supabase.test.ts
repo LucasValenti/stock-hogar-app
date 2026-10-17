@@ -12,6 +12,7 @@ function clienteFalso() {
     topic: string;
     suscripto: boolean;
     alCambio: Array<() => void>;
+    filtros: unknown[];
     alEstado: Array<(e: Estado) => void>;
     emitir(): void;
     estado(e: Estado): void;
@@ -26,6 +27,7 @@ function clienteFalso() {
         topic,
         suscripto: false,
         alCambio: [] as Array<() => void>,
+        filtros: [] as unknown[],
         alEstado: [] as Array<(e: Estado) => void>,
         emitir() {
           this.alCambio.forEach((f) => f());
@@ -47,8 +49,9 @@ function clienteFalso() {
   function api(c: (typeof canales)[number]) {
     const canal = {
       topic: c.topic,
-      on(_tipo: string, _filtro: unknown, f: () => void) {
+      on(_tipo: string, filtro: unknown, f: () => void) {
         if (c.suscripto) throw new Error('cannot add `postgres_changes` callbacks after `subscribe()`.');
+        c.filtros.push(filtro);
         c.alCambio.push(f);
         return canal;
       },
@@ -75,6 +78,12 @@ describe('escucharCambios', () => {
     canales[0].emitir();
     expect(a).toHaveBeenCalledTimes(1);
     expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  test('escucha todo el esquema público, sin filtrar por tabla: las anotaciones (publicadas por la 007) también avisan', () => {
+    const { cliente, canales } = clienteFalso();
+    crearDatosSupabase(cliente).escucharCambios(jest.fn());
+    expect(canales[0].filtros).toEqual([{ event: '*', schema: 'public' }]);
   });
 
   test('el canal es uno por cliente aunque la capa de datos se arme dos veces', () => {

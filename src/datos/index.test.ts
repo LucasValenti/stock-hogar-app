@@ -48,6 +48,16 @@ describe('@/datos', () => {
     expect(await m.obtenerCola().pendientes()).toEqual([]);
   });
 
+  test('en modo memoria la capa trae anotaciones, edición de productos y «Sigue habiendo»', async () => {
+    const m = importar({ EXPO_PUBLIC_DATOS: 'memoria' });
+    expect((await m.datos.anotaciones()).map((x) => x.texto)).toEqual(['Comprar pan', 'Pilas AA para el control']);
+    const nota = await m.datos.crearAnotacion('Sal gruesa');
+    await m.datos.borrarAnotacion(nota.id);
+    const yerba = (await m.datos.producto('ejemplo-yerba'))!;
+    expect(await m.datos.editarProducto({ ...yerba, nombre: 'Yerba suave', unidad: 'kg' })).toMatchObject({ nombre: 'Yerba suave', unidad: 'kg', stock: 1 });
+    await expect(m.datos.confirmarHay('ejemplo-arroz')).resolves.toBeUndefined();
+  });
+
   test('la cola escribe solo con un integrante con sesión lista', async () => {
     const m = importar({ EXPO_PUBLIC_DATOS: 'memoria' });
     const gasto = { fecha: '2026-10-12', pagado_por: 'ejemplo-ana', total: 500_00, modo: 'total' as const, categoria_id: 'ejemplo-luz' };

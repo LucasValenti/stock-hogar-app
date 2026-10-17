@@ -2,8 +2,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { Categoria, Cierre, Gasto, GastoItem, Integrante, Producto } from '@/logica/tipos';
+import type { Anotacion, Categoria, Cierre, Gasto, GastoItem, Integrante, Producto } from '@/logica/tipos';
 
+import { normalizarTimestamp } from './fechas';
 import type { Datos, GastoConItems, GastoDeOperacion } from './tipos';
 
 type Respuesta<T> = { data: T | null; error: unknown };
@@ -15,6 +16,14 @@ function ok<T>({ data, error }: Respuesta<T>): T {
 
 // Supabase corta cada respuesta en 1000 filas sin avisar: gastosEntre pide de a páginas.
 const PAGINA = 1000;
+
+// Los timestamptz que la app lee como fecha (ultimo_movimiento, anotaciones.creado) salen en ISO con milisegundos.
+const aProducto = (p: Producto): Producto => ({
+  ...p,
+  ultimo_movimiento: normalizarTimestamp(p.ultimo_movimiento),
+  creado: normalizarTimestamp(p.creado),
+});
+const aAnotacion = (a: Anotacion): Anotacion => ({ ...a, creado: normalizarTimestamp(a.creado) });
 
 export function crearDatosSupabase(supabase: SupabaseClient): Datos {
   async function guardar<T>(tabla: string, fila: { id?: string | null }): Promise<T> {
@@ -41,10 +50,15 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
       ok(await supabase.from('categorias').delete().eq('id', id));
     },
     async productos() {
-      return ok<Producto[]>(await supabase.from('productos').select('*').order('nombre'));
+      return ok<Producto[]>(await supabase.from('productos').select('*').order('nombre')).map(aProducto);
     },
     async crearProducto(p) {
-      return ok<Producto>(await supabase.from('productos').insert(p).select().single());
+      return aProducto(ok<Producto>(await supabase.from('productos').insert(p).select().single()));
+    },
+    // Campo por campo: una copia vieja del producto no puede pisar el stock, el código ni lo oculto.
+    async editarProducto({ id, nombre, marca, categoria_id, unidad }) {
+      const cambios = { nombre, marca, categoria_id, unidad };
+      return aProducto(ok<Producto>(await supabase.from('productos').update(cambios).eq('id', id).select().single()));
     },
     async borrarProducto(id) {
       ok(await supabase.from('productos').delete().eq('id', id));
@@ -53,10 +67,25 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
       ok(await supabase.from('productos').update({ oculto }).eq('id', id));
     },
     async producto(id) {
-      return ok<Producto | null>(await supabase.from('productos').select('*').eq('id', id).maybeSingle());
+      const fila = ok<Producto | null>(await supabase.from('productos').select('*').eq('id', id).maybeSingle());
+      return fila && aProducto(fila);
     },
     async ajustarStock(productoId, delta) {
       return Number(ok(await supabase.rpc('ajustar_stock_producto', { p_producto: productoId, p_delta: delta })));
+    },
+    async confirmarHay(productoId) {
+      ok(await supabase.rpc('confirmar_hay', { p_producto: productoId }));
+    },
+
+    async anotaciones() {
+      return ok<Anotacion[]>(await supabase.from('anotaciones').select('*').order('creado')).map(aAnotacion);
+    },
+    // Solo el texto: creado_por lo completa la base con la cuenta que escribe.
+    async crearAnotacion(texto) {
+      return aAnotacion(ok<Anotacion>(await supabase.from('anotaciones').insert({ texto: texto.trim() }).select().single()));
+    },
+    async borrarAnotacion(id) {
+      ok(await supabase.from('anotaciones').delete().eq('id', id));
     },
 
     async gastosEntre(desde, hastaExcl) {
@@ -85,6 +114,7 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
       );
       return { gasto: resto, items };
     },
+    // p_gasto lleva también `tildados` y `anotaciones` cuando los hay (ver 007-app-nativa.sql).
     async guardarGasto(gasto, items) {
       return ok<string>(await supabase.rpc('guardar_gasto', { p_gasto: gasto, p_items: items }));
     },

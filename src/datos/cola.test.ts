@@ -405,4 +405,58 @@ describe('conCola', () => {
     expect(guardado.gasto.total).toBe(500_00);
     expect((await base.gastosEntre('2026-10-12', '2026-10-13')).length).toBe(1);
   });
+
+  const conTildados = {
+    fecha: '2026-10-12',
+    pagado_por: 'ejemplo-ana',
+    total: 500_00,
+    modo: 'total' as const,
+    categoria_id: 'ejemplo-luz',
+    tildados: [{ producto_id: 'ejemplo-yerba', cantidad: 2 }],
+    anotaciones: ['ejemplo-nota-pan'],
+  };
+
+  test('guardarGasto con tildados y anotaciones sin red los guarda en la cola y al volver los aplica una sola vez', async () => {
+    const { red, cola, datos, base } = datosConRed();
+    red.hay = false;
+    const r = await datos.guardarGasto(conTildados, []);
+    expect(r.estado).toBe('en-cola');
+    const [pendiente] = await cola.pendientes();
+    expect(pendiente.datos).toMatchObject({
+      gasto: { nuevo_id: r.id, tildados: conTildados.tildados, anotaciones: conTildados.anotaciones },
+    });
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(1);
+
+    red.hay = true;
+    await cola.vaciar();
+    await cola.vaciar();
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(3);
+    expect((await base.anotaciones()).map((a) => a.id)).toEqual(['ejemplo-nota-pilas']);
+  });
+
+  test('si la base guardó pero la respuesta se perdió, el reintento no suma el stock otra vez', async () => {
+    const base = crearDatosEnMemoria();
+    let perderRespuesta = true;
+    const guardar = base.guardarGasto;
+    const conPerdida: Datos = {
+      ...base,
+      guardarGasto: async (g, i) => {
+        const id = await guardar(g, i);
+        if (perderRespuesta) {
+          perderRespuesta = false;
+          throw sinRed();
+        }
+        return id;
+      },
+    };
+    const cola = crearCola({ almacen: almacenEnMemoria(), ejecutar: ejecutorDe(conPerdida), esErrorDeRed, integranteActual: comoAna });
+    const r = await conCola(conPerdida, cola).guardarGasto(conTildados, []);
+    expect(r.estado).toBe('en-cola');
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(3); // la base sí lo guardó
+
+    await cola.vaciar();
+    expect(await cola.pendientes()).toEqual([]);
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(3);
+    expect((await base.gasto(r.id)).items).toHaveLength(1);
+  });
 });

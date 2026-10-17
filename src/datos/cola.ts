@@ -1,7 +1,9 @@
 // Cola de escritura: si no hay red, guardar un gasto queda pendiente en el dispositivo
 // y se manda cuando vuelve la conexión, en el mismo orden.
 // Solo entra lo que la base puede recibir dos veces sin duplicar: guardar_gasto lo es por
-// nuevo_id (on conflict do nothing). ajustar_stock_producto no (ver ajustarStock en conCola).
+// nuevo_id (on conflict do nothing): con los `tildados` y las `anotaciones` que lleva el gasto, un
+// reintento tras un corte no suma el stock ni borra notas dos veces. ajustar_stock_producto no (ver
+// ajustarStock en conCola).
 // Cada op guarda quién la creó: sale solo con la sesión de ese integrante, nunca con otra
 // cuenta que entre después en el mismo teléfono. Las de otra cuenta esperan, no se descartan.
 
@@ -209,6 +211,7 @@ export function errorSinSesion(): ErrorConCodigo {
   });
 }
 
+/** Lo que queda guardado de la op: `gasto` con sus `tildados` y `anotaciones`, tal como van a la base. */
 type DatosGuardarGasto = { gasto: GastoAGuardar; items: ItemAGuardar[] };
 
 /** Cómo se manda cada op a la base. */

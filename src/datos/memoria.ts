@@ -1,8 +1,9 @@
-// Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 006:
+// Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 007:
 // para las pruebas y para ver la app sin cuenta (EXPO_PUBLIC_DATOS=memoria). No guarda nada.
 
 import { mesDe } from '@/logica/meses';
-import type { Categoria, Cierre, Gasto, GastoItem, Integrante, Producto } from '@/logica/tipos';
+import { aplicarDelta } from '@/logica/stock';
+import type { Anotacion, Categoria, Cierre, Gasto, GastoItem, Integrante, Producto, Unidad } from '@/logica/tipos';
 
 import { nuevoId } from './id';
 import type { Datos, GastoConItems } from './tipos';
@@ -11,6 +12,7 @@ export type Semilla = {
   integrantes: Integrante[];
   categorias: Categoria[];
   productos: Producto[];
+  anotaciones?: Anotacion[];
   /** Con sus ítems en gasto_items. */
   gastos: Gasto[];
   cierres: Cierre[];
@@ -27,11 +29,18 @@ const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.localeCompare(b.nombre, 'es');
 const ahora = () => new Date().toISOString();
 
+const UNIDADES: readonly string[] = ['unidad', 'paquete', 'kg', 'litro'];
+const violaCheck = (tabla: string, regla: string) =>
+  errorDeBase(`new row for relation "${tabla}" violates check constraint "${tabla}_${regla}_check"`, '23514');
+const violaClave = (tabla: string) =>
+  errorDeBase(`insert or update on table "${tabla}" violates foreign key constraint`, '23503');
+
 export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos {
   const s = copia(semilla);
   const integrantes = s.integrantes;
   const categorias = s.categorias;
   const productos = s.productos;
+  const anotaciones: Anotacion[] = s.anotaciones ?? [];
   const cierres = s.cierres;
   const destinos = new Map(Object.entries(s.destinos ?? {}));
   const items: GastoItem[] = s.gastos.flatMap((g) => g.gasto_items ?? []);
@@ -43,13 +52,34 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
   const buscarProducto = (id: string) => productos.find((p) => p.id === id);
 
   // Trigger ajustar_stock: un ítem nuevo suma; uno que se va resta sin bajar de 0.
+  // Trigger marcar_movimiento: si el stock cambió, se renueva ultimo_movimiento.
+  function moverStock(p: Producto, delta: number) {
+    const nuevo = aplicarDelta(p.stock, delta);
+    if (nuevo === Number(p.stock)) return;
+    p.stock = nuevo;
+    p.ultimo_movimiento = ahora();
+  }
   function sumarStock(productoId: string, cantidad: number) {
     const p = buscarProducto(productoId);
-    if (p) p.stock = Math.max(Number(p.stock) + cantidad, 0);
+    if (p) moverStock(p, cantidad);
   }
-  function quitarItems(gastoId: string) {
-    for (const it of items.filter((i) => i.gasto_id === gastoId)) sumarStock(it.producto_id, -Number(it.cantidad));
-    for (let i = items.length - 1; i >= 0; i--) if (items[i].gasto_id === gastoId) items.splice(i, 1);
+  // Borra los ítems del gasto que cumplan `quitar` (todos, por defecto) y descuenta su stock.
+  function quitarItems(gastoId: string, quitar: (it: GastoItem) => boolean = () => true) {
+    for (let i = 0; i < items.length; ) {
+      const it = items[i];
+      if (it.gasto_id !== gastoId || !quitar(it)) {
+        i++;
+        continue;
+      }
+      sumarStock(it.producto_id, -Number(it.cantidad));
+      items.splice(i, 1);
+    }
+  }
+  // Restricciones de productos: nombre con texto, unidad conocida y categoría que existe.
+  function validarProducto(f: { nombre: string; categoria_id: string; unidad: string }) {
+    if (!f.nombre.trim()) throw violaCheck('productos', 'nombre');
+    if (!UNIDADES.includes(f.unidad)) throw violaCheck('productos', 'unidad');
+    if (!categorias.some((c) => c.id === f.categoria_id)) throw violaClave('productos');
   }
 
   return {
@@ -106,6 +136,8 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
       if (p.codigo_barras && productos.some((x) => x.codigo_barras === p.codigo_barras)) {
         throw errorDeBase('duplicate key value violates unique constraint "productos_codigo_barras_key"', '23505');
       }
+      validarProducto({ nombre: p.nombre, categoria_id: p.categoria_id, unidad: p.unidad ?? 'unidad' });
+      if (p.stock != null && !(Number(p.stock) >= 0)) throw violaCheck('productos', 'stock');
       const nuevo: Producto = {
         id: nuevoId(),
         codigo_barras: p.codigo_barras ?? null,
@@ -113,7 +145,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
         marca: p.marca ?? null,
         categoria_id: p.categoria_id,
         stock: p.stock ?? 0,
-        unidad: 'unidad',
+        unidad: p.unidad ?? 'unidad',
         ultimo_movimiento: ahora(),
         oculto: p.oculto ?? false,
         creado: ahora(),
@@ -121,6 +153,16 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
       productos.push(nuevo);
       avisar();
       return copia(nuevo);
+    },
+
+    // Solo estas cuatro columnas: el stock, el código y lo oculto no se pisan con una copia vieja.
+    async editarProducto({ id, nombre, marca, categoria_id, unidad }) {
+      const p = buscarProducto(id);
+      if (!p) throw errorDeBase('JSON object requested, multiple (or no) rows returned', 'PGRST116');
+      validarProducto({ nombre, categoria_id, unidad });
+      Object.assign(p, { nombre, marca, categoria_id, unidad });
+      avisar();
+      return copia(p);
     },
 
     async borrarProducto(id) {
@@ -142,17 +184,54 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
       if (!delta || Math.abs(delta) > 1000) throw errorDeBase('DELTA_INVALIDO');
       const p = buscarProducto(productoId);
       if (!p) throw errorDeBase('PRODUCTO_INEXISTENTE');
-      p.stock = Math.max(Number(p.stock) + delta, 0);
+      moverStock(p, delta);
       avisar();
       return p.stock;
     },
 
-    // Igual que la RPC guardar_gasto: todo o nada, alta idempotente por nuevo_id.
+    // RPC confirmar_hay: renueva la fecha sin tocar el stock.
+    async confirmarHay(productoId) {
+      const p = buscarProducto(productoId);
+      if (!p) throw errorDeBase('PRODUCTO_INEXISTENTE');
+      p.ultimo_movimiento = ahora();
+      avisar();
+    },
+
+    async anotaciones() {
+      // sort es estable: dos notas del mismo milisegundo quedan en el orden en que se crearon.
+      const filas = [...anotaciones].sort((a, b) => a.creado.localeCompare(b.creado));
+      return copia(filas);
+    },
+    async crearAnotacion(texto) {
+      const limpio = texto.trim();
+      if (limpio.length < 1 || limpio.length > 120) throw violaCheck('anotaciones', 'texto');
+      const nueva: Anotacion = { id: nuevoId(), texto: limpio, creado_por: null, creado: ahora() };
+      anotaciones.push(nueva);
+      avisar();
+      return copia(nueva);
+    },
+    async borrarAnotacion(id) {
+      const i = anotaciones.findIndex((a) => a.id === id);
+      if (i >= 0) anotaciones.splice(i, 1);
+      avisar();
+    },
+
+    // Igual que la RPC guardar_gasto (007): todo o nada, alta idempotente por nuevo_id.
+    // Por total, `tildados` suma stock sin precio; `anotaciones` se borran en la misma operación.
     async guardarGasto(gasto, nuevosItems) {
       const productosModo = gasto.modo === 'productos';
-      if (productosModo && !nuevosItems.length) throw errorDeBase('SIN_ITEMS');
-      if (productosModo && nuevosItems.some((i) => !buscarProducto(i.producto_id))) {
-        throw errorDeBase('insert or update on table "gasto_items" violates foreign key constraint', '23503');
+      // Sin la clave (web vieja) al editar se conservan los tildados que ya tenía; con `[]` se sacan.
+      const tildados = Array.isArray(gasto.tildados) ? gasto.tildados : null;
+      if (productosModo) {
+        if (!nuevosItems.length) throw errorDeBase('SIN_ITEMS');
+        if (nuevosItems.some((i) => i.precio_unitario == null)) throw errorDeBase('SIN_PRECIO', '23502');
+      }
+      const aInsertar: Array<{ producto_id: string; cantidad: number; precio_unitario: number | null }> = productosModo
+        ? nuevosItems
+        : (tildados ?? []).map((t) => ({ ...t, precio_unitario: null }));
+      for (const it of aInsertar) {
+        if (!buscarProducto(it.producto_id)) throw violaClave('gasto_items');
+        if (!(Number(it.cantidad) > 0)) throw violaCheck('gasto_items', 'cantidad');
       }
       if (gasto.id && !gastos.some((g) => g.id === gasto.id)) throw errorDeBase('GASTO_INEXISTENTE');
 
@@ -161,7 +240,9 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
         const g = gastos.find((x) => x.id === gasto.id) as Gasto;
         if (mesCerrado(g.fecha) || mesCerrado(gasto.fecha)) throw errorDeBase('MES_CERRADO');
         id = g.id;
-        quitarItems(id);
+        // Se borran y se vuelven a insertar: lo viejo resta y lo nuevo suma. Por total sin `tildados`
+        // solo se van los ítems con precio (un gasto que antes era por productos).
+        quitarItems(id, (it) => productosModo || tildados !== null || it.precio_unitario !== null);
         Object.assign(g, {
           fecha: gasto.fecha,
           pagado_por: gasto.pagado_por,
@@ -193,14 +274,18 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
       }
 
       const g = gastos.find((x) => x.id === id) as Gasto;
+      for (const it of aInsertar) {
+        items.push({ id: nuevoId(), gasto_id: id, producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario });
+        sumarStock(it.producto_id, Number(it.cantidad));
+      }
       if (productosModo) {
-        for (const it of nuevosItems) {
-          items.push({ id: nuevoId(), gasto_id: id, ...it });
-          sumarStock(it.producto_id, Number(it.cantidad));
-        }
         g.total = nuevosItems.reduce((t, it) => t + Math.round(Number(it.cantidad) * it.precio_unitario), 0);
       } else if (gasto.destino) {
         destinos.set(gasto.destino, gasto.categoria_id ?? '');
+      }
+      if (Array.isArray(gasto.anotaciones)) {
+        const tildadas = new Set(gasto.anotaciones);
+        for (let i = anotaciones.length - 1; i >= 0; i--) if (tildadas.has(anotaciones[i].id)) anotaciones.splice(i, 1);
       }
       avisar();
       return id;
@@ -253,6 +338,10 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
     async guardarCategoria(c) {
       if (c.nombre && categorias.some((x) => x.nombre === c.nombre && x.id !== c.id)) {
         throw errorDeBase('duplicate key value violates unique constraint "categorias_nombre_key"', '23505');
+      }
+      const dias = c.dias_sin_movimiento;
+      if (dias !== undefined && !(Number.isInteger(dias) && dias >= 1 && dias <= 365)) {
+        throw violaCheck('categorias', 'dias_sin_movimiento');
       }
       let fila = c.id ? categorias.find((x) => x.id === c.id) : undefined;
       if (fila) Object.assign(fila, c);
@@ -318,6 +407,8 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
 // EJEMPLO: datos ficticios (Ana, Bruno y Caro, como en las maquetas). No son personas ni montos reales.
 
 const CREADO = '2026-01-01T12:00:00.000Z';
+// Las fechas del stock se cuentan hacia atrás desde ahora: así «¿Todavía hay?» muestra lo mismo cualquier día.
+const haceDias = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
 const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
   id,
   nombre,
@@ -328,15 +419,22 @@ const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
   tipo: 'integrante',
   creado: CREADO,
 });
-const prod = (id: string, nombre: string, categoria_id: string, stock: number, marca: string | null = null): Producto => ({
+const prod = (
+  id: string,
+  nombre: string,
+  categoria_id: string,
+  stock: number,
+  unidad: Unidad,
+  movidoHaceDias: number,
+): Producto => ({
   id,
   codigo_barras: null,
   nombre,
-  marca,
+  marca: null,
   categoria_id,
   stock,
-  unidad: 'unidad',
-  ultimo_movimiento: CREADO,
+  unidad,
+  ultimo_movimiento: haceDias(movidoHaceDias),
   oculto: false,
   creado: CREADO,
 });
@@ -349,16 +447,24 @@ export const semillaDeEjemplo: Semilla = {
   ],
   categorias: [
     { id: 'ejemplo-almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 },
-    { id: 'ejemplo-limpieza', nombre: 'Limpieza', tipo: 'producto', dias_sin_movimiento: 20 },
+    { id: 'ejemplo-limpieza', nombre: 'Limpieza', tipo: 'producto', dias_sin_movimiento: 30 },
     { id: 'ejemplo-luz', nombre: 'Luz', tipo: 'servicio', dias_sin_movimiento: 20 },
     { id: 'ejemplo-internet', nombre: 'Internet', tipo: 'servicio', dias_sin_movimiento: 20 },
   ],
+  // Arroz y Esponjas llevan semanas quietos: son los que «¿Todavía hay?» pregunta.
   productos: [
-    prod('ejemplo-yerba', 'Yerba', 'ejemplo-almacen', 1),
-    prod('ejemplo-leche', 'Leche', 'ejemplo-almacen', 0),
-    prod('ejemplo-fideos', 'Fideos', 'ejemplo-almacen', 3),
-    prod('ejemplo-detergente', 'Detergente', 'ejemplo-limpieza', 0),
-    prod('ejemplo-lavandina', 'Lavandina', 'ejemplo-limpieza', 2),
+    prod('ejemplo-yerba', 'Yerba', 'ejemplo-almacen', 1, 'paquete', 3),
+    prod('ejemplo-leche', 'Leche', 'ejemplo-almacen', 0, 'litro', 9),
+    prod('ejemplo-fideos', 'Fideos', 'ejemplo-almacen', 3, 'paquete', 4),
+    prod('ejemplo-arroz', 'Arroz', 'ejemplo-almacen', 2, 'paquete', 41),
+    prod('ejemplo-harina', 'Harina', 'ejemplo-almacen', 1.5, 'kg', 14),
+    prod('ejemplo-detergente', 'Detergente', 'ejemplo-limpieza', 0, 'unidad', 6),
+    prod('ejemplo-lavandina', 'Lavandina', 'ejemplo-limpieza', 2, 'unidad', 4),
+    prod('ejemplo-esponjas', 'Esponjas', 'ejemplo-limpieza', 4, 'unidad', 36),
+  ],
+  anotaciones: [
+    { id: 'ejemplo-nota-pan', texto: 'Comprar pan', creado_por: 'ejemplo-ana', creado: haceDias(2) },
+    { id: 'ejemplo-nota-pilas', texto: 'Pilas AA para el control', creado_por: 'ejemplo-bruno', creado: haceDias(1) },
   ],
   gastos: [
     {
