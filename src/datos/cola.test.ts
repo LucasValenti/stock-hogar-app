@@ -1,4 +1,4 @@
-import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Almacen, type Op, type OpNueva } from './cola';
+import { conCola, crearCola, ejecutorDe, esErrorDeRed, esRechazoDefinitivo, type Almacen, type Op, type OpNueva } from './cola';
 import { crearDatosEnMemoria } from './memoria';
 import type { Datos } from './tipos';
 
@@ -45,6 +45,20 @@ describe('esErrorDeRed', () => {
   });
 });
 
+describe('esRechazoDefinitivo', () => {
+  test('solo las excepciones de la RPC (P0001) y los errores 22xxx y 23xxx de Postgres', () => {
+    for (const code of ['P0001', '23505', '23503', '23502', '22P02', '22003']) {
+      expect(esRechazoDefinitivo({ code, message: 'x' })).toBe(true);
+    }
+    for (const code of ['', '42501', '57014', 'PGRST301', 'PGRST116', '08006', '40001', 'P0002']) {
+      expect(esRechazoDefinitivo({ code, message: 'x' })).toBe(false);
+    }
+    expect(esRechazoDefinitivo(new Error('sin code'))).toBe(false);
+    expect(esRechazoDefinitivo(new TypeError('Failed to fetch'))).toBe(false);
+    expect(esRechazoDefinitivo(null)).toBe(false);
+  });
+});
+
 describe('crearCola', () => {
   test('con red, encolar ejecuta y devuelve hecho', async () => {
     const { ejecutar } = servidor();
@@ -84,12 +98,69 @@ describe('crearCola', () => {
     expect(estado.ejecutadas).toEqual(['a', 'b']);
   });
 
-  test('un error que no es de red no se reintenta: sale de la cola y se informa', async () => {
-    const permiso = { message: 'permiso denegado', code: '42501' };
+  test('un rechazo definitivo de la base (P0001) pasa a rechazadas, se informa y sigue con la próxima', async () => {
+    const cerrado = { message: 'MES_CERRADO', code: 'P0001' };
     let red = false;
     const ejecutar = jest.fn(async (o: Op) => {
       if (!red) throw sinRed();
-      if (o.id === 'b') throw permiso;
+      if (o.id === 'b') throw cerrado;
+      return o.id;
+    });
+    const alDescartar = jest.fn();
+    const almacen = almacenEnMemoria();
+    const ahora = () => new Date('2026-10-17T12:00:00.000Z');
+    const cola = crearCola({ almacen, ejecutar, esErrorDeRed, alDescartar, integranteActual: comoAna, ahora });
+    await cola.encolar(op('a'));
+    await cola.encolar(op('b'));
+    await cola.encolar(op('c'));
+    red = true;
+    await cola.vaciar();
+    expect(alDescartar).toHaveBeenCalledWith(deAna('b'), cerrado);
+    expect(await cola.pendientes()).toEqual([]);
+    const esperada = { op: deAna('b'), code: 'P0001', message: 'MES_CERRADO', cuando: '2026-10-17T12:00:00.000Z' };
+    expect(await cola.rechazadas()).toEqual([esperada]);
+    // Queda guardada: sobrevive a un reinicio.
+    expect(await crearCola({ almacen, ejecutar, esErrorDeRed, integranteActual: comoAna }).rechazadas()).toEqual([esperada]);
+    await cola.vaciar();
+    // b se intentó una sola vez: ni el segundo vaciar la vuelve a mandar.
+    expect(ejecutar.mock.calls.filter(([o]) => o.id === 'b')).toHaveLength(1);
+    expect(ejecutar.mock.calls.filter(([o]) => o.id === 'c').length).toBeGreaterThan(0);
+  });
+
+  test.each([
+    ['23505', 'duplicate key value violates unique constraint'],
+    ['23503', 'violates foreign key constraint'],
+    ['22P02', 'invalid input syntax for type uuid'],
+  ])('un error %s de la base también es definitivo: pasa a rechazadas', async (code, message) => {
+    let red = false;
+    const ejecutar = jest.fn(async (o: Op) => {
+      if (!red) throw sinRed();
+      if (o.id === 'a') throw { code, message };
+      return o.id;
+    });
+    const cola = crearCola({ almacen: almacenEnMemoria(), ejecutar, esErrorDeRed, integranteActual: comoAna });
+    await cola.encolar(op('a'));
+    await cola.encolar(op('b'));
+    red = true;
+    await cola.vaciar();
+    expect(await cola.pendientes()).toEqual([]);
+    expect(await cola.rechazadas()).toEqual([{ op: deAna('a'), code, message, cuando: expect.any(String) }]);
+  });
+
+  test.each<[string, unknown]>([
+    ['un 5xx o 520 del servidor', { message: 'Internal Server Error', code: '' }],
+    ['un timeout de la base (57014)', { message: 'canceling statement due to statement timeout', code: '57014' }],
+    ['un JWT vencido (PGRST301)', { message: 'JWT expired', code: 'PGRST301' }],
+    ['un 42501 tras no poder renovar el token', { message: 'permission denied', code: '42501' }],
+    ['un error desconocido', new Error('algo raro')],
+  ])('%s no saca la op: queda en la cola, en orden, y el pase se corta ahí', async (_caso, error) => {
+    let red = false;
+    let falla = true;
+    const ejecutadas: string[] = [];
+    const ejecutar = jest.fn(async (o: Op) => {
+      if (!red) throw sinRed();
+      if (o.id === 'b' && falla) throw error;
+      ejecutadas.push(o.id);
       return o.id;
     });
     const alDescartar = jest.fn();
@@ -99,12 +170,52 @@ describe('crearCola', () => {
     await cola.encolar(op('c'));
     red = true;
     await cola.vaciar();
-    expect(alDescartar).toHaveBeenCalledWith(deAna('b'), permiso);
-    expect(await cola.pendientes()).toEqual([]);
+    // c no se adelanta a b.
+    expect(ejecutadas).toEqual(['a']);
+    expect(await cola.pendientes()).toEqual([deAna('b'), deAna('c')]);
+    expect(await cola.rechazadas()).toEqual([]);
+    expect(alDescartar).not.toHaveBeenCalled();
+    // Una op nueva espera detrás de las que quedaron.
+    await expect(cola.encolar(op('d'))).resolves.toEqual({ estado: 'en-cola' });
+    // Cuando se arregla, salen todas en orden.
+    falla = false;
     await cola.vaciar();
-    // b se intentó una sola vez (la del 42501): ni el segundo vaciar la vuelve a mandar.
-    expect(ejecutar.mock.calls.filter(([o]) => o.id === 'b')).toHaveLength(1);
-    expect(ejecutar.mock.calls.filter(([o]) => o.id === 'c').length).toBeGreaterThan(0);
+    expect(ejecutadas).toEqual(['a', 'b', 'c', 'd']);
+    expect(await cola.pendientes()).toEqual([]);
+  });
+
+  test('olvidarRechazada saca solo esa de la lista', async () => {
+    let red = false;
+    const ejecutar = jest.fn(async (o: Op) => {
+      if (!red) throw sinRed();
+      throw { code: 'P0001', message: `MES_CERRADO ${o.id}` };
+    });
+    const cola = crearCola({ almacen: almacenEnMemoria(), ejecutar, esErrorDeRed, integranteActual: comoAna });
+    await cola.encolar(op('a'));
+    await cola.encolar(op('b'));
+    red = true;
+    await cola.vaciar();
+    expect((await cola.rechazadas()).map((r) => r.op.id)).toEqual(['a', 'b']);
+    await cola.olvidarRechazada('a');
+    expect((await cola.rechazadas()).map((r) => r.op.id)).toEqual(['b']);
+  });
+
+  test('un valor corrupto en el almacén no bloquea: se guarda aparte y la cola arranca vacía', async () => {
+    const almacen = almacenEnMemoria();
+    await almacen.setItem('cola-escritura', '{no es json');
+    await almacen.setItem('cola-escritura-rechazadas', '"tampoco una lista"');
+    const { estado, ejecutar } = servidor();
+    estado.hayRed = false;
+    const cola = crearCola({ almacen, ejecutar, esErrorDeRed, integranteActual: comoAna, ahora: () => new Date(5) });
+    await expect(cola.encolar(op('a'))).resolves.toEqual({ estado: 'en-cola' });
+    expect(await cola.pendientes()).toEqual([deAna('a')]);
+    expect(await cola.rechazadas()).toEqual([]);
+    // Lo que había no se pierde: queda bajo otra clave.
+    expect(await almacen.getItem('cola-escritura-corrupta-5')).toBe('{no es json');
+    expect(await almacen.getItem('cola-escritura-rechazadas-corrupta-5')).toBe('"tampoco una lista"');
+    estado.hayRed = true;
+    await cola.vaciar();
+    expect(estado.ejecutadas).toEqual(['a']);
   });
 
   test('si el error no es de red al encolar con la cola vacía, se rechaza y no queda pendiente', async () => {

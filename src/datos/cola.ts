@@ -24,20 +24,29 @@ export type OpcionesCola = {
   almacen: Almacen;
   ejecutar(op: Op): Promise<unknown>;
   esErrorDeRed(e: unknown): boolean;
-  /** Una op pendiente que la base rechazó (no por red): ya salió de la cola. */
+  /** Una op pendiente que la base rechazó de forma definitiva: ya pasó a `rechazadas`. */
   alDescartar?(op: Op, error: unknown): void;
   /** Id del integrante con sesión lista, o `null` si no hay (cargando, sin sesión, cuenta ajena). */
   integranteActual(): string | null;
   clave?: string;
+  /** Reloj inyectable (pruebas): marca cuándo se rechazó una op y nombra la copia de un valor corrupto. */
+  ahora?(): Date;
 };
 
 export type ResultadoEncolar = { estado: 'hecho'; resultado: unknown } | { estado: 'en-cola' };
+
+/** Op que la base rechazó de forma definitiva: salió de la cola pero queda guardada para mostrarla. */
+export type Rechazada = { op: Op; code: string; message: string; cuando: string };
 
 export type Cola = {
   /** Rechaza con SIN_SESION si no hay integrante con sesión lista. */
   encolar(op: OpNueva): Promise<ResultadoEncolar>;
   vaciar(): Promise<void>;
   pendientes(): Promise<Op[]>;
+  /** Las ops rechazadas por la base, en el orden en que se rechazaron (de todos los dueños: ver `op.duenio`). */
+  rechazadas(): Promise<Rechazada[]>;
+  /** Saca una rechazada de la lista (la persona ya la vio). */
+  olvidarRechazada(opId: string): Promise<void>;
 };
 
 // fetch sin red: 'Network request failed' en React Native, 'Failed to fetch' en Chrome,
@@ -53,6 +62,28 @@ export function esErrorDeRed(e: unknown): boolean {
   return typeof message === 'string' && MENSAJE_DE_RED.test(message);
 }
 
+/**
+ * Un rechazo que no cambia al reintentar: las excepciones de negocio de la RPC (P0001: MES_CERRADO,
+ * SIN_ITEMS, GASTO_INEXISTENTE…), integridad (23xxx) y datos inválidos (22xxx). Todo lo demás
+ * (red, 5xx, timeout 57014, JWT vencido PGRST301, 42501 tras un token sin renovar, desconocido)
+ * puede andar más tarde: la op se queda en la cola.
+ */
+export function esRechazoDefinitivo(e: unknown): boolean {
+  if (e == null || typeof e !== 'object') return false;
+  const { code } = e as { code?: unknown };
+  return typeof code === 'string' && (code === 'P0001' || /^2[23][0-9A-Z]{3}$/.test(code));
+}
+
+function rechazoDe(op: Op, e: unknown, cuando: Date): Rechazada {
+  const { code, message } = (e ?? {}) as { code?: unknown; message?: unknown };
+  return {
+    op,
+    code: String(code ?? ''),
+    message: typeof message === 'string' ? message : String(e),
+    cuando: cuando.toISOString(),
+  };
+}
+
 export function crearCola({
   almacen,
   ejecutar,
@@ -60,7 +91,9 @@ export function crearCola({
   alDescartar,
   integranteActual,
   clave = 'cola-escritura',
+  ahora = () => new Date(),
 }: OpcionesCola): Cola {
+  const claveRechazadas = `${clave}-rechazadas`;
   // Todo pasa de a uno: dos vaciar() a la vez no mandan la misma op dos veces.
   let turno: Promise<unknown> = Promise.resolve();
   function enTurno<T>(fn: () => Promise<T>): Promise<T> {
@@ -69,16 +102,31 @@ export function crearCola({
     return p;
   }
 
-  async function leer(): Promise<Op[]> {
-    const texto = await almacen.getItem(clave);
-    return texto ? (JSON.parse(texto) as Op[]) : [];
+  // Un valor que no es una lista (corrupto, de otra versión) no puede trabar todos los guardados:
+  // se copia aparte, sin perderlo, y se arranca con la lista vacía.
+  async function leerLista<T>(k: string): Promise<T[]> {
+    const texto = await almacen.getItem(k);
+    if (!texto) return [];
+    try {
+      const valor: unknown = JSON.parse(texto);
+      if (Array.isArray(valor)) return valor as T[];
+    } catch {
+      // Sigue abajo: se aparta igual que un valor que no es lista.
+    }
+    await almacen.setItem(`${k}-corrupta-${ahora().getTime()}`, texto);
+    await almacen.setItem(k, '[]');
+    return [];
   }
+  const leer = () => leerLista<Op>(clave);
   const escribir = (ops: Op[]) => almacen.setItem(clave, JSON.stringify(ops));
+  const leerRechazadas = () => leerLista<Rechazada>(claveRechazadas);
+  const escribirRechazadas = (rs: Rechazada[]) => almacen.setItem(claveRechazadas, JSON.stringify(rs));
 
   // Manda en orden las pendientes del integrante con sesión; las de otro quedan en su lugar.
   // El dueño se mira antes de cada op: si la sesión cambia a mitad, se corta ahí.
-  // Ante un corte se detiene y deja el resto; un rechazo de la base saca esa op
-  // (reintentarla daría lo mismo) y sigue con la próxima.
+  // Un rechazo definitivo de la base pasa la op a `rechazadas` (reintentarla daría lo mismo) y
+  // sigue con la próxima. Cualquier otro error (red, servidor, sesión vencida, desconocido) corta
+  // el pase y deja la op en su lugar: las de atrás no se le adelantan.
   async function vaciarAhora(): Promise<Op[]> {
     let ops = await leer();
     let i = 0;
@@ -93,7 +141,11 @@ export function crearCola({
       try {
         await ejecutar(op);
       } catch (e) {
-        if (esErrorDeRed(e)) return ops;
+        if (esErrorDeRed(e) || !esRechazoDefinitivo(e)) return ops;
+        // Primero se guarda como rechazada y después sale de la cola: si algo se corta en el medio,
+        // queda en los dos lados (se reemplaza por id, no se duplica), nunca perdida.
+        const rs = await leerRechazadas();
+        await escribirRechazadas([...rs.filter((r) => r.op.id !== op.id), rechazoDe(op, e, ahora())]);
         alDescartar?.(op, e);
       }
       ops = [...ops.slice(0, i), ...ops.slice(i + 1)];
@@ -124,6 +176,12 @@ export function crearCola({
       }),
     vaciar: () => enTurno(async () => void (await vaciarAhora())),
     pendientes: () => enTurno(leer),
+    rechazadas: () => enTurno(leerRechazadas),
+    olvidarRechazada: (opId) =>
+      enTurno(async () => {
+        const rs = await leerRechazadas();
+        await escribirRechazadas(rs.filter((r) => r.op.id !== opId));
+      }),
   };
 }
 

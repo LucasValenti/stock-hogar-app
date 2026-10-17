@@ -13,12 +13,12 @@ import { crearDatosSupabase } from './supabase';
 import type { Datos } from './tipos';
 
 export type { Datos } from './tipos';
-export type { Cola, DatosConCola, ErrorConCodigo, GuardadoDeGasto, Op, OpNueva } from './cola';
+export type { Cola, DatosConCola, ErrorConCodigo, GuardadoDeGasto, Op, OpNueva, Rechazada } from './cola';
 
 type AlDescartar = (op: Op, error: unknown) => void;
 const oyentesDeDescarte = new Set<AlDescartar>();
 
-/** Avisa cuando una escritura pendiente se descartó porque la base la rechazó (no por red). */
+/** Avisa cuando la base rechazó de forma definitiva una escritura pendiente: pasa a `obtenerCola().rechazadas()`. */
 export function escucharDescartes(fn: AlDescartar): () => void {
   oyentesDeDescarte.add(fn);
   return () => {
