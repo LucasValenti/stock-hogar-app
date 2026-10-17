@@ -15,20 +15,29 @@ Es una pieza de portfolio de **KUSAK** ([kusak.dev](https://kusak.dev)). No tien
 
 ```bash
 npm install
-cp .env.example .env    # opcional: por defecto usa datos en memoria
+cp .env.example .env    # obligatorio: sin .env la app va a Supabase y muestra que falta la configuración
 npx expo start
 ```
 
 Después abrila con Expo Go en el celular, en un emulador o en el navegador (tecla `w`).
 
+`EXPO_PUBLIC_DATOS` en `.env` elige de dónde salen los datos:
+
+| Valor | Qué hace |
+|---|---|
+| `memoria` (el que trae `.env.example`) | Casa de ejemplo, sin cuenta ni red. Ver «Modo memoria». |
+| `supabase`, o la variable ausente | Base real en Supabase: necesita `EXPO_PUBLIC_SUPABASE_URL` y `EXPO_PUBLIC_SUPABASE_ANON_KEY`. Sin ellas, la app muestra «Falta configurar la conexión» (SIN_CONFIG). Ver «Modo Supabase». |
+
+Si cambiás `.env`, reiniciá `npx expo start`: las variables se leen al compilar.
+
 ## Modo memoria
 
-Con `EXPO_PUBLIC_DATOS=memoria` en `.env` (es el valor que trae `.env.example`) la app no necesita cuenta ni red: arranca como Ana, de una casa de ejemplo con tres integrantes ficticios (Ana, Bruno y Caro), y no guarda nada. Los datos de ejemplo están en `src/datos/memoria.ts`.
+Con `EXPO_PUBLIC_DATOS=memoria` en `.env` la app no necesita cuenta ni red: arranca como Ana, de una casa de ejemplo con tres integrantes ficticios (Ana, Bruno y Caro), y no guarda nada. Los datos de ejemplo están en `src/datos/memoria.ts`.
 
 ## Modo Supabase
 
 1. Creá un proyecto en Supabase y corré `supabase/schema.sql` una sola vez en el SQL Editor.
-2. Cargá en la tabla `integrantes` el email de cada persona de la casa: solo entra quien está ahí.
+2. Cargá en la tabla `integrantes` una fila por persona de la casa, con su `nombre` (obligatorio) y su `email` en minúsculas (la base rechaza mayúsculas): solo entra quien está ahí. Por ejemplo: `insert into integrantes (nombre, email) values ('Ana', 'ana@ejemplo.com');`
 3. En `.env` poné `EXPO_PUBLIC_DATOS=supabase` y completá `EXPO_PUBLIC_SUPABASE_URL` y `EXPO_PUBLIC_SUPABASE_ANON_KEY` con la URL y la clave pública (anon) del proyecto.
 4. Para que llegue el código de ingreso, configurá el envío de emails en Supabase (Authentication).
 
@@ -56,6 +65,7 @@ npm run typecheck      # tsc --noEmit
 | `src/sesion/` | Ingreso por código y sesión guardada |
 | `src/tema/` | Tokens de diseño (`tokens.json`), tema claro y oscuro, fuentes |
 | `src/ui/` | Componentes de interfaz |
+| `src/pruebas/` | Pruebas de pantallas (fuera de `src/app/` para que Expo Router no las tome como rutas) |
 | `supabase/` | Esquema, migraciones y pruebas de la base |
 
 Los valores visuales (colores, tamaños, espacios, movimiento) salen solo de `src/tema/tokens.json`.
