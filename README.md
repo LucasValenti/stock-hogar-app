@@ -78,4 +78,4 @@ El ícono y la pantalla de arranque (`assets/` y `app.json`) todavía son los de
 
 ## Licencia
 
-Pendiente: la decisión de la licencia la toma el titular del proyecto. Hasta entonces, todos los derechos reservados.
+Sin licencia de uso: el código se publica para que se pueda ver como parte del portfolio de KUSAK, pero todos los derechos están reservados.
