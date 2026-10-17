@@ -1,4 +1,5 @@
-import { useColorScheme } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, useColorScheme } from 'react-native';
 
 import tokens from './tokens.json';
 
@@ -47,8 +48,15 @@ export function temaPara(esquema: 'light' | 'dark' | null): Tema {
   return esquema === 'dark' ? OSCURO : CLARO;
 }
 
-/** Tema que sigue el esquema claro/oscuro del sistema. */
+/**
+ * Tema que sigue el esquema claro/oscuro del sistema.
+ * En la web el servidor arma el HTML sin saber el esquema del navegador: hasta hidratar se usa el claro,
+ * igual que el servidor, para que el HTML coincida; en el teléfono no hay servidor y sigue al sistema desde el primer cuadro.
+ */
 export function useTema(): Tema {
-  const esquema = useColorScheme();
+  const [hidratado, setHidratado] = useState(Platform.OS !== 'web');
+  useEffect(() => setHidratado(true), []);
+  const sistema = useColorScheme();
+  const esquema = hidratado ? sistema : null;
   return temaPara(esquema === 'dark' || esquema === 'light' ? esquema : null);
 }

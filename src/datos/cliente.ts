@@ -17,7 +17,19 @@ export function errorSinConfig(): ErrorConCodigo {
   );
 }
 
-export function crearCliente(): SupabaseClient {
+let unico: SupabaseClient | null = null;
+
+/**
+ * El cliente de la app, creado en el primer uso (no al importar) y compartido: la capa de datos
+ * y el ingreso (auth) tienen que usar el mismo, porque cada cliente maneja su propia sesión.
+ * Lanza SIN_CONFIG si falta .env; en ese caso no queda nada a medias y el próximo uso reintenta.
+ */
+export function obtenerCliente(): SupabaseClient {
+  unico ??= crearCliente();
+  return unico;
+}
+
+function crearCliente(): SupabaseClient {
   // Expo reemplaza process.env.EXPO_PUBLIC_* al compilar: hay que nombrarlas así, completas.
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const clave = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;

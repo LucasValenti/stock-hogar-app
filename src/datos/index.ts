@@ -6,7 +6,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
-import { crearCliente } from './cliente';
+import { obtenerCliente } from './cliente';
 import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Cola, type DatosConCola, type Op } from './cola';
 import { crearDatosEnMemoria, semillaDeEjemplo } from './memoria';
 import { crearDatosSupabase } from './supabase';
@@ -26,15 +26,18 @@ export function escucharDescartes(fn: AlDescartar): () => void {
   };
 }
 
+/** Con EXPO_PUBLIC_DATOS=memoria la app corre con la casa de ejemplo y sin cuenta ni red. */
+export const esModoMemoria = (): boolean => process.env.EXPO_PUBLIC_DATOS === 'memoria';
+
 let capa: { datos: DatosConCola; cola: Cola } | null = null;
 
 // Si falla (falta .env), no queda nada a medias: el próximo uso vuelve a intentar.
 function iniciar(): { datos: DatosConCola; cola: Cola } {
   if (capa) return capa;
   const base: Datos =
-    process.env.EXPO_PUBLIC_DATOS === 'memoria'
+    esModoMemoria()
       ? crearDatosEnMemoria(semillaDeEjemplo)
-      : crearDatosSupabase(crearCliente());
+      : crearDatosSupabase(obtenerCliente());
   const cola = crearCola({
     almacen: AsyncStorage,
     ejecutar: ejecutorDe(base),

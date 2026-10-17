@@ -41,3 +41,12 @@ test('borrar un producto que ya tiene compras sugiere ocultarlo', () => {
   const e = { code: '23503', message: 'update or delete on table "productos" violates foreign key constraint "gasto_items_producto_id_fkey" on table "gasto_items"' };
   expect(mensajeError(e)).toMatch(/ya tiene compras: ocultalo/);
 });
+
+test('los errores de la capa de datos ya traen un mensaje para la persona', () => {
+  const sinConfig = Object.assign(new Error('Falta configurar la conexión: completá .env.'), { code: 'SIN_CONFIG' });
+  const sinConexion = Object.assign(new Error('Sin conexión: no se guardó el cambio de stock. Probá de nuevo.'), { code: 'SIN_CONEXION' });
+  expect(mensajeError(sinConfig)).toBe('Falta configurar la conexión: completá .env.');
+  // Aunque el navegador diga que no hay red: lo que falta es la configuración.
+  expect(mensajeError(sinConfig, false)).toBe('Falta configurar la conexión: completá .env.');
+  expect(mensajeError(sinConexion)).toBe('Sin conexión: no se guardó el cambio de stock. Probá de nuevo.');
+});
