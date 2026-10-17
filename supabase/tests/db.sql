@@ -253,5 +253,225 @@ begin
 end $$;
 reset role;
 
+-- 8. App nativa (migración 007): columnas nuevas, último movimiento y anotaciones.
+select set_config('request.jwt.claims', '{"email":"prueba-a@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+declare
+  v_mov timestamptz;
+begin
+  insert into productos (id, nombre, categoria_id) values
+    ('00000000-0000-0000-0000-0000000000b3', 'Yerba de prueba', '00000000-0000-0000-0000-0000000000c1'),
+    ('00000000-0000-0000-0000-0000000000b4', 'Fideos de prueba', '00000000-0000-0000-0000-0000000000c1');
+
+  -- Columnas nuevas con su valor por defecto y sus límites.
+  if (select unidad from productos where id = '00000000-0000-0000-0000-0000000000b3') is distinct from 'unidad' then
+    raise exception 'FALLA: la unidad por defecto no es unidad';
+  end if;
+  if (select ultimo_movimiento from productos where id = '00000000-0000-0000-0000-0000000000b3') is distinct from now() then
+    raise exception 'FALLA: ultimo_movimiento no arranca en now()';
+  end if;
+  begin
+    update productos set unidad = 'docena' where id = '00000000-0000-0000-0000-0000000000b3';
+    raise exception 'FALLA: se aceptó una unidad inventada';
+  exception when check_violation then null;
+  end;
+  update productos set unidad = 'kg' where id = '00000000-0000-0000-0000-0000000000b3';
+  if (select dias_sin_movimiento from categorias where id = '00000000-0000-0000-0000-0000000000c1') is distinct from 20 then
+    raise exception 'FALLA: dias_sin_movimiento por defecto no es 20';
+  end if;
+  begin
+    update categorias set dias_sin_movimiento = 0 where id = '00000000-0000-0000-0000-0000000000c1';
+    raise exception 'FALLA: se aceptaron 0 días sin movimiento';
+  exception when check_violation then null;
+  end;
+  begin
+    update categorias set dias_sin_movimiento = 366 where id = '00000000-0000-0000-0000-0000000000c1';
+    raise exception 'FALLA: se aceptaron 366 días sin movimiento';
+  exception when check_violation then null;
+  end;
+
+  -- ultimo_movimiento cambia cuando cambia el stock, y solo entonces.
+  update productos set ultimo_movimiento = '2000-01-01' where id = '00000000-0000-0000-0000-0000000000b3';
+  update productos set stock = 2 where id = '00000000-0000-0000-0000-0000000000b3';
+  select ultimo_movimiento into v_mov from productos where id = '00000000-0000-0000-0000-0000000000b3';
+  if v_mov is distinct from now() then raise exception 'FALLA: cambiar el stock no movió ultimo_movimiento (%)', v_mov; end if;
+  update productos set ultimo_movimiento = '2000-01-01' where id = '00000000-0000-0000-0000-0000000000b3';
+  update productos set nombre = 'Yerba de prueba 2' where id = '00000000-0000-0000-0000-0000000000b3';
+  update productos set stock = 2 where id = '00000000-0000-0000-0000-0000000000b3';
+  select ultimo_movimiento into v_mov from productos where id = '00000000-0000-0000-0000-0000000000b3';
+  if v_mov <> '2000-01-01'::timestamptz then raise exception 'FALLA: ultimo_movimiento cambió sin cambiar el stock (%)', v_mov; end if;
+
+  -- Anotaciones: las escribe la casa, a nombre de quien la escribe, con texto de 1 a 120 caracteres.
+  insert into anotaciones (id, texto) values
+    ('00000000-0000-0000-0000-0000000000e1', 'Comprar pan'),
+    ('00000000-0000-0000-0000-0000000000e2', 'Llamar al plomero');
+  if (select creado_por from anotaciones where id = '00000000-0000-0000-0000-0000000000e1') is distinct from '00000000-0000-0000-0000-0000000000a1' then
+    raise exception 'FALLA: la anotación no quedó a nombre de quien la escribió';
+  end if;
+  begin
+    insert into anotaciones (texto) values ('   ');
+    raise exception 'FALLA: se aceptó una anotación vacía';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into anotaciones (texto) values (repeat('x', 121));
+    raise exception 'FALLA: se aceptó una anotación de 121 caracteres';
+  exception when check_violation then null;
+  end;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'anotaciones') then
+    raise exception 'FALLA: anotaciones no está en tiempo real';
+  end if;
+end $$;
+
+-- 9. Sin sesión de la casa, las anotaciones no se leen ni se escriben y no se confirma stock.
+select set_config('request.jwt.claims', '{"email":"intruso@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  if exists (select 1 from anotaciones) then raise exception 'FALLA: un intruso ve anotaciones'; end if;
+  begin
+    insert into anotaciones (texto) values ('intrusa');
+    raise exception 'FALLA: un intruso escribió una anotación';
+  exception when insufficient_privilege then null;
+  end;
+  delete from anotaciones;
+  begin
+    perform confirmar_hay('00000000-0000-0000-0000-0000000000b3');
+    raise exception 'FALLA: un intruso confirmó stock';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+set local role anon;
+do $$
+begin
+  if exists (select 1 from anotaciones) then raise exception 'FALLA: anon ve anotaciones'; end if;
+  begin
+    insert into anotaciones (texto) values ('anónima');
+    raise exception 'FALLA: anon escribió una anotación';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform confirmar_hay('00000000-0000-0000-0000-0000000000b3');
+    raise exception 'FALLA: anon confirmó stock';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+do $$
+begin
+  if (select count(*) from anotaciones) <> 2 then raise exception 'FALLA: las anotaciones cambiaron sin sesión de la casa'; end if;
+end $$;
+
+-- 10. guardar_gasto: lo que manda la web vieja da lo mismo; tildados y anotaciones de la app nativa.
+select set_config('request.jwt.claims', '{"email":"prueba-a@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+declare
+  v_gasto uuid;
+  v_otro uuid;
+  v_mov timestamptz;
+  v_web jsonb := jsonb_build_object('id', null, 'fecha', '2000-04-10', 'pagado_por', '00000000-0000-0000-0000-0000000000a1',
+    'nota', null, 'mp_operacion', null, 'destino', null);
+  v_total jsonb := v_web || jsonb_build_object('modo', 'total', 'total', 5000, 'categoria_id', '00000000-0000-0000-0000-0000000000c1');
+  v_tildados jsonb := jsonb_build_array(
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b1', 'cantidad', 1),
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b3', 'cantidad', 2));
+begin
+  update productos set stock = 0
+  where id in ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000000b4');
+
+  -- Web vieja, por productos con precios: total desde los ítems, suma stock y propone el precio.
+  v_gasto := guardar_gasto(
+    v_web || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d2', 'modo', 'productos', 'total', 1, 'categoria_id', null),
+    jsonb_build_array(jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 2, 'precio_unitario', 850)));
+  if (select total from gastos where id = v_gasto) <> 1700 then raise exception 'FALLA: web vieja, el total no salió de los ítems'; end if;
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b4') <> 2 then raise exception 'FALLA: web vieja, no sumó stock'; end if;
+  if (select precio_unitario from ultimo_precio where producto_id = '00000000-0000-0000-0000-0000000000b4') is distinct from 850::bigint then
+    raise exception 'FALLA: web vieja, ultimo_precio';
+  end if;
+  -- Un ítem por productos sin precio se sigue rechazando.
+  begin
+    perform guardar_gasto(
+      v_web || jsonb_build_object('modo', 'productos', 'total', 1, 'categoria_id', null),
+      jsonb_build_array(jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 1, 'precio_unitario', null)));
+    raise exception 'FALLA: se aceptó un ítem por productos sin precio';
+  exception when not_null_violation then null;
+  end;
+  delete from gastos where id = v_gasto;
+
+  -- Web vieja, por total sin tildados: sin ítems y con el total que mandó.
+  v_gasto := guardar_gasto(v_total || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d3'), '[]'::jsonb);
+  if (select total from gastos where id = v_gasto) <> 5000 then raise exception 'FALLA: web vieja, cambió el total'; end if;
+  if exists (select 1 from gasto_items where gasto_id = v_gasto) then raise exception 'FALLA: web vieja, un gasto por total con ítems'; end if;
+  delete from gastos where id = v_gasto;
+
+  -- App nativa, por total con tildados: suma stock, precio null y el total no cambia.
+  v_gasto := guardar_gasto(v_total || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d4', 'tildados', v_tildados), '[]'::jsonb);
+  if (select total from gastos where id = v_gasto) <> 5000 then raise exception 'FALLA: los tildados cambiaron el total'; end if;
+  if (select count(*) from gasto_items where gasto_id = v_gasto and precio_unitario is null) <> 2 then
+    raise exception 'FALLA: los tildados no quedaron como ítems sin precio';
+  end if;
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b1') <> 1
+     or (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3') <> 2 then
+    raise exception 'FALLA: los tildados no sumaron stock';
+  end if;
+  -- Mismo nuevo_id otra vez: no se repite nada.
+  v_otro := guardar_gasto(v_total || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d4', 'tildados', v_tildados), '[]'::jsonb);
+  if v_otro <> v_gasto then raise exception 'FALLA: el reintento con tildados devolvió otro id'; end if;
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3') <> 2 then
+    raise exception 'FALLA: el reintento con tildados sumó stock dos veces';
+  end if;
+  -- El último precio ignora los tildados.
+  if (select precio_unitario from ultimo_precio where producto_id = '00000000-0000-0000-0000-0000000000b1') is distinct from 700::bigint then
+    raise exception 'FALLA: ultimo_precio tomó un tildado sin precio';
+  end if;
+  if exists (select 1 from ultimo_precio where precio_unitario is null) then raise exception 'FALLA: ultimo_precio devuelve null'; end if;
+
+  -- Editar con otros tildados: el stock queda como si se hubiera cargado así desde el principio.
+  perform guardar_gasto(v_total || jsonb_build_object('id', v_gasto, 'tildados', jsonb_build_array(
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b3', 'cantidad', 1),
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 3))), '[]'::jsonb);
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b1') <> 0
+     or (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3') <> 1
+     or (select stock from productos where id = '00000000-0000-0000-0000-0000000000b4') <> 3 then
+    raise exception 'FALLA: editar los tildados dejó mal el stock';
+  end if;
+  -- La web vieja edita ese gasto (no conoce los tildados): quedan como estaban.
+  perform guardar_gasto(v_total || jsonb_build_object('id', v_gasto, 'nota', 'editado en la web'), '[]'::jsonb);
+  if (select count(*) from gasto_items where gasto_id = v_gasto) <> 2
+     or (select stock from productos where id = '00000000-0000-0000-0000-0000000000b4') <> 3 then
+    raise exception 'FALLA: la web vieja borró los tildados al editar';
+  end if;
+  -- Editar con tildados vacíos los saca y descuenta el stock.
+  perform guardar_gasto(v_total || jsonb_build_object('id', v_gasto, 'tildados', '[]'::jsonb), '[]'::jsonb);
+  if exists (select 1 from gasto_items where gasto_id = v_gasto)
+     or (select stock from productos where id = '00000000-0000-0000-0000-0000000000b4') <> 0 then
+    raise exception 'FALLA: sacar los tildados no descontó el stock';
+  end if;
+
+  -- Las anotaciones tildadas se borran al guardar; las otras quedan.
+  perform guardar_gasto(v_total || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d5',
+    'anotaciones', jsonb_build_array('00000000-0000-0000-0000-0000000000e1')), '[]'::jsonb);
+  if exists (select 1 from anotaciones where id = '00000000-0000-0000-0000-0000000000e1') then raise exception 'FALLA: la anotación tildada no se borró'; end if;
+  if not exists (select 1 from anotaciones where id = '00000000-0000-0000-0000-0000000000e2') then raise exception 'FALLA: se borró una anotación no tildada'; end if;
+
+  -- confirmar_hay («sigue habiendo»): renueva la fecha sin tocar el stock.
+  update productos set ultimo_movimiento = '2000-01-01' where id = '00000000-0000-0000-0000-0000000000b3';
+  perform confirmar_hay('00000000-0000-0000-0000-0000000000b3');
+  select ultimo_movimiento into v_mov from productos where id = '00000000-0000-0000-0000-0000000000b3';
+  if v_mov is distinct from now() then raise exception 'FALLA: confirmar_hay no renovó la fecha (%)', v_mov; end if;
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3') <> 0 then raise exception 'FALLA: confirmar_hay tocó el stock'; end if;
+  begin
+    perform confirmar_hay('00000000-0000-0000-0000-0000000000ff');
+    raise exception 'FALLA: se confirmó un producto inexistente';
+  exception when others then
+    if sqlerrm not like '%PRODUCTO_INEXISTENTE%' then raise; end if;
+  end;
+end $$;
+reset role;
+
 rollback;
 select 'OK: todas las pruebas de la base pasaron' as resultado;
