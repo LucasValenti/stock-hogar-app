@@ -174,6 +174,10 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
       avisar();
     },
 
+    async tieneCompras(productoId) {
+      return items.some((i) => i.producto_id === productoId);
+    },
+
     async ocultarProducto(id, oculto) {
       const p = buscarProducto(id);
       if (p) p.oculto = oculto;

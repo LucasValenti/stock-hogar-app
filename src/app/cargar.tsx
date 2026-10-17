@@ -8,7 +8,7 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 
 import { datos } from '@/datos';
 import { nuevoId } from '@/datos/id';
@@ -26,10 +26,10 @@ import { Aviso } from '@/ui/Aviso';
 import { AvisoCola } from '@/ui/AvisoCola';
 import { Boton } from '@/ui/Boton';
 import { Campo } from '@/ui/Campo';
+import { Encabezado } from '@/ui/Encabezado';
 import { Chip } from '@/ui/Chip';
 import { Esqueleto } from '@/ui/Esqueleto';
 import { EstadoVacio } from '@/ui/EstadoVacio';
-import { anilloDeFoco, useFoco } from '@/ui/estilos';
 import { Estado, Fila, Notita } from '@/ui/Fila';
 import { Hoja } from '@/ui/Hoja';
 import { Icono } from '@/ui/Icono';
@@ -93,7 +93,7 @@ export default function Cargar() {
   if (carga.estado === 'cargando') {
     return (
       <Pantalla ocupado>
-        <Encabezado titulo={titulo} />
+        <Encabezado titulo={titulo} alVolver={volver} />
         <Cargando />
       </Pantalla>
     );
@@ -101,7 +101,7 @@ export default function Cargar() {
   if (carga.estado === 'error') {
     return (
       <Pantalla>
-        <Encabezado titulo={titulo} />
+        <Encabezado titulo={titulo} alVolver={volver} />
         <Aviso
           alerta
           icono="nube"
@@ -231,7 +231,7 @@ function Formulario({ base }: { base: Base }) {
 
   return (
     <Pantalla>
-      <Encabezado titulo={g ? 'Editar gasto' : 'Cargar gasto'} />
+      <Encabezado titulo={g ? 'Editar gasto' : 'Cargar gasto'} alVolver={volver} />
       <AvisoCola refresco={refresco} />
       {cerrado ? <AvisoCerrado /> : null}
 
@@ -478,7 +478,7 @@ function GastoPorProductos({ base, existente }: { base: Base; existente: Existen
 
   return (
     <Pantalla>
-      <Encabezado titulo="Gasto" />
+      <Encabezado titulo="Gasto" alVolver={volver} />
       <AvisoCola />
       {cerrado ? <AvisoCerrado /> : null}
       <Tarjeta>
@@ -553,36 +553,6 @@ function HojaBorrar({ visible, id, alCerrar }: { visible: boolean; id: string; a
         </>
       }
     />
-  );
-}
-
-function Encabezado({ titulo }: { titulo: string }) {
-  const tema = useTema();
-  const { conFoco, alFoco } = useFoco();
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: tema.espacio.s, minHeight: tema.medida.tactil }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Volver"
-        onPress={volver}
-        {...alFoco}
-        style={[
-          {
-            width: tema.medida.tactil,
-            height: tema.medida.tactil,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: tema.radio.boton,
-          },
-          conFoco && anilloDeFoco(tema),
-        ]}
-      >
-        <Icono nombre="atras" tamano={tema.medida.icono} color={tema.color.texto} />
-      </Pressable>
-      <Texto variante="tituloTarjeta" aria-level={1} style={{ flexShrink: 1 }}>
-        {titulo}
-      </Texto>
-    </View>
   );
 }
 

@@ -1,6 +1,7 @@
 import {
   normalizar, filtrarProductos, esPendiente, pendientes, agruparPorCategoria,
   aplicarDelta, deltaMenos, formatearCantidad, textoPendientes, productosVisibles, enStock, ocultos, accionProducto, pendientesConAnotaciones,
+  redondeoPorUnidad, cantidadConUnidad,
 } from './stock';
 
 const prods = [
@@ -131,4 +132,30 @@ test('pendientesConAnotaciones: no modifica las listas que recibe', () => {
   const anotaciones = [nota('n2', 'B', '2026-10-10T10:00:00Z'), nota('n1', 'A', '2026-10-09T10:00:00Z')];
   pendientesConAnotaciones(prods, anotaciones);
   expect(anotaciones.map((a) => a.id)).toStrictEqual(['n2', 'n1']);
+});
+
+describe('redondeoPorUnidad (cambiar la unidad no convierte el stock)', () => {
+  test('a unidades o paquetes con decimales: propone el entero más cercano', () => {
+    expect(redondeoPorUnidad(1.5, 'paquete')).toBe(2);
+    expect(redondeoPorUnidad(2.4, 'unidad')).toBe(2);
+    expect(redondeoPorUnidad('0.75', 'unidad')).toBe(1);
+  });
+  test('si había algo, no lo redondea a 0: queda en 1', () => {
+    expect(redondeoPorUnidad(0.3, 'paquete')).toBe(1);
+  });
+  test('sin decimales, o a kg/litros, no hace falta redondear', () => {
+    expect(redondeoPorUnidad(2, 'paquete')).toBeNull();
+    expect(redondeoPorUnidad(0, 'unidad')).toBeNull();
+    expect(redondeoPorUnidad(1.5, 'kg')).toBeNull();
+    expect(redondeoPorUnidad(1.5, 'litro')).toBeNull();
+  });
+});
+
+describe('cantidadConUnidad', () => {
+  test('kg y litros llevan la unidad; unidades y paquetes, solo el número', () => {
+    expect(cantidadConUnidad(2.5, 'kg')).toBe('2,5 kg');
+    expect(cantidadConUnidad('1.25', 'litro')).toBe('1,25 L');
+    expect(cantidadConUnidad(3, 'paquete')).toBe('3');
+    expect(cantidadConUnidad(0, 'unidad')).toBe('0');
+  });
 });

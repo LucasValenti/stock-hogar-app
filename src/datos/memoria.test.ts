@@ -549,6 +549,20 @@ describe('productos: unidad y edición', () => {
   });
 });
 
+describe('tieneCompras (la ficha decide entre borrar y ocultar)', () => {
+  test('false si el producto nunca estuvo en un gasto; true si estuvo, aunque sea tildado sin precio', async () => {
+    const datos = crearDatosEnMemoria(semilla());
+    expect(await datos.tieneCompras('p-yerba')).toBe(false);
+    await datos.guardarGasto(gastoTotal('2026-10-05', { tildados: [{ producto_id: 'p-yerba', cantidad: 1 }] }), []);
+    expect(await datos.tieneCompras('p-yerba')).toBe(true);
+    expect(await datos.tieneCompras('p-harina')).toBe(false);
+  });
+
+  test('un producto que no existe no tiene compras', async () => {
+    expect(await crearDatosEnMemoria(semilla()).tieneCompras('no-existe')).toBe(false);
+  });
+});
+
 describe('categorías: días sin movimiento', () => {
   test('una categoría nueva trae 20 días y guardarCategoria acepta otro valor', async () => {
     const datos = crearDatosEnMemoria(semilla());

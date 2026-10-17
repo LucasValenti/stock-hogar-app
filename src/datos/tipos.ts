@@ -83,6 +83,8 @@ export interface Datos {
   editarProducto(p: ProductoAEditar): Promise<Producto>;
   borrarProducto(id: string): Promise<void>;
   ocultarProducto(id: string, oculto: boolean): Promise<void>;
+  /** Si el producto está en algún gasto (con precio o tildado): entonces no se puede borrar, solo ocultar. */
+  tieneCompras(productoId: string): Promise<boolean>;
   /** Devuelve el stock nuevo; nunca baja de 0. */
   ajustarStock(productoId: string, delta: number): Promise<number>;
   /** «Sigue habiendo»: renueva la fecha de último movimiento sin tocar el stock. */

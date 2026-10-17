@@ -104,6 +104,20 @@ describe('productos', () => {
     expect((await datos.producto('p1'))?.ultimo_movimiento).toBe('2026-10-18T12:34:56.123Z');
   });
 
+  test('tieneCompras pide un solo ítem de gasto_items del producto', async () => {
+    const { datos, llamadas } = clienteGrabador(() => ({ data: [{ id: 'it1' }] }));
+    expect(await datos.tieneCompras('p1')).toBe(true);
+    expect(llamadas).toEqual([
+      { via: 'from', nombre: 'gasto_items', pasos: [['select', 'id'], ['eq', 'producto_id', 'p1'], ['limit', 1]] },
+    ]);
+  });
+
+  test('tieneCompras da false sin ítems y lanza el error de la base', async () => {
+    expect(await clienteGrabador(() => ({ data: [] })).datos.tieneCompras('p1')).toBe(false);
+    const falla = { code: '42501', message: 'permission denied' };
+    await expect(clienteGrabador(() => ({ data: null, error: falla })).datos.tieneCompras('p1')).rejects.toBe(falla);
+  });
+
   test('producto() devuelve null si no existe', async () => {
     const { datos } = clienteGrabador(() => ({ data: null }));
     expect(await datos.producto('no-existe')).toBeNull();

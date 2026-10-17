@@ -1,5 +1,5 @@
 // Stock y pendientes: lógica pura, sin DOM ni red.
-import type { Anotacion } from './tipos';
+import type { Anotacion, Unidad } from './tipos';
 
 // El stock y las cantidades pueden llegar como número o como texto numérico ('0.5'); siempre se pasan por Number.
 export type Cantidad = number | string;
@@ -101,8 +101,23 @@ export function deltaMenos(stock: Cantidad): number {
   return Math.round((destino - n) * 1000) / 1000;
 }
 
+// Cambiar la unidad no convierte el stock. Si pasa a unidades o paquetes con un stock con decimales
+// (1,5 que venía de kg), devuelve el entero que se propone; si había algo, nunca 0. Null si no hace falta.
+export function redondeoPorUnidad(stock: Cantidad, unidad: Unidad): number | null {
+  const n = Number(stock);
+  if (unidad === 'kg' || unidad === 'litro' || Number.isInteger(n)) return null;
+  return Math.max(1, Math.round(n));
+}
+
 export function formatearCantidad(n: Cantidad): string {
   return cantidad.format(Number(n));
+}
+
+const SUFIJO: Record<Unidad, string> = { unidad: '', paquete: '', kg: ' kg', litro: ' L' };
+
+/** «2,5 kg», «1 L»; en unidades y paquetes, solo el número. */
+export function cantidadConUnidad(n: Cantidad, unidad: Unidad): string {
+  return `${formatearCantidad(n)}${SUFIJO[unidad]}`;
 }
 
 export function textoPendientes(nombres: string[]): string {

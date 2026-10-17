@@ -97,6 +97,16 @@ export function validarProducto({ nombre, marca, categoria_id, unidad }: DatosPr
   return { ok: Object.keys(errores).length === 0, errores, valor };
 }
 
+const ANOTACION_MAX = 120;
+
+/** Texto de una anotación rápida, como lo guarda la base: sin espacios sobrantes, de 1 a 120 caracteres. */
+export function validarAnotacion(texto: string): { ok: true; valor: string } | { ok: false; error: string } {
+  const valor = texto.trim();
+  if (!valor) return { ok: false, error: 'Escribí qué falta.' };
+  if (valor.length > ANOTACION_MAX) return { ok: false, error: `Usá hasta ${ANOTACION_MAX} caracteres.` };
+  return { ok: true, valor };
+}
+
 // Los tildados de una compra por total: cada producto existe, una sola vez, con una cantidad que su unidad admite.
 function errorDeTildados(tildados: Tildado[], productos: ReadonlyArray<Pick<Producto, 'id' | 'unidad'>>): string | null {
   const unidades = new Map(productos.map((p) => [p.id, p.unidad]));

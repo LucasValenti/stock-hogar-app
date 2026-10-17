@@ -34,6 +34,16 @@ describe('Fila', () => {
     expect(screen.getByText('$ 5.200')).toBeTruthy();
   });
 
+  test('con alTocar: la zona del nombre es un botón (abre la ficha) y lo de la derecha queda aparte', async () => {
+    const alTocar = jest.fn();
+    await render(<Fila nombre="Yerba" descripcion="Falta" alTocar={alTocar} derecha={<Text>paso</Text>} />);
+    const boton = screen.getByRole('button', { name: 'Yerba, Falta' });
+    expect(plano(boton.props.style).minHeight).toBeGreaterThanOrEqual(tokens.medida.tactil);
+    await fireEvent.press(boton);
+    expect(alTocar).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('paso')).toBeTruthy();
+  });
+
   test('Estado lleva palabra además del color', async () => {
     await render(<Estado tipo="falta" texto="Falta" />);
     expect(plano(screen.getByText('Falta').props.style).color).toBe(tokens.color.claro.falta);

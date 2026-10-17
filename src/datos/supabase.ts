@@ -66,6 +66,10 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
     async ocultarProducto(id, oculto) {
       ok(await supabase.from('productos').update({ oculto }).eq('id', id));
     },
+    // Alcanza con saber si hay uno: la clave foránea de gasto_items es la que impide borrarlo.
+    async tieneCompras(productoId) {
+      return ok<unknown[]>(await supabase.from('gasto_items').select('id').eq('producto_id', productoId).limit(1)).length > 0;
+    },
     async producto(id) {
       const fila = ok<Producto | null>(await supabase.from('productos').select('*').eq('id', id).maybeSingle());
       return fila && aProducto(fila);

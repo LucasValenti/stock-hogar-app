@@ -1,7 +1,8 @@
 // Fila de producto (DESIGN.md, Fila de producto con − / +): alto ≥ `medida.fila`, nombre en `peso.fuerte`
 // hasta dos renglones, el estado debajo y lo de la derecha (el paso, un monto). Si no entra al lado del
 // nombre, baja y se alinea a la derecha. Con `alTildar`, el tilde va a la izquierda y la parte del nombre
-// entera es la casilla (el blanco táctil no es el tilde chico). El separador lo pone la lista (`separador`).
+// entera es la casilla (el blanco táctil no es el tilde chico). Con `alTocar`, esa zona es un botón (abre
+// la ficha del producto) y el paso de la derecha queda aparte. El separador lo pone la lista (`separador`).
 
 import type { ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
@@ -20,13 +21,15 @@ type Props = {
   descripcion?: string;
   tildado?: boolean;
   alTildar?(): void;
+  /** Sin tilde: tocar el nombre (abre la ficha, la nota). */
+  alTocar?(): void;
   bloqueado?: boolean;
   derecha?: ReactNode;
   /** Línea arriba: entre una fila y la anterior. */
   separador?: boolean;
 };
 
-export function Fila({ nombre, detalle, descripcion, tildado = false, alTildar, bloqueado = false, derecha, separador = false }: Props) {
+export function Fila({ nombre, detalle, descripcion, tildado = false, alTildar, alTocar, bloqueado = false, derecha, separador = false }: Props) {
   const tema = useTema();
   const { conFoco, alFoco } = useFoco();
   const textos = (
@@ -37,6 +40,16 @@ export function Fila({ nombre, detalle, descripcion, tildado = false, alTildar, 
       {detalle}
     </View>
   );
+  const etiqueta = descripcion ? `${nombre}, ${descripcion}` : nombre;
+  const zona = {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: tema.medida.fila * 2,
+    minHeight: tema.medida.fila,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tema.espacio.m,
+  } as const;
   return (
     <View
       style={{
@@ -52,23 +65,12 @@ export function Fila({ nombre, detalle, descripcion, tildado = false, alTildar, 
       {alTildar ? (
         <Pressable
           accessibilityRole="checkbox"
-          accessibilityLabel={descripcion ? `${nombre}, ${descripcion}` : nombre}
+          accessibilityLabel={etiqueta}
           accessibilityState={{ checked: tildado, disabled: bloqueado }}
           disabled={bloqueado}
           onPress={alTildar}
           {...alFoco}
-          style={[
-            {
-              flexGrow: 1,
-              flexShrink: 1,
-              flexBasis: tema.medida.fila * 2,
-              minHeight: tema.medida.fila,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: tema.espacio.m,
-            },
-            conFoco && anilloDeFoco(tema),
-          ]}
+          style={[zona, conFoco && anilloDeFoco(tema)]}
         >
           <View
             {...decorativo}
@@ -86,6 +88,18 @@ export function Fila({ nombre, detalle, descripcion, tildado = false, alTildar, 
           >
             {tildado ? <Icono nombre="ok" tamano={tema.tamano.l} color={tema.color.sobreAcento} /> : null}
           </View>
+          {textos}
+        </Pressable>
+      ) : alTocar ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={etiqueta}
+          accessibilityState={{ disabled: bloqueado }}
+          disabled={bloqueado}
+          onPress={alTocar}
+          {...alFoco}
+          style={[zona, { paddingVertical: tema.espacio.s }, conFoco && anilloDeFoco(tema)]}
+        >
           {textos}
         </Pressable>
       ) : (

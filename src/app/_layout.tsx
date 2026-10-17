@@ -43,6 +43,8 @@ function Raiz() {
         <Stack.Protected guard={estado === 'lista'}>
           <Stack.Screen name="(pestanas)" />
           <Stack.Screen name="cargar" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="producto/nuevo" />
+          <Stack.Screen name="producto/[id]" />
         </Stack.Protected>
       </Stack>
     );

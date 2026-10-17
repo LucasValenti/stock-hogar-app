@@ -1,4 +1,4 @@
-import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo, admiteDecimales, validarCantidad, validarProducto } from './validar';
+import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo, admiteDecimales, validarCantidad, validarProducto, validarAnotacion } from './validar';
 import type { GastoFormulario } from './validar';
 
 const base: GastoFormulario = { fecha: '2026-10-07', pagado_por: 'a', modo: 'total', total: 850000, categoria_id: 'cat', items: [] };
@@ -211,4 +211,15 @@ test('tildados: los otros errores del gasto siguen apareciendo junto al de tilda
   const r = validarGasto({ ...base, pagado_por: '', tildados: [{ producto_id: 'p1', cantidad: 1.5 }] }, { productos: productosU });
   expect(r.errores.pagado_por).toBeTruthy();
   expect(r.errores.tildados).toBeTruthy();
+});
+
+describe('validarAnotacion', () => {
+  test('saca los espacios sobrantes y acepta hasta 120 caracteres', () => {
+    expect(validarAnotacion('  Comprar pan ')).toEqual({ ok: true, valor: 'Comprar pan' });
+    expect(validarAnotacion('a'.repeat(120))).toMatchObject({ ok: true });
+  });
+  test('vacía o de más de 120, con mensaje', () => {
+    expect(validarAnotacion('   ')).toEqual({ ok: false, error: 'Escribí qué falta.' });
+    expect(validarAnotacion('a'.repeat(121))).toEqual({ ok: false, error: 'Usá hasta 120 caracteres.' });
+  });
 });
