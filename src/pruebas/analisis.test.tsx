@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react-n
 import Analisis from '@/app/(pestanas)/analisis';
 import type { GastoConItems } from '@/datos/tipos';
 import { formatear, formatearPorcentaje } from '@/logica/dinero';
-import { fechaLarga, mesActual, mesAnterior, nombreMes, rangoMes, ultimoDia } from '@/logica/meses';
+import { fechaLarga, mesActual, mesAnterior, mesSiguiente, nombreMes, rangoMes, ultimoDia } from '@/logica/meses';
 import type { Categoria, Cierre, Integrante } from '@/logica/tipos';
 
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
@@ -26,6 +26,7 @@ const mockDatos = {
   categorias: jest.fn(),
   gastosEntre: jest.fn(),
   cierre: jest.fn(),
+  mesesCerrados: jest.fn(),
   cerrarMes: jest.fn(),
   reabrirMes: jest.fn(),
   escucharCambios: jest.fn((_f: () => void) => () => undefined),
@@ -96,6 +97,7 @@ beforeEach(() => {
       .sort((x, y) => y.fecha.localeCompare(x.fecha)),
   );
   mockDatos.cierre.mockImplementation(async (mes: string) => cierres[mes] ?? null);
+  mockDatos.mesesCerrados.mockImplementation(async () => new Set(Object.keys(cierres)));
   mockDatos.cerrarMes.mockResolvedValue(undefined);
   mockDatos.reabrirMes.mockResolvedValue(undefined);
 });
@@ -216,6 +218,29 @@ test('si falta un sueldo, no ofrece cerrar y dice dónde se carga', async () => 
   expect(screen.queryByRole('button', { name: 'Cerrar mes' })).toBeNull();
 });
 
+test('un mes que todavía no llegó no ofrece «Cerrar mes»', async () => {
+  mockParams = { mes: mesSiguiente(MES) };
+  await abrir();
+  expect(await screen.findByLabelText(`Gastos de ${nombreMes(mesSiguiente(MES)).split(' ')[0]}: ${formatear(0)}. 0 gastos.`)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Cerrar mes' })).toBeNull();
+});
+
+test('si el reparto deja de cerrar con la hoja abierta, la cierra y dice por qué', async () => {
+  await abrir();
+  await tocar('button', 'Cerrar mes');
+  // Mientras confirma, a Bruno le borraron el sueldo.
+  mockDatos.integrantes.mockResolvedValue([casa[0], { ...casa[1], sueldo: null }]);
+  const avisar = mockDatos.escucharCambios.mock.calls.at(-1)?.[0] as () => void;
+  await act(async () => avisar());
+  expect(await screen.findByText('Para repartir falta el sueldo de Bruno. Se carga en Ajustes → Integrantes.')).toBeTruthy();
+  await act(async () => fireEvent.press(hoja().getByRole('button', { name: 'Cerrar mes' })));
+  expect(mockDatos.cerrarMes).not.toHaveBeenCalled();
+  expect(screen.queryByTestId('hoja')).toBeNull();
+  expect(
+    screen.getByText(`No se pudo cerrar ${nombreMes(MES)}. Para repartir falta el sueldo de Bruno. Se carga en Ajustes → Integrantes.`),
+  ).toBeTruthy();
+});
+
 test('las flechas cambian de mes y lo recuerdan en la ruta', async () => {
   await abrir();
   await tocar('button', 'Mes anterior');
@@ -292,7 +317,7 @@ test('Detalle filtra por quién pagó, por categoría y por texto, con el total 
   expect(filasDeGasto()).toHaveLength(1);
   await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'nada que ver'));
   expect(filasDeGasto()).toHaveLength(0);
-  expect(screen.getByText('No hay gastos con esos filtros.')).toBeTruthy();
+  expect(await screen.findByText('No hay gastos con esos filtros.')).toBeTruthy();
 });
 
 test('Detalle pide los gastos entre Desde y Hasta y avisa las fechas que no sirven', async () => {
@@ -324,6 +349,49 @@ test('Detalle muestra de a 20 y «Ver más» trae los siguientes; cada gasto abr
   expect(screen.queryByRole('button', { name: /^Ver \d+ más$/ })).toBeNull();
   await act(async () => fireEvent.press(filasDeGasto()[0]));
   expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/cargar', params: { id: expect.any(String) } });
+});
+
+test('Detalle anuncia cuántos hay cuando se deja de tipear (600 ms), en una región que no se desmonta', async () => {
+  mockParams = { vista: 'detalle' };
+  await render(<Analisis />);
+  await screen.findByLabelText('Buscar');
+  const region = screen.getByTestId('conteo-detalle');
+  expect(region.props.accessibilityLiveRegion).toBe('polite');
+  expect(within(region).getByText('2 gastos')).toBeTruthy();
+  await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'yerba'));
+  expect(filasDeGasto()).toHaveLength(1);
+  expect(within(region).getByText('2 gastos')).toBeTruthy();
+  expect(await within(region).findByText('1 gasto')).toBeTruthy();
+  await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'nada que ver'));
+  expect(await within(screen.getByTestId('conteo-detalle')).findByText('No hay gastos con esos filtros.')).toBeTruthy();
+  expect(screen.getByTestId('conteo-detalle')).toBe(region);
+});
+
+test('Detalle marca con candado los gastos de todos los meses cerrados del rango', async () => {
+  cierres[ANTERIOR] = { mes: ANTERIOR, total: 200_00, detalle: { filas: [], transferencias: [] }, cerrado_por: 'b', fecha: '2026-09-30T23:00:00+00:00' };
+  mockParams = { vista: 'detalle' };
+  await render(<Analisis />);
+  await screen.findByLabelText('Buscar');
+  await act(async () => fireEvent.changeText(screen.getByLabelText('Desde'), fechaLarga(`${ANTERIOR}-01`)));
+  await screen.findByText('3 gastos');
+  const etiquetas = filasDeGasto().map((f) => String(f.props.accessibilityLabel));
+  expect(etiquetas.filter((e) => e.endsWith(', mes cerrado'))).toHaveLength(1);
+});
+
+test('Detalle conserva los filtros del mes al ir a otra pestaña y volver; otro mes empieza limpio', async () => {
+  mockParams = { vista: 'detalle' };
+  await render(<Analisis />);
+  await screen.findByLabelText('Buscar');
+  await tocar('radio', 'Bruno');
+  await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'pan'));
+  await tocar('tab', 'Resumen');
+  await tocar('tab', 'Detalle');
+  expect(screen.getByLabelText('Buscar').props.value).toBe('pan');
+  expect(screen.getByRole('radio', { name: 'Bruno' }).props.accessibilityState).toMatchObject({ checked: true });
+  await tocar('button', 'Mes anterior');
+  await screen.findByLabelText('Buscar');
+  expect(screen.getByLabelText('Buscar').props.value).toBe('');
+  expect(screen.getByLabelText('Desde').props.value).toBe(fechaLarga(`${ANTERIOR}-01`));
 });
 
 test('el rango de Evolución pide 6 meses de una vez', async () => {

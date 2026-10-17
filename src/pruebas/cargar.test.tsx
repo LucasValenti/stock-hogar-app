@@ -18,6 +18,8 @@ jest.mock('expo-router', () => ({
   },
   useLocalSearchParams: () => mockParams,
 }));
+const mockNuevoId = jest.fn(() => '00000000-0000-4000-8000-000000000001');
+jest.mock('@/datos/id', () => ({ nuevoId: () => mockNuevoId() }));
 jest.mock('@/sesion/sesion', () => ({ useSesion: () => ({ yo: { id: 'ana', nombre: 'Ana' } }) }));
 
 const mockDatos = {
@@ -233,14 +235,27 @@ test('«Agregar producto» lista Stock y anotaciones, tilda con 1, respeta la un
   );
 });
 
+test('el id del alta se elige una sola vez, aunque la pantalla se dibuje muchas', async () => {
+  await abrir();
+  await escribir('Monto', '5');
+  await escribir('Monto', '50');
+  await escribir('Monto', '500');
+  expect(mockNuevoId).toHaveBeenCalledTimes(1);
+});
+
 test('sin conexión queda en la cola: «Guardado en el celu: se manda cuando vuelva la conexión»', async () => {
   mockDatos.guardarGasto.mockResolvedValue({ estado: 'en-cola', id: 'x' });
   await abrir();
   await escribir('Monto', '500');
   await elegirCategoria('Luz');
+  // Al guardar, la op ya está en la cola.
+  mockCola.pendientes.mockResolvedValue([{ id: 'o1', tipo: 'guardarGasto', duenio: 'ana', datos: {} }]);
   await tocar('button', 'Guardar gasto');
   expect(await screen.findByText(/^Guardado en el celu: se manda cuando vuelva la conexión/)).toBeTruthy();
   expect(mockRouter.back).not.toHaveBeenCalled();
+  // Lo dice una vez: la tarjeta de la cola no lo repite.
+  await act(async () => undefined);
+  expect(screen.queryByText('1 gasto guardado en el celu: se manda cuando vuelva la conexión.')).toBeNull();
   await tocar('button', 'Listo');
   expect(mockRouter.back).toHaveBeenCalled();
 });

@@ -2,6 +2,8 @@
 // elegido al abrir; vacías = sin límite). Las fechas piden a la base; el resto filtra lo traído con
 // filtrarGastos. La lista va de a PAGINA con «Ver N más», y al pie el total de lo filtrado (con
 // categoría, solo esa parte, como en Categorías). Cada gasto abre Cargar. Se actualiza en vivo.
+// Los filtros los guarda Análisis por mes: se conservan al ir a otra pestaña y volver (como la web vieja).
+// El conteo se anuncia cuando se deja de tipear (ESPERA_CONTEO_MS) en una región que no se desmonta.
 
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
@@ -22,14 +24,36 @@ import { EstadoVacio } from '../EstadoVacio';
 import { Hoja } from '../Hoja';
 import { Tarjeta } from '../Tarjeta';
 import { Texto } from '../Texto';
+import { useDemorado } from '../useDemorado';
 import { useEnVivo } from '../useEnVivo';
 import { FilaTotal } from './Barras';
 import { FilaGasto, mapaDeNombres } from './FilaGasto';
 
 export const PAGINA = 20;
+export const ESPERA_CONTEO_MS = 600;
 const MAL_ESCRITA = 'Escribí la fecha como dd/mm/aaaa.';
+const SIN_GASTOS = 'No hay gastos con esos filtros.';
 
-type Props = { mes: string; integrantes: Integrante[]; categorias: Categoria[]; cerrados: Set<string> };
+/** Lo que se eligió en Detalle para un mes; las fechas como se escribieron (dd/mm/aaaa). */
+export type FiltrosDetalle = { mes: string; texto: string; persona: string; categoria: string; desde: string; hasta: string };
+
+/** Al abrir un mes: sin filtros y del primero al último día. */
+export const filtrosDelMes = (mes: string): FiltrosDetalle => ({
+  mes,
+  texto: '',
+  persona: '',
+  categoria: '',
+  desde: fechaLarga(`${mes}-01`),
+  hasta: fechaLarga(ultimoDia(mes)),
+});
+
+type Props = {
+  filtros: FiltrosDetalle;
+  alCambiarFiltros(cambio: Partial<Omit<FiltrosDetalle, 'mes'>>): void;
+  integrantes: Integrante[];
+  categorias: Categoria[];
+  cerrados: Set<string>;
+};
 
 /** Texto de fecha → 'AAAA-MM-DD', null si quedó vacía (sin límite) o 'mal' si no se entiende. */
 function leerFecha(texto: string): string | null | 'mal' {
@@ -37,13 +61,9 @@ function leerFecha(texto: string): string | null | 'mal' {
   return fechaDesdeTexto(texto) ?? 'mal';
 }
 
-export function Detalle({ mes, integrantes, categorias, cerrados }: Props) {
+export function Detalle({ filtros: f, alCambiarFiltros: cambiar, integrantes, categorias, cerrados }: Props) {
   const tema = useTema();
-  const [texto, setTexto] = useState('');
-  const [persona, setPersona] = useState('');
-  const [categoria, setCategoria] = useState('');
-  const [desdeTexto, setDesdeTexto] = useState(() => fechaLarga(`${mes}-01`));
-  const [hastaTexto, setHastaTexto] = useState(() => fechaLarga(ultimoDia(mes)));
+  const { texto, persona, categoria, desde: desdeTexto, hasta: hastaTexto } = f;
   const [eligiendo, setEligiendo] = useState(false);
 
   // Un filtro que apunta a alguien que ya no figura o a una categoría borrada dejaría la lista vacía sin motivo.
@@ -59,14 +79,14 @@ export function Detalle({ mes, integrantes, categorias, cerrados }: Props) {
   return (
     <>
       <View accessibilityRole="search" style={{ gap: tema.espacio.m }}>
-        <Campo etiqueta="Buscar" valor={texto} alCambiar={setTexto} placeholder="Nota o producto" />
+        <Campo etiqueta="Buscar" valor={texto} alCambiar={(t) => cambiar({ texto: t })} placeholder="Nota o producto" />
 
         <View style={{ gap: tema.espacio.xs }}>
           <Texto variante="rotulo">Pagó</Texto>
           <View accessibilityRole="radiogroup" accessibilityLabel="Pagó" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tema.espacio.s }}>
-            <Chip texto="Todos" activo={personaVigente === ''} onPress={() => setPersona('')} />
+            <Chip texto="Todos" activo={personaVigente === ''} onPress={() => cambiar({ persona: '' })} />
             {integrantes.map((i) => (
-              <Chip key={i.id} texto={i.nombre} activo={personaVigente === i.id} onPress={() => setPersona(i.id)} />
+              <Chip key={i.id} texto={i.nombre} activo={personaVigente === i.id} onPress={() => cambiar({ persona: i.id })} />
             ))}
           </View>
         </View>
@@ -86,7 +106,7 @@ export function Detalle({ mes, integrantes, categorias, cerrados }: Props) {
             <Campo
               etiqueta="Desde"
               valor={desdeTexto}
-              alCambiar={setDesdeTexto}
+              alCambiar={(t) => cambiar({ desde: t })}
               placeholder="dd/mm/aaaa"
               ayuda="Vacía: sin límite."
               error={desde === 'mal' ? MAL_ESCRITA : errorRango}
@@ -97,7 +117,7 @@ export function Detalle({ mes, integrantes, categorias, cerrados }: Props) {
             <Campo
               etiqueta="Hasta"
               valor={hastaTexto}
-              alCambiar={setHastaTexto}
+              alCambiar={(t) => cambiar({ hasta: t })}
               placeholder="dd/mm/aaaa"
               ayuda="Vacía: sin límite."
               error={hasta === 'mal' ? MAL_ESCRITA : null}
@@ -127,7 +147,7 @@ export function Detalle({ mes, integrantes, categorias, cerrados }: Props) {
               texto={c.nombre}
               activo={categoriaVigente === c.id}
               onPress={() => {
-                setCategoria(c.id);
+                cambiar({ categoria: c.id });
                 setEligiendo(false);
               }}
             />
@@ -156,6 +176,9 @@ function Lista({ desde, hasta, filtros, nombreCategoria, integrantes, categorias
   // Otros filtros u otras fechas: se vuelve a la primera página.
   const huella = `${desde}|${hasta}|${filtros.texto}|${filtros.persona}|${filtros.categoria}`;
   useEffect(() => setCuantos(PAGINA), [huella]);
+  // El conteo de lo filtrado (null mientras no hay datos), demorado para no anunciar cada letra.
+  const lista = carga.estado === 'listo' ? filtrarGastos(carga.valor, filtros) : null;
+  const conteo = useDemorado(lista ? conteoDe(lista.length) : null, ESPERA_CONTEO_MS);
 
   if (carga.estado === 'cargando') {
     return (
@@ -174,33 +197,37 @@ function Lista({ desde, hasta, filtros, nombreCategoria, integrantes, categorias
     );
   }
 
-  const lista = filtrarGastos(carga.valor, filtros);
+  if (!lista) return null;
   const total = totalDe(lista, filtros.categoria);
   const visibles = lista.slice(0, cuantos);
   const quedan = lista.length - visibles.length;
   const nombres = { integrantes: mapaDeNombres(integrantes), categorias: mapaDeNombres(categorias) };
-  const conteo = lista.length === 1 ? '1 gasto' : `${lista.length} gastos`;
-
-  if (!lista.length) {
-    return (
-      <Tarjeta>
-        <EstadoVacio icono="lupa" titulo="No hay gastos con esos filtros." texto="Probá con otras fechas o sacá algún filtro." />
-      </Tarjeta>
-    );
-  }
 
   return (
     <>
-      <Texto variante="sub" accessibilityLiveRegion="polite">
-        {conteo}
-      </Texto>
-      <Tarjeta style={{ paddingVertical: 0, gap: 0 }}>
-        {visibles.map((g, i) => (
-          <FilaGasto key={g.id} gasto={g} nombres={nombres} separador={i > 0} cerrado={cerrados.has(mesDe(g.fecha))} />
-        ))}
-        <FilaTotal rotulo={nombreCategoria ? `Total en ${nombreCategoria}` : 'Total'} centavos={total} />
-      </Tarjeta>
+      {/* Siempre montada, para que el lector de pantalla anuncie cada cambio: el conteo cuando se deja de
+          tipear y el vacío al aparecer. */}
+      <View testID="conteo-detalle" accessibilityLiveRegion="polite">
+        {lista.length ? (
+          // Volviendo de «no hay», el número va ya; si no, el demorado.
+          <Texto variante="sub">{conteo && conteo !== SIN_GASTOS ? conteo : conteoDe(lista.length)}</Texto>
+        ) : (
+          <Tarjeta>
+            <EstadoVacio icono="lupa" titulo={SIN_GASTOS} texto="Probá con otras fechas o sacá algún filtro." />
+          </Tarjeta>
+        )}
+      </View>
+      {lista.length ? (
+        <Tarjeta style={{ paddingVertical: 0, gap: 0 }}>
+          {visibles.map((g, i) => (
+            <FilaGasto key={g.id} gasto={g} nombres={nombres} separador={i > 0} cerrado={cerrados.has(mesDe(g.fecha))} />
+          ))}
+          <FilaTotal rotulo={nombreCategoria ? `Total en ${nombreCategoria}` : 'Total'} centavos={total} />
+        </Tarjeta>
+      ) : null}
       {quedan > 0 ? <Boton texto={`Ver ${Math.min(PAGINA, quedan)} más`} variante="borde" onPress={() => setCuantos((c) => c + PAGINA)} /> : null}
     </>
   );
 }
+
+const conteoDe = (n: number) => (n === 1 ? '1 gasto' : n ? `${n} gastos` : SIN_GASTOS);

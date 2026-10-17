@@ -11,8 +11,9 @@ import { datos } from '@/datos';
 import type { GastoConItems } from '@/datos/tipos';
 import { formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
-import { nombreMes } from '@/logica/meses';
+import { mesActual, nombreMes } from '@/logica/meses';
 import { repartoDelMes } from '@/logica/reparto';
+import { enMayuscula } from '@/logica/texto';
 import type { Categoria, Cierre, Integrante } from '@/logica/tipos';
 import { useTema } from '@/tema/tema';
 
@@ -26,9 +27,8 @@ import { Texto } from '../Texto';
 import { Confirmar } from './Confirmar';
 import { FilaGasto, mapaDeNombres } from './FilaGasto';
 import { Registro } from './Registro';
-import { Reparto, Transferencias } from './Reparto';
+import { motivoSinReparto, Reparto, Transferencias } from './Reparto';
 
-const enMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 const esDesactualizado = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? '').includes('CIERRE_DESACTUALIZADO');
 
 type Props = {
@@ -55,6 +55,8 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
   const reparto = repartoDelMes(integrantes, mes, gastos);
   const nombres = { integrantes: mapaDeNombres(integrantes), categorias: mapaDeNombres(categorias) };
   const cuantos = gastos.length === 1 ? '1 gasto' : `${gastos.length} gastos`;
+  // Un mes que todavía no llegó no se cierra.
+  const sePuedeCerrar = reparto.ok && mes <= mesActual();
 
   function abrir() {
     setErrorHoja(null);
@@ -70,7 +72,12 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
         await datos.reabrirMes(mes);
         setAviso({ bueno: true, texto: `${enMayuscula(nombre)} está abierto otra vez.` });
       } else {
-        if (!reparto.ok) return;
+        if (!reparto.ok) {
+          // Cambió algo con la hoja abierta (un sueldo, un pagador): no se cierra y se dice por qué.
+          setConfirmando(false);
+          setAviso({ bueno: false, texto: `No se pudo cerrar ${nombre}. ${motivoSinReparto(reparto, integrantes.length > 0)}` });
+          return;
+        }
         const { total, filas, transferencias } = reparto;
         await datos.cerrarMes(mes, { total, filas, transferencias }, gastos, integrantes);
         setAviso({ bueno: true, texto: `${enMayuscula(nombre)} quedó cerrado.` });
@@ -117,7 +124,7 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
           </Tarjeta>
           <Reparto reparto={reparto} integrantes={integrantes} detallado />
           {reparto.ok && reparto.filas.length ? <Transferencias transferencias={reparto.transferencias} filas={reparto.filas} /> : null}
-          {reparto.ok ? (
+          {sePuedeCerrar ? (
             <View style={{ gap: tema.espacio.xs }}>
               <Boton texto="Cerrar mes" icono="candado" onPress={abrir} />
               <Texto variante="sub" centrado>

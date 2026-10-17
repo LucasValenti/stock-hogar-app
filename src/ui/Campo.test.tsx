@@ -26,6 +26,13 @@ describe('Campo', () => {
     expect(plano(screen.getByLabelText('Monto').props.style).borderColor).toBe(tokens.color.claro.falta);
   });
 
+  test('el error se anuncia una sola vez: el campo no lo repite como pista; la ayuda sí va como pista', async () => {
+    await render(<Campo etiqueta="Monto" valor="x" alCambiar={jest.fn()} ayuda="Opcional" error="Ingresá un monto." />);
+    expect(screen.getByLabelText('Monto').props.accessibilityHint).toBeUndefined();
+    await render(<Campo etiqueta="Nota" valor="" alCambiar={jest.fn()} ayuda="Opcional" />);
+    expect(screen.getByLabelText('Nota').props.accessibilityHint).toBe('Opcional');
+  });
+
   test('bloqueado no se edita y lo dice', async () => {
     await render(<Campo etiqueta="Monto" valor="500" alCambiar={jest.fn()} bloqueado />);
     const entrada = screen.getByLabelText('Monto');

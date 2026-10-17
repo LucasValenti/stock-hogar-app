@@ -1,5 +1,5 @@
 // Campo de texto (DESIGN.md, Campo): píldora con borde sobre `superficie`, alto ≥ `medida.tactil`,
-// etiqueta arriba y ayuda (o el error, que se anuncia) abajo. `grande` es el monto de Cargar.
+// etiqueta arriba y ayuda (o el error, que se anuncia una vez como alerta) abajo. `grande` es el monto de Cargar.
 
 import { useId } from 'react';
 import { TextInput, View, type KeyboardTypeOptions } from 'react-native';
@@ -28,7 +28,6 @@ export function Campo({ etiqueta, valor, alCambiar, ayuda, error, bloqueado = fa
   const tema = useTema();
   const { conFoco, alFoco } = useFoco();
   const id = useId();
-  const pie = error || ayuda;
   return (
     <View style={{ gap: tema.espacio.xs }}>
       <Texto variante="rotulo" nativeID={`${id}-etiqueta`}>
@@ -38,7 +37,8 @@ export function Campo({ etiqueta, valor, alCambiar, ayuda, error, bloqueado = fa
         allowFontScaling
         accessibilityLabel={etiqueta}
         aria-labelledby={`${id}-etiqueta`}
-        accessibilityHint={pie || undefined}
+        // La ayuda va como pista; el error no, que ya lo anuncia la alerta de abajo.
+        accessibilityHint={error ? undefined : ayuda}
         accessibilityState={{ disabled: bloqueado }}
         editable={!bloqueado}
         value={valor}

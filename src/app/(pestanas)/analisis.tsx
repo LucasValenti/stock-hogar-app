@@ -7,17 +7,18 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 
 import { datos } from '@/datos';
-import { esErrorDeRed } from '@/datos/cola';
+import { esCorte } from '@/datos/cola';
 import type { GastoConItems } from '@/datos/tipos';
 import { porCategoria, totalesPorMes } from '@/logica/analisis';
 import { formatearPorcentaje } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, mesAnterior, mesDe, mesSiguiente, nombreMes, rangoMes } from '@/logica/meses';
+import { enMayuscula } from '@/logica/texto';
 import type { Categoria, Cierre, Integrante } from '@/logica/tipos';
 import { useTema } from '@/tema/tema';
 import { Barras } from '@/ui/analisis/Barras';
 import { CambioMes, type Periodo } from '@/ui/analisis/CambioMes';
-import { Detalle } from '@/ui/analisis/Detalle';
+import { Detalle, filtrosDelMes, type FiltrosDetalle } from '@/ui/analisis/Detalle';
 import { Resumen } from '@/ui/analisis/Resumen';
 import { Aviso } from '@/ui/Aviso';
 import { Esqueleto } from '@/ui/Esqueleto';
@@ -35,23 +36,33 @@ const mesDeRuta = (m: unknown): string => (typeof m === 'string' && /^\d{4}-(0[1
 
 const MESES_EVOLUCION = 6;
 
-type DelPeriodo = { integrantes: Integrante[]; categorias: Categoria[]; gastos: GastoConItems[]; cierre: Cierre | null };
-
-const enMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
-const esCorte = (e: unknown) =>
-  esErrorDeRed(e) || e instanceof TypeError || (e as { code?: string } | null)?.code === 'SIN_CONEXION';
+type DelPeriodo = {
+  integrantes: Integrante[];
+  categorias: Categoria[];
+  gastos: GastoConItems[];
+  cierre: Cierre | null;
+  /** Todos los meses cerrados: Detalle puede abarcar varios. */
+  cerrados: Set<string>;
+};
 
 function pedirPeriodo(mes: string): Promise<DelPeriodo> {
   const desde = rangoMes(totalesPorMes([], mes, MESES_EVOLUCION)[0].mes).desde;
-  return Promise.all([datos.integrantes(), datos.categorias(), datos.gastosEntre(desde, rangoMes(mes).hastaExcl), datos.cierre(mes)]).then(
-    ([integrantes, categorias, gastos, cierre]) => ({ integrantes, categorias, gastos, cierre }),
-  );
+  return Promise.all([
+    datos.integrantes(),
+    datos.categorias(),
+    datos.gastosEntre(desde, rangoMes(mes).hastaExcl),
+    datos.cierre(mes),
+    datos.mesesCerrados(),
+  ]).then(([integrantes, categorias, gastos, cierre, cerrados]) => ({ integrantes, categorias, gastos, cierre, cerrados }));
 }
 
 export default function Analisis() {
   const { vista: vistaPedida, mes: mesPedido } = useLocalSearchParams<{ vista?: string; mes?: string }>();
   const [vista, setVista] = useState<Vista>(vistaDe(vistaPedida));
   const [mes, setMes] = useState(mesDeRuta(mesPedido));
+  // Los filtros de Detalle viven acá para que no se pierdan al cambiar de pestaña; otro mes empieza limpio.
+  const [filtros, setFiltros] = useState<FiltrosDetalle>(() => filtrosDelMes(mesDeRuta(mesPedido)));
+  const filtrosVigentes = filtros.mes === mes ? filtros : filtrosDelMes(mes);
 
   // Un enlace (Inicio) puede pedir otra pestaña u otro mes con la pantalla ya abierta.
   useEffect(() => setVista(vistaDe(vistaPedida)), [vistaPedida]);
@@ -113,10 +124,11 @@ export default function Analisis() {
       ) : (
         <Detalle
           key={mes}
-          mes={mes}
+          filtros={filtrosVigentes}
+          alCambiarFiltros={(cambio) => setFiltros((f) => ({ ...(f.mes === mes ? f : filtrosDelMes(mes)), ...cambio }))}
           integrantes={carga.valor.integrantes}
           categorias={carga.valor.categorias}
-          cerrados={carga.valor.cierre ? new Set([mes]) : new Set()}
+          cerrados={carga.valor.cerrados}
         />
       )}
     </Pantalla>

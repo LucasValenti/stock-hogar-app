@@ -6,14 +6,13 @@ import { View } from 'react-native';
 
 import { formatear, formatearPorcentaje } from '@/logica/dinero';
 import type { ResultadoReparto } from '@/logica/reparto';
+import { enMayuscula } from '@/logica/texto';
 import type { FilaReparto, Integrante, Transferencia } from '@/logica/tipos';
 import { useTema } from '@/tema/tema';
 
 import { Monto } from '../Monto';
 import { Tarjeta } from '../Tarjeta';
 import { Texto } from '../Texto';
-
-const enMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** Por qué no se puede repartir, con dónde se arregla. */
 export function motivoSinReparto(reparto: Extract<ResultadoReparto, { ok: false }>, hayIntegrantes: boolean): string {

@@ -64,6 +64,10 @@ export function esErrorDeRed(e: unknown): boolean {
   return typeof message === 'string' && MENSAJE_DE_RED.test(message);
 }
 
+/** Para la pantalla: no hubo red (corte de fetch o el SIN_CONEXION de la capa de datos), no un error de la base. */
+export const esCorte = (e: unknown): boolean =>
+  esErrorDeRed(e) || e instanceof TypeError || (e as { code?: string } | null)?.code === 'SIN_CONEXION';
+
 /**
  * Un rechazo que no cambia al reintentar: las excepciones de negocio de la RPC (P0001: MES_CERRADO,
  * SIN_ITEMS, GASTO_INEXISTENTE…), integridad (23xxx) y datos inválidos (22xxx). Todo lo demás

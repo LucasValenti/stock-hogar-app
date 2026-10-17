@@ -6,13 +6,14 @@ import { router } from 'expo-router';
 import { View } from 'react-native';
 
 import { datos } from '@/datos';
-import { esErrorDeRed } from '@/datos/cola';
+import { esCorte } from '@/datos/cola';
 import type { GastoConItems } from '@/datos/tipos';
 import { formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, nombreMes, rangoMes } from '@/logica/meses';
 import { repartoDelMes } from '@/logica/reparto';
 import { pendientesConAnotaciones, textoPendientes } from '@/logica/stock';
+import { enMayuscula } from '@/logica/texto';
 import type { Anotacion, Categoria, Integrante, Producto } from '@/logica/tipos';
 import { useSesion } from '@/sesion/sesion';
 import { useTema } from '@/tema/tema';
@@ -40,12 +41,8 @@ type Casa = {
 
 const ULTIMOS = 5;
 
-const enMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 /** «octubre de 2026» → «octubre». */
 const soloMes = (mes: string) => nombreMes(mes).split(' ')[0];
-
-const esCorte = (e: unknown) =>
-  esErrorDeRed(e) || e instanceof TypeError || (e as { code?: string } | null)?.code === 'SIN_CONEXION';
 
 function pedirCasa(mes: string): Promise<Casa> {
   const { desde, hastaExcl } = rangoMes(mes);

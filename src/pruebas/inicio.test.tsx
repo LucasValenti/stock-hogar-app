@@ -211,6 +211,22 @@ test('Ajustar pide la cantidad según la unidad y la deja como dijo', async () =
   expect(screen.getByText('¿Todavía hay Harina?')).toBeTruthy();
 });
 
+test('Ajustar calcula la diferencia con el stock de ahora, no con el que había al abrir la hoja', async () => {
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  mockDatos.productos.mockResolvedValue([yerba()]);
+  await render(<Inicio />);
+  await screen.findByText('¿Todavía hay Yerba?');
+  await act(async () => fireEvent.press(tarjetaHay().getByRole('button', { name: 'Ajustar' })));
+  // Mientras tanto alguien cargó 2 más: hay 5.
+  mockDatos.productos.mockResolvedValue([producto('yerba', 'Yerba', 5, 40)]);
+  await act(async () => avisarCambio());
+  await screen.findByText('Hace 40 días que no cambia. En Stock: 5.');
+  const hoja = within(screen.getByTestId('hoja'));
+  await act(async () => fireEvent.changeText(hoja.getByLabelText('Cantidad'), '1'));
+  await act(async () => fireEvent.press(hoja.getByRole('button', { name: 'Guardar cantidad' })));
+  expect(mockDatos.ajustarStock).toHaveBeenCalledWith('yerba', -4);
+});
+
 test('Ajustar a la misma cantidad cuenta como «Hay»', async () => {
   mockDatos.gastosEntre.mockResolvedValue([]);
   mockDatos.productos.mockResolvedValue([yerba()]);

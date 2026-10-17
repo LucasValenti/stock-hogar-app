@@ -84,7 +84,9 @@ export function TodaviaHay({ productos, categorias, sinLleno = false }: Props) {
         alCerrar={() => setAjustando(null)}
         alGuardar={(prod, valor) => {
           setAjustando(null);
-          const delta = redondear(valor - Number(prod.stock));
+          // Contra el stock de ahora: si alguien lo cambió con la hoja abierta, queda lo que se dijo.
+          const actual = productos.find((x) => x.id === prod.id) ?? prod;
+          const delta = redondear(valor - Number(actual.stock));
           // La misma cantidad que figuraba: es un «Hay».
           responder(prod, () => (delta === 0 ? datos.confirmarHay(prod.id) : datos.ajustarStock(prod.id, delta)));
         }}

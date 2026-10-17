@@ -1,4 +1,4 @@
-import { conCola, crearCola, ejecutorDe, esErrorDeRed, esRechazoDefinitivo, type Almacen, type Op, type OpNueva } from './cola';
+import { conCola, crearCola, ejecutorDe, esCorte, esErrorDeRed, esRechazoDefinitivo, type Almacen, type Op, type OpNueva } from './cola';
 import { crearDatosEnMemoria } from './memoria';
 import type { Datos } from './tipos';
 
@@ -492,5 +492,15 @@ describe('conCola', () => {
     expect(await cola.pendientes()).toEqual([]);
     expect((await base.producto('ejemplo-yerba'))?.stock).toBe(3);
     expect((await base.gasto(r.id)).items).toHaveLength(1);
+  });
+});
+
+describe('esCorte', () => {
+  test('es corte de red, un TypeError de fetch o el SIN_CONEXION de la capa de datos', () => {
+    expect(esCorte(new TypeError('Failed to fetch'))).toBe(true);
+    expect(esCorte({ message: 'TypeError: Failed to fetch', code: '' })).toBe(true);
+    expect(esCorte(Object.assign(new Error('Sin conexión'), { code: 'SIN_CONEXION' }))).toBe(true);
+    expect(esCorte({ message: 'permiso denegado', code: '42501' })).toBe(false);
+    expect(esCorte(null)).toBe(false);
   });
 });

@@ -145,10 +145,10 @@ function Formulario({ base }: { base: Base }) {
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [enCola, setEnCola] = useState(false);
-  const [refresco, setRefresco] = useState(0);
   const [hoja, setHoja] = useState<'categoria' | 'productos' | 'borrar' | null>(null);
   // El id del alta se elige una vez: si se reintenta (error o cola), la base no lo duplica.
-  const idNuevo = useRef(g ? null : nuevoId());
+  const idNuevo = useRef<string | null>(null);
+  if (!g && idNuevo.current === null) idNuevo.current = nuevoId();
 
   const bloqueado = cerrado || enCola;
   const fechaIso = fechaDesdeTexto(fecha);
@@ -211,7 +211,6 @@ function Formulario({ base }: { base: Base }) {
       const res = await datos.guardarGasto(gasto, []);
       if (res.estado === 'en-cola') {
         setEnCola(true);
-        setRefresco((n) => n + 1);
       } else {
         volver();
       }
@@ -232,7 +231,8 @@ function Formulario({ base }: { base: Base }) {
   return (
     <Pantalla>
       <Encabezado titulo={g ? 'Editar gasto' : 'Cargar gasto'} alVolver={volver} />
-      <AvisoCola refresco={refresco} />
+      {/* En cola, la tarjeta de abajo ya lo dice: el aviso de la cola no lo repite. */}
+      {enCola ? null : <AvisoCola />}
       {cerrado ? <AvisoCerrado /> : null}
 
       <Campo

@@ -6,6 +6,7 @@
 import { Pressable, View } from 'react-native';
 
 import { nombreMes } from '@/logica/meses';
+import { enMayuscula } from '@/logica/texto';
 import { useTema } from '@/tema/tema';
 
 import { anilloDeFoco, useFoco } from '../estilos';
@@ -13,8 +14,6 @@ import { Icono, type NombreIcono } from '../Icono';
 import { Texto } from '../Texto';
 
 export type Periodo = 'curso' | 'cerrado' | 'abierto';
-
-const enMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 type Props = { mes: string; periodo: Periodo | null; alAnterior(): void; alSiguiente(): void };
 
