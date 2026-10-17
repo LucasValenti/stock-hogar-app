@@ -5,10 +5,12 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { AppState, Platform } from 'react-native';
 
 import { obtenerCliente } from './cliente';
 import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Cola, type DatosConCola, type Op } from './cola';
 import { crearDatosEnMemoria, semillaDeEjemplo } from './memoria';
+import { vaciarAlVolver } from './reintentos';
 import { crearDatosSupabase } from './supabase';
 import type { Datos } from './tipos';
 
@@ -58,10 +60,14 @@ function iniciar(): { datos: DatosConCola; cola: Cola } {
     alDescartar: (op, error) => oyentesDeDescarte.forEach((f) => f(op, error)),
   });
   capa = { datos: conCola(base, cola), cola };
-  // NetInfo anda en nativo y en la web (ahí escucha los eventos online/offline del navegador).
-  // Avisa también al suscribirse: si quedó algo de la sesión anterior, sale ahora.
-  NetInfo.addEventListener((estado) => {
-    if (estado.isConnected !== false) cola.vaciar().catch(() => undefined);
+  // Reintenta al volver la red, al volver la app al frente y (web) con online/visibilitychange.
+  const enLaWeb = Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined';
+  vaciarAlVolver(() => void cola.vaciar().catch(() => undefined), {
+    web: Platform.OS === 'web',
+    netInfo: NetInfo,
+    appState: AppState,
+    ventana: enLaWeb ? window : undefined,
+    documento: enLaWeb ? document : undefined,
   });
   return capa;
 }
