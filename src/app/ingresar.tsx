@@ -8,8 +8,10 @@ import { View } from 'react-native';
 import { mensajeError } from '@/logica/errores';
 import { pedirCodigo, verificarCodigo } from '@/sesion/acceso';
 import { codigoValido, emailValido, mensajeDeCodigo, normalizarCodigo, normalizarEmail } from '@/sesion/codigo';
-import { Boton, Campo, Pagina, Texto, Titulo } from '@/sesion/ui';
+import { Campo, Pagina } from '@/sesion/ui';
 import { useTema } from '@/tema/tema';
+import { Boton } from '@/ui/Boton';
+import { Texto } from '@/ui/Texto';
 
 export default function Ingresar() {
   const tema = useTema();
@@ -69,7 +71,7 @@ export default function Ingresar() {
   if (paso === 'codigo') {
     return (
       <Pagina key="codigo">
-        <Titulo>Ingresá el código</Titulo>
+        <Texto variante="tituloTarjeta">Ingresá el código</Texto>
         <Texto>{`Te mandamos un código a ${enviadoA}. Puede tardar un minuto; revisá también spam.`}</Texto>
         <Campo
           etiqueta="Código"
@@ -87,7 +89,7 @@ export default function Ingresar() {
         />
         <View style={{ gap: tema.espacio.s }}>
           <Boton texto="Entrar" onPress={entrar} ocupado={enviando} />
-          <Boton texto="Usar otro email" onPress={otroEmail} variante="secundario" />
+          <Boton texto="Usar otro email" onPress={otroEmail} variante="borde" />
         </View>
       </Pagina>
     );
@@ -95,7 +97,7 @@ export default function Ingresar() {
 
   return (
     <Pagina key="email">
-      <Titulo>Stock del hogar</Titulo>
+      <Texto variante="tituloTarjeta">Stock del hogar</Texto>
       <Texto>Ingresá con tu email: te mandamos un código para entrar.</Texto>
       <Campo
         etiqueta="Tu email"

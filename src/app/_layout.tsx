@@ -1,7 +1,8 @@
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { useColorScheme } from 'react-native';
 
 import { PantallaAjena, PantallaCarga, PantallaError } from '@/sesion/pantallas';
 import { SesionProvider, useSesion } from '@/sesion/sesion';
@@ -40,16 +41,31 @@ function Raiz() {
           <Stack.Screen name="ingresar" />
         </Stack.Protected>
         <Stack.Protected guard={estado === 'lista'}>
-          <Stack.Screen name="index" />
+          <Stack.Screen name="(pestanas)" />
+          <Stack.Screen name="cargar" options={{ presentation: 'modal' }} />
         </Stack.Protected>
       </Stack>
     );
   }
 
+  // La navegación pinta su propio fondo (detrás de las pantallas y de la barra): que sea el del tema.
+  const base = useColorScheme() === 'dark' ? DarkTheme : DefaultTheme;
+  const temaNavegacion = {
+    ...base,
+    colors: {
+      ...base.colors,
+      background: tema.color.fondo,
+      card: tema.color.superficie,
+      text: tema.color.texto,
+      border: tema.color.borde,
+      primary: tema.color.acento,
+    },
+  };
+
   return (
-    <>
+    <ThemeProvider value={temaNavegacion}>
       <StatusBar style="auto" />
       {contenido}
-    </>
+    </ThemeProvider>
   );
 }

@@ -7,7 +7,10 @@ import { mensajeError } from '@/logica/errores';
 import { useTema } from '@/tema/tema';
 
 import { useSesion } from './sesion';
-import { Boton, Pagina, Texto, Titulo } from './ui';
+import { Boton } from '@/ui/Boton';
+import { Texto } from '@/ui/Texto';
+
+import { Alerta, Pagina } from './ui';
 
 /** Mientras cargan las fuentes y la sesión: nunca una pantalla en blanco. */
 export function PantallaCarga() {
@@ -23,8 +26,8 @@ export function PantallaCarga() {
 export function PantallaError({ error, onReintentar }: { error: unknown; onReintentar: () => void }) {
   return (
     <Pagina>
-      <Titulo>No se pudo abrir la app</Titulo>
-      <Texto alerta>{mensajeError(error)}</Texto>
+      <Texto variante="tituloTarjeta">No se pudo abrir la app</Texto>
+      <Alerta>{mensajeError(error)}</Alerta>
       <Boton texto="Probar de nuevo" onPress={onReintentar} />
     </Pagina>
   );
@@ -50,9 +53,9 @@ export function PantallaAjena() {
 
   return (
     <Pagina>
-      <Titulo>Esta cuenta no pertenece a la casa</Titulo>
+      <Texto variante="tituloTarjeta">Esta cuenta no pertenece a la casa</Texto>
       <Texto>{`Pedile a alguien de la casa que agregue ${email ?? 'tu email'} en Ajustes → Integrantes.`}</Texto>
-      {error ? <Texto alerta>{error}</Texto> : null}
+      {error ? <Alerta>{error}</Alerta> : null}
       <Boton texto="Cerrar sesión" onPress={cerrar} ocupado={saliendo} />
     </Pagina>
   );
