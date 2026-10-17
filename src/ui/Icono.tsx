@@ -20,6 +20,7 @@ const TRAZOS = {
   atras: '<path d="m14 6-6 6 6 6"/>',
   abajo: '<path d="m6 9 6 6 6-6"/>',
   lupa: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>',
+  adelante: '<path d="m10 6 6 6-6 6"/>',
 } as const;
 
 export type NombreIcono = keyof typeof TRAZOS;

@@ -1,71 +1,44 @@
-// Inicio: el total del mes y cómo viene el reparto, con los estados de la maqueta «Elegida»
+// Inicio: el total del mes, lo que falta (con el paso a Stock › Pendientes), cómo viene el reparto,
+// «¿Todavía hay?» de a un producto y los últimos gastos, con los estados de la maqueta «Elegida»
 // (cargando, sin conexión y mes sin gastos). Se actualiza solo cuando cambia algo en la casa.
 
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { datos } from '@/datos';
 import { esErrorDeRed } from '@/datos/cola';
-import { crearRecarga, type Recarga } from '@/datos/recarga';
 import type { GastoConItems } from '@/datos/tipos';
-import { formatear, formatearPorcentaje } from '@/logica/dinero';
+import { formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, nombreMes, rangoMes } from '@/logica/meses';
-import { repartoDelMes, type ResultadoReparto } from '@/logica/reparto';
-import type { FilaReparto, Integrante } from '@/logica/tipos';
+import { repartoDelMes } from '@/logica/reparto';
+import { pendientesConAnotaciones, textoPendientes } from '@/logica/stock';
+import type { Anotacion, Categoria, Integrante, Producto } from '@/logica/tipos';
 import { useSesion } from '@/sesion/sesion';
 import { useTema } from '@/tema/tema';
+import { FilaGasto, mapaDeNombres } from '@/ui/analisis/FilaGasto';
+import { Reparto } from '@/ui/analisis/Reparto';
 import { Aviso } from '@/ui/Aviso';
 import { AvisoCola } from '@/ui/AvisoCola';
+import { Boton } from '@/ui/Boton';
 import { Esqueleto } from '@/ui/Esqueleto';
+import { Icono } from '@/ui/Icono';
 import { Monto } from '@/ui/Monto';
 import { Pantalla } from '@/ui/Pantalla';
 import { Tarjeta } from '@/ui/Tarjeta';
 import { Texto } from '@/ui/Texto';
+import { TodaviaHay } from '@/ui/TodaviaHay';
+import { useEnVivo } from '@/ui/useEnVivo';
 
-type Carga =
-  | { estado: 'cargando' }
-  | { estado: 'error'; error: unknown }
-  | { estado: 'listo'; integrantes: Integrante[]; gastos: GastoConItems[] };
+type Casa = {
+  integrantes: Integrante[];
+  gastos: GastoConItems[];
+  categorias: Categoria[];
+  productos: Producto[];
+  anotaciones: Anotacion[];
+};
 
-/**
- * Los gastos e integrantes del mes, y otra vez cuando alguien cambia algo: una sola vez por tanda
- * de avisos, y sin que una respuesta vieja pise a una nueva (ver datos/recarga.ts).
- */
-function useDatosDelMes(mes: string) {
-  const [carga, setCarga] = useState<Carga>({ estado: 'cargando' });
-  const recarga = useRef<Recarga | null>(null);
-
-  useEffect(() => {
-    const { desde, hastaExcl } = rangoMes(mes);
-    const r = crearRecarga({
-      pedir: () => Promise.all([datos.integrantes(), datos.gastosEntre(desde, hastaExcl)]),
-      alTener: ([integrantes, gastos]) => setCarga({ estado: 'listo', integrantes, gastos }),
-      // Si ya había datos en pantalla, una actualización fallida no los borra.
-      alFallar: (error) => setCarga((previa) => (previa.estado === 'listo' ? previa : { estado: 'error', error })),
-    });
-    recarga.current = r;
-    r.ahora();
-    let dejar: (() => void) | undefined;
-    try {
-      dejar = datos.escucharCambios(() => r.pronto());
-    } catch {
-      // Sin configuración: el error ya llega por el pedido.
-    }
-    return () => {
-      r.cancelar();
-      dejar?.();
-    };
-  }, [mes]);
-
-  const reintentar = useCallback(() => {
-    setCarga({ estado: 'cargando' });
-    recarga.current?.ahora();
-  }, []);
-
-  return { carga, reintentar };
-}
+const ULTIMOS = 5;
 
 const enMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 /** «octubre de 2026» → «octubre». */
@@ -74,10 +47,21 @@ const soloMes = (mes: string) => nombreMes(mes).split(' ')[0];
 const esCorte = (e: unknown) =>
   esErrorDeRed(e) || e instanceof TypeError || (e as { code?: string } | null)?.code === 'SIN_CONEXION';
 
+function pedirCasa(mes: string): Promise<Casa> {
+  const { desde, hastaExcl } = rangoMes(mes);
+  return Promise.all([
+    datos.integrantes(),
+    datos.gastosEntre(desde, hastaExcl),
+    datos.categorias(),
+    datos.productos(),
+    datos.anotaciones(),
+  ]).then(([integrantes, gastos, categorias, productos, anotaciones]) => ({ integrantes, gastos, categorias, productos, anotaciones }));
+}
+
 export default function Inicio() {
   const { yo } = useSesion();
   const mes = mesActual();
-  const { carga, reintentar } = useDatosDelMes(mes);
+  const { carga, reintentar } = useEnVivo(() => pedirCasa(mes), mes);
   const nombre = soloMes(mes);
 
   return (
@@ -94,16 +78,18 @@ export default function Inicio() {
           accion={{ texto: 'Reintentar', onPress: reintentar }}
         />
       ) : (
-        <DelMes mes={mes} nombre={nombre} integrantes={carga.integrantes} gastos={carga.gastos} />
+        <DelMes mes={mes} nombre={nombre} casa={carga.valor} />
       )}
     </Pantalla>
   );
 }
 
-function DelMes({ mes, nombre, integrantes, gastos }: { mes: string; nombre: string; integrantes: Integrante[]; gastos: GastoConItems[] }) {
+function DelMes({ mes, nombre, casa }: { mes: string; nombre: string; casa: Casa }) {
+  const { integrantes, gastos, categorias, productos, anotaciones } = casa;
   const reparto = repartoDelMes(integrantes, mes, gastos);
   const cuantos = gastos.length;
   const detalle = cuantos === 0 ? 'Todavía no cargó nadie' : cuantos === 1 ? '1 gasto' : `${cuantos} gastos`;
+  const faltan = pendientesConAnotaciones(productos, anotaciones).map((x) => (x.tipo === 'producto' ? x.producto.nombre : x.anotacion.texto));
 
   return (
     <>
@@ -112,6 +98,7 @@ function DelMes({ mes, nombre, integrantes, gastos }: { mes: string; nombre: str
         <Monto centavos={reparto.total} />
         <Texto variante="sub">{detalle}</Texto>
       </Tarjeta>
+      {faltan.length ? <AvisoPendientes texto={textoPendientes(faltan)} /> : null}
       {cuantos === 0 ? (
         <Aviso
           icono="nota"
@@ -122,102 +109,46 @@ function DelMes({ mes, nombre, integrantes, gastos }: { mes: string; nombre: str
       ) : (
         <Reparto reparto={reparto} integrantes={integrantes} />
       )}
+      <TodaviaHay productos={productos} categorias={categorias} sinLleno={cuantos === 0} />
+      {cuantos ? <UltimosGastos gastos={gastos.slice(0, ULTIMOS)} integrantes={integrantes} categorias={categorias} /> : null}
     </>
   );
 }
 
-function Reparto({ reparto, integrantes }: { reparto: ResultadoReparto; integrantes: Integrante[] }) {
+/** «Faltan yerba y leche.» con el paso a Stock › Pendientes. Tarjeta plana: es apoyo, no lleva imán. */
+function AvisoPendientes({ texto }: { texto: string }) {
   const tema = useTema();
-  let contenido;
-  if (reparto.ok) {
-    contenido = reparto.filas.map((f, i) => <FilaDeReparto key={f.id} fila={f} primera={i === 0} />);
-  } else {
-    const motivo =
-      reparto.error === 'sueldo'
-        ? `Para repartir falta el sueldo de ${reparto.sinSueldo.join(', ')}. Se carga en Ajustes → Integrantes.`
-        : reparto.error === 'pagador'
-          ? 'Hay un gasto de alguien que ya no está en la casa: revisalo para poder repartir.'
-          : integrantes.length
-            ? 'Este mes no hay integrantes para repartir.'
-            : 'Todavía no hay integrantes en la casa.';
-    contenido = (
-      <View style={{ paddingVertical: tema.espacio.m }}>
-        <Texto>{motivo}</Texto>
+  return (
+    <Tarjeta style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: tema.espacio.m }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: tema.espacio.s, flexGrow: 1, flexShrink: 1, flexBasis: tema.medida.fila * 2 }}>
+        <Icono nombre="falta" tamano={tema.medida.icono} color={tema.color.falta} />
+        <Texto variante="fuerte" style={{ flexShrink: 1 }}>
+          {texto}
+        </Texto>
       </View>
-    );
-  }
+      <Boton texto="Ver pendientes" variante="borde" onPress={() => router.push({ pathname: '/stock', params: { vista: 'pendientes' } })} />
+    </Tarjeta>
+  );
+}
+
+type PropsUltimos = { gastos: GastoConItems[]; integrantes: Integrante[]; categorias: Categoria[] };
+
+function UltimosGastos({ gastos, integrantes, categorias }: PropsUltimos) {
+  const nombres = { integrantes: mapaDeNombres(integrantes), categorias: mapaDeNombres(categorias) };
   return (
     <>
       <Texto variante="seccion" accessibilityRole="header" aria-level={2}>
-        Cómo viene el reparto
+        Últimos gastos
       </Texto>
-      <Tarjeta style={{ paddingVertical: 0, gap: 0 }}>{contenido}</Tarjeta>
+      <Tarjeta style={{ paddingVertical: 0, gap: 0 }}>
+        {gastos.map((g, i) => (
+          <FilaGasto key={g.id} gasto={g} nombres={nombres} separador={i > 0} />
+        ))}
+      </Tarjeta>
+      <View style={{ alignSelf: 'flex-start' }}>
+        <Boton texto="Ver todos los gastos" variante="borde" onPress={() => router.push({ pathname: '/analisis', params: { vista: 'detalle' } })} />
+      </View>
     </>
-  );
-}
-
-function FilaDeReparto({ fila, primera }: { fila: FilaReparto; primera: boolean }) {
-  const tema = useTema();
-  const palabra = fila.saldo > 0 ? 'recibe' : fila.saldo < 0 ? 'pone' : 'está al día';
-  const parte = fila.participa ? `parte ${formatearPorcentaje(fila.peso)}` : 'no participa';
-  const color = fila.saldo > 0 ? 'hay' : fila.saldo < 0 ? 'falta' : 'texto';
-  return (
-    <View
-      accessible
-      accessibilityLabel={`${fila.nombre}, ${parte}, puso ${formatear(fila.pago)}. ${
-        fila.saldo === 0 ? palabra : `${enMayuscula(palabra)} ${formatear(Math.abs(fila.saldo))}`
-      }.`}
-      style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: tema.espacio.m,
-        minHeight: tema.medida.fila,
-        paddingVertical: tema.espacio.s,
-        borderTopWidth: primera ? 0 : tema.medida.borde,
-        borderTopColor: tema.color.borde,
-      }}
-    >
-      <Inicial nombre={fila.nombre} />
-      <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: tema.medida.fila * 2 }}>
-        <Texto variante="fuerte" numberOfLines={2}>
-          {fila.nombre}
-        </Texto>
-        <Texto variante="sub">
-          {`${parte} · puso `}
-          <Texto variante="subMedio" style={{ fontVariant: ['tabular-nums'] }}>
-            {formatear(fila.pago)}
-          </Texto>
-        </Texto>
-      </View>
-      <View style={{ marginLeft: 'auto', alignItems: 'flex-end' }}>
-        <Monto centavos={fila.saldo} tamano="fila" signo color={color} />
-        <Texto variante="sub">{palabra}</Texto>
-      </View>
-    </View>
-  );
-}
-
-/** El círculo «quien»: la inicial con borde. El color por persona llega en F7. */
-function Inicial({ nombre }: { nombre: string }) {
-  const tema = useTema();
-  return (
-    <View
-      style={{
-        minWidth: tema.medida.indicadorAlto,
-        aspectRatio: 1,
-        padding: tema.espacio.s,
-        borderRadius: tema.radio.chip,
-        borderWidth: tema.medida.borde,
-        borderColor: tema.color.borde,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Texto variante="seccion" color="texto">
-        {nombre.charAt(0).toUpperCase()}
-      </Texto>
-    </View>
   );
 }
 
