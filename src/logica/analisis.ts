@@ -20,7 +20,8 @@ export type FiltrosGastos = { persona?: string; categoria?: string; texto?: stri
 export type FilaCategoria = { id: string | null; nombre: string; monto: number; parte: number };
 export type TotalMes = { mes: string; total: number };
 
-const subtotal = (i: ItemAnalisis) => Math.round(Number(i.cantidad) * i.precio_unitario);
+// Un ítem sin precio (tildado de una compra por total) no suma: el monto de esa compra es su total.
+const subtotal = (i: ItemAnalisis) => Math.round(Number(i.cantidad) * (i.precio_unitario ?? 0));
 
 // Gasto por categoría. Una compra por productos se reparte según la categoría de cada producto.
 export function porCategoria(gastos: GastoAnalisis[], categorias: Array<{ id: string; nombre: string }>): FilaCategoria[] {

@@ -1,4 +1,4 @@
-import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo } from './validar';
+import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo, admiteDecimales, validarCantidad, validarProducto } from './validar';
 import type { GastoFormulario } from './validar';
 
 const base: GastoFormulario = { fecha: '2026-10-07', pagado_por: 'a', modo: 'total', total: 850000, categoria_id: 'cat', items: [] };
@@ -76,4 +76,139 @@ test('avisoCambioTipo: sin cambio de tipo, o al crear a alguien, no avisa', () =
   expect(avisoCambioTipo({ nombre: 'Ana', tipo: 'integrante' }, 'integrante')).toBe(null);
   expect(avisoCambioTipo({ nombre: 'Ana' }, 'integrante')).toBe(null);
   expect(avisoCambioTipo(null, 'pagador_externo')).toBe(null);
+});
+
+// --- Unidades, cantidades y productos (app nativa) ---
+
+test('admiteDecimales: solo kg y litro', () => {
+  expect(admiteDecimales('kg')).toBe(true);
+  expect(admiteDecimales('litro')).toBe(true);
+  expect(admiteDecimales('unidad')).toBe(false);
+  expect(admiteDecimales('paquete')).toBe(false);
+});
+
+test('validarCantidad: en kg y litro acepta 1,5 (coma o punto) y enteros', () => {
+  expect(validarCantidad('kg', '1,5')).toStrictEqual({ ok: true, valor: 1.5 });
+  expect(validarCantidad('kg', '1.5')).toStrictEqual({ ok: true, valor: 1.5 });
+  expect(validarCantidad('litro', ' 0,25 ')).toStrictEqual({ ok: true, valor: 0.25 });
+  expect(validarCantidad('kg', '2')).toStrictEqual({ ok: true, valor: 2 });
+  expect(validarCantidad('kg', '0,125')).toStrictEqual({ ok: true, valor: 0.125 });
+});
+
+test('validarCantidad: en unidad y paquete acepta enteros', () => {
+  expect(validarCantidad('unidad', '3')).toStrictEqual({ ok: true, valor: 3 });
+  expect(validarCantidad('paquete', '12')).toStrictEqual({ ok: true, valor: 12 });
+  expect(validarCantidad('unidad', '2,0')).toStrictEqual({ ok: true, valor: 2 });
+});
+
+test('validarCantidad: en unidad y paquete rechaza decimales con el mensaje exacto', () => {
+  const error = 'Para unidades y paquetes, solo números enteros.';
+  expect(validarCantidad('unidad', '1,5')).toStrictEqual({ ok: false, error });
+  expect(validarCantidad('paquete', '2.5')).toStrictEqual({ ok: false, error });
+  expect(validarCantidad('unidad', '0,5')).toStrictEqual({ ok: false, error });
+});
+
+test('validarCantidad: rechaza cero, negativos, vacío y texto en cualquier unidad', () => {
+  const error = 'Ingresá una cantidad mayor a 0.';
+  for (const u of ['unidad', 'paquete', 'kg', 'litro'] as const) {
+    for (const t of ['0', '0,0', '-1', '-1,5', '', '   ', 'abc', '1,2,3', '1e3']) {
+      expect(validarCantidad(u, t)).toStrictEqual({ ok: false, error });
+    }
+  }
+});
+
+test('validarCantidad: una cifra desorbitada (Infinity) no pasa', () => {
+  expect(validarCantidad('kg', '9'.repeat(400)).ok).toBe(false);
+  expect(validarCantidad('unidad', '9'.repeat(400)).ok).toBe(false);
+});
+
+test('validarCantidad: kg y litro admiten hasta 3 decimales (los que muestra la app)', () => {
+  expect(validarCantidad('kg', '1,005')).toStrictEqual({ ok: true, valor: 1.005 });
+  expect(validarCantidad('kg', '1,2345')).toStrictEqual({ ok: false, error: 'Usá hasta 3 decimales, por ejemplo 1,25.' });
+});
+
+test('validarProducto: un producto válido sale recortado y con la marca vacía como null', () => {
+  expect(validarProducto({ nombre: '  Yerba  ', marca: ' ', categoria_id: 'k1', unidad: 'paquete' })).toStrictEqual({
+    ok: true,
+    errores: {},
+    valor: { nombre: 'Yerba', marca: null, categoria_id: 'k1', unidad: 'paquete' },
+  });
+  expect(validarProducto({ nombre: 'Queso', marca: ' La Paulina ', categoria_id: 'k2', unidad: 'kg' }).valor).toStrictEqual({
+    nombre: 'Queso',
+    marca: 'La Paulina',
+    categoria_id: 'k2',
+    unidad: 'kg',
+  });
+});
+
+test('validarProducto: pide nombre, categoría y una unidad conocida', () => {
+  const r = validarProducto({ nombre: '   ', marca: null, categoria_id: '', unidad: 'caja' });
+  expect(r.ok).toBe(false);
+  expect(r.errores.nombre).toBe('Escribí un nombre.');
+  expect(r.errores.categoria_id).toBe('Elegí una categoría.');
+  expect(r.errores.unidad).toBe('Elegí cómo se cuenta.');
+  expect(validarProducto({ nombre: 'x', categoria_id: null, unidad: null }).ok).toBe(false);
+  expect(validarProducto({ nombre: 'x', categoria_id: 'k', unidad: 'unidad' }).ok).toBe(true);
+});
+
+// --- Compra por total con productos tildados ---
+
+const productosU = [
+  { id: 'p1', unidad: 'unidad' as const },
+  { id: 'p2', unidad: 'kg' as const },
+  { id: 'p3', unidad: 'paquete' as const },
+];
+const conTildados = (tildados: Array<{ producto_id: string; cantidad: number }> | null | undefined): GastoFormulario => ({ ...base, tildados });
+
+test('un gasto por total con tildados válidos pasa y no cambia el total', () => {
+  const t = [{ producto_id: 'p1', cantidad: 2 }, { producto_id: 'p2', cantidad: 1.5 }];
+  expect(validarGasto(conTildados(t), { productos: productosU })).toStrictEqual({ ok: true, errores: {}, total: 850000 });
+});
+
+test('un gasto por total sin tildados (o con la lista vacía) sigue andando sin pasar productos', () => {
+  expect(validarGasto(conTildados(undefined))).toStrictEqual({ ok: true, errores: {}, total: 850000 });
+  expect(validarGasto(conTildados(null))).toStrictEqual({ ok: true, errores: {}, total: 850000 });
+  expect(validarGasto(conTildados([]))).toStrictEqual({ ok: true, errores: {}, total: 850000 });
+});
+
+test('tildados: kg acepta 1,5 pero unidad no', () => {
+  expect(validarGasto(conTildados([{ producto_id: 'p2', cantidad: 1.5 }]), { productos: productosU }).ok).toBe(true);
+  const r = validarGasto(conTildados([{ producto_id: 'p1', cantidad: 1.5 }]), { productos: productosU });
+  expect(r.ok).toBe(false);
+  expect(r.errores.tildados).toBe('Para unidades y paquetes, solo números enteros.');
+  expect(validarGasto(conTildados([{ producto_id: 'p3', cantidad: 0.5 }]), { productos: productosU }).errores.tildados).toBe(
+    'Para unidades y paquetes, solo números enteros.',
+  );
+});
+
+test('tildados: cantidad cero, negativa o no numérica no pasa', () => {
+  for (const cantidad of [0, -1, NaN, Infinity]) {
+    const r = validarGasto(conTildados([{ producto_id: 'p2', cantidad }]), { productos: productosU });
+    expect(r.ok).toBe(false);
+    expect(r.errores.tildados).toBe('Ingresá una cantidad mayor a 0.');
+  }
+});
+
+test('tildados: un producto repetido no pasa', () => {
+  const r = validarGasto(conTildados([{ producto_id: 'p1', cantidad: 1 }, { producto_id: 'p1', cantidad: 2 }]), { productos: productosU });
+  expect(r.ok).toBe(false);
+  expect(r.errores.tildados).toBe('Hay un producto tildado más de una vez.');
+});
+
+test('tildados: un producto que no existe (o sin lista de productos) no pasa', () => {
+  const t = [{ producto_id: 'fantasma', cantidad: 1 }];
+  expect(validarGasto(conTildados(t), { productos: productosU }).errores.tildados).toBe('Hay un producto tildado que ya no existe.');
+  expect(validarGasto(conTildados([{ producto_id: 'p1', cantidad: 1 }])).errores.tildados).toBe('Hay un producto tildado que ya no existe.');
+});
+
+test('tildados: no afecta al gasto por productos, que valida como siempre', () => {
+  const items = [{ producto_id: 'p1', cantidad: 2, precio_unitario: 1000 }];
+  const g: GastoFormulario = { ...base, modo: 'productos', total: null, categoria_id: null, items, tildados: [{ producto_id: 'p1', cantidad: 1.5 }] };
+  expect(validarGasto(g)).toStrictEqual({ ok: true, errores: {}, total: 2000 });
+});
+
+test('tildados: los otros errores del gasto siguen apareciendo junto al de tildados', () => {
+  const r = validarGasto({ ...base, pagado_por: '', tildados: [{ producto_id: 'p1', cantidad: 1.5 }] }, { productos: productosU });
+  expect(r.errores.pagado_por).toBeTruthy();
+  expect(r.errores.tildados).toBeTruthy();
 });

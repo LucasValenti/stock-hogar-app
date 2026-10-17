@@ -1,4 +1,5 @@
 // Stock y pendientes: lógica pura, sin DOM ni red.
+import type { Anotacion } from './tipos';
 
 // El stock y las cantidades pueden llegar como número o como texto numérico ('0.5'); siempre se pasan por Number.
 export type Cantidad = number | string;
@@ -49,6 +50,23 @@ export function ocultos<P extends ConOculto>(productos: P[]): P[] {
 
 export function pendientes<P extends ProductoConStock>(productos: P[]): P[] {
   return enStock(productos).filter(esPendiente);
+}
+
+// La pestaña Pendientes mezcla lo que se acabó con lo que alguien anotó a mano; `id` sirve de clave de la fila.
+export type PendienteItem<P> =
+  | { tipo: 'producto'; id: string; producto: P }
+  | { tipo: 'anotacion'; id: string; anotacion: Anotacion };
+
+// Primero los productos sin stock (en el orden recibido), después las anotaciones de la más vieja a la más nueva.
+export function pendientesConAnotaciones<P extends ProductoConStock & { id: string }>(
+  productos: P[],
+  anotaciones: Anotacion[],
+): Array<PendienteItem<P>> {
+  const faltantes = pendientes(productos).map((producto): PendienteItem<P> => ({ tipo: 'producto', id: producto.id, producto }));
+  const notas = [...anotaciones]
+    .sort((a, b) => Date.parse(a.creado) - Date.parse(b.creado))
+    .map((anotacion): PendienteItem<P> => ({ tipo: 'anotacion', id: anotacion.id, anotacion }));
+  return [...faltantes, ...notas];
 }
 
 // Lo que ofrece la ficha: borrar lo que nunca se compró, ocultar lo que sí, y volver a mostrar lo oculto.

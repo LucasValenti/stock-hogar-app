@@ -19,7 +19,7 @@ const bruno: Integrante = { ...ana, id: 'i-bruno', nombre: 'Bruno', email: 'brun
 function semilla(): Semilla {
   return {
     integrantes: [ana, bruno],
-    categorias: [{ id: 'c-almacen', nombre: 'Almacén', tipo: 'producto' }],
+    categorias: [{ id: 'c-almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 }],
     productos: [
       {
         id: 'p-yerba',
@@ -28,6 +28,8 @@ function semilla(): Semilla {
         marca: null,
         categoria_id: 'c-almacen',
         stock: 1,
+        unidad: 'unidad',
+        ultimo_movimiento: '2026-01-01T00:00:00Z',
         oculto: false,
         creado: '2026-01-01T00:00:00Z',
       },

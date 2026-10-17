@@ -1,7 +1,7 @@
 // Validación de formularios. Devuelve mensajes listos para mostrar al lado de cada campo.
 import { mesDe } from './meses';
-import { aCentavos } from './dinero';
-import type { Integrante, ModoGasto, TipoIntegrante } from './tipos';
+import { aCantidad, aCentavos } from './dinero';
+import type { Integrante, ModoGasto, Producto, Tildado, TipoIntegrante, Unidad } from './tipos';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -16,9 +16,11 @@ export type GastoFormulario = {
   total?: number | null;
   categoria_id?: string | null;
   items?: ItemFormulario[] | null;
+  /** Solo en modo 'total': productos que se suman al stock sin precio propio. */
+  tildados?: Tildado[] | null;
 };
 
-export type CampoGasto = 'fecha' | 'pagado_por' | 'total' | 'categoria_id' | 'items' | 'modo';
+export type CampoGasto = 'fecha' | 'pagado_por' | 'total' | 'categoria_id' | 'items' | 'modo' | 'tildados';
 export type ErroresGasto = Partial<Record<CampoGasto, string>>;
 export type ResultadoGasto = { ok: boolean; errores: ErroresGasto; total: number };
 
@@ -37,11 +39,90 @@ export type ResultadoIntegrante = {
   valor: { nombre: string; tipo: TipoIntegrante; email: string; sueldo?: number | null };
 };
 
+const UNIDADES: readonly Unidad[] = ['unidad', 'paquete', 'kg', 'litro'];
+const DECIMALES_MAX = 3;
+const SIN_CANTIDAD = 'Ingresá una cantidad mayor a 0.';
+
+export type DatosProducto = {
+  nombre?: string | null;
+  marca?: string | null;
+  categoria_id?: string | null;
+  /** Cualquier valor que no sea una unidad conocida es un error. */
+  unidad?: string | null;
+};
+export type ErroresProducto = Partial<Record<'nombre' | 'categoria_id' | 'unidad', string>>;
+export type ResultadoProducto = {
+  ok: boolean;
+  errores: ErroresProducto;
+  valor: { nombre: string; marca: string | null; categoria_id: string; unidad: Unidad };
+};
+
+export type ResultadoCantidad = { ok: true; valor: number } | { ok: false; error: string };
+
+/** Solo lo que se pesa o se mide admite decimales. */
+export function admiteDecimales(u: Unidad): boolean {
+  return u === 'kg' || u === 'litro';
+}
+
+// Mensaje de error de una cantidad ya convertida a número, o null si sirve para esa unidad.
+function errorDeCantidad(u: Unidad, n: number): string | null {
+  if (!Number.isFinite(n) || n <= 0) return SIN_CANTIDAD;
+  if (!admiteDecimales(u)) return Number.isInteger(n) ? null : 'Para unidades y paquetes, solo números enteros.';
+  // La app muestra hasta 3 decimales: más sería guardar algo que nadie ve.
+  const factor = 10 ** DECIMALES_MAX;
+  return Math.round(n * factor) / factor === n ? null : `Usá hasta ${DECIMALES_MAX} decimales, por ejemplo 1,25.`;
+}
+
+// Cantidad tipeada («1,5») según cómo se cuenta el producto.
+export function validarCantidad(u: Unidad, texto: string): ResultadoCantidad {
+  const n = aCantidad(texto);
+  // aCantidad rechaza texto, vacío, negativos y cero.
+  if (n === null) return { ok: false, error: SIN_CANTIDAD };
+  const error = errorDeCantidad(u, n);
+  return error === null ? { ok: true, valor: n } : { ok: false, error };
+}
+
+export function validarProducto({ nombre, marca, categoria_id, unidad }: DatosProducto): ResultadoProducto {
+  const errores: ErroresProducto = {};
+  const unidadValida = UNIDADES.find((u) => u === unidad);
+  const valor: ResultadoProducto['valor'] = {
+    nombre: String(nombre ?? '').trim(),
+    marca: String(marca ?? '').trim() || null,
+    categoria_id: categoria_id ?? '',
+    unidad: unidadValida ?? 'unidad',
+  };
+  if (!valor.nombre) errores.nombre = 'Escribí un nombre.';
+  if (!valor.categoria_id) errores.categoria_id = 'Elegí una categoría.';
+  if (!unidadValida) errores.unidad = 'Elegí cómo se cuenta.';
+  return { ok: Object.keys(errores).length === 0, errores, valor };
+}
+
+// Los tildados de una compra por total: cada producto existe, una sola vez, con una cantidad que su unidad admite.
+function errorDeTildados(tildados: Tildado[], productos: ReadonlyArray<Pick<Producto, 'id' | 'unidad'>>): string | null {
+  const unidades = new Map(productos.map((p) => [p.id, p.unidad]));
+  const vistos = new Set<string>();
+  for (const t of tildados) {
+    const unidad = unidades.get(t.producto_id);
+    if (!unidad) return 'Hay un producto tildado que ya no existe.';
+    if (vistos.has(t.producto_id)) return 'Hay un producto tildado más de una vez.';
+    vistos.add(t.producto_id);
+    const error = errorDeCantidad(unidad, t.cantidad);
+    if (error) return error;
+  }
+  return null;
+}
+
 export function totalItems(items: ReadonlyArray<{ cantidad: number; precio_unitario: number }>): number {
   return items.reduce((s, i) => s + Math.round(i.cantidad * i.precio_unitario), 0);
 }
 
-export function validarGasto(g: GastoFormulario, { mesesCerrados = new Set<string>() }: { mesesCerrados?: Set<string> } = {}): ResultadoGasto {
+export type OpcionesGasto = {
+  mesesCerrados?: Set<string>;
+  /** Los productos de la casa: de ahí sale la unidad que decide si un tildado admite decimales. */
+  productos?: ReadonlyArray<Pick<Producto, 'id' | 'unidad'>>;
+};
+
+export function validarGasto(g: GastoFormulario, { mesesCerrados = new Set<string>(), productos = [] }: OpcionesGasto = {}): ResultadoGasto {
   const errores: ErroresGasto = {};
   let total = 0;
 
@@ -54,6 +135,8 @@ export function validarGasto(g: GastoFormulario, { mesesCerrados = new Set<strin
     if (!Number.isInteger(g.total) || (g.total as number) <= 0) errores.total = 'Ingresá un monto mayor a 0, por ejemplo 85.000.';
     else total = g.total as number;
     if (!g.categoria_id) errores.categoria_id = 'Elegí una categoría.';
+    const error = g.tildados?.length ? errorDeTildados(g.tildados, productos) : null;
+    if (error) errores.tildados = error;
   } else if (g.modo === 'productos') {
     const items = g.items ?? [];
     if (!items.length) errores.items = 'Agregá al menos un producto.';

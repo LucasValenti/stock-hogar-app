@@ -1,6 +1,6 @@
 import {
   normalizar, filtrarProductos, esPendiente, pendientes, agruparPorCategoria,
-  aplicarDelta, deltaMenos, formatearCantidad, textoPendientes, productosVisibles, enStock, ocultos, accionProducto,
+  aplicarDelta, deltaMenos, formatearCantidad, textoPendientes, productosVisibles, enStock, ocultos, accionProducto, pendientesConAnotaciones,
 } from './stock';
 
 const prods = [
@@ -98,4 +98,37 @@ test('la ficha borra lo que nunca se compró, oculta lo que tiene compras y vuel
   expect(accionProducto({ oculto: true }, true)).toBe('mostrar');
   expect(accionProducto({ oculto: true }, false)).toBe('mostrar');
   expect(accionProducto({}, false)).toBe('borrar');
+});
+
+// --- Pendientes con anotaciones ---
+
+const nota = (id: string, texto: string, creado: string) => ({ id, texto, creado_por: null, creado });
+
+test('pendientesConAnotaciones: primero los productos sin stock, después las anotaciones de la más vieja a la más nueva', () => {
+  const anotaciones = [
+    nota('n2', 'Comprar pan', '2026-10-10T10:00:00Z'),
+    nota('n1', 'Pilas AA', '2026-10-09T10:00:00Z'),
+  ];
+  const r = pendientesConAnotaciones([...prods, oculto], anotaciones);
+  expect(r.map((x) => `${x.tipo}:${x.id}`)).toStrictEqual(['producto:p2', 'producto:p5', 'anotacion:n1', 'anotacion:n2']);
+  const primera = r[2];
+  expect(primera.tipo === 'anotacion' && primera.anotacion.texto).toBe('Pilas AA');
+  const p = r[0];
+  expect(p.tipo === 'producto' && p.producto.nombre).toBe('Azúcar');
+});
+
+test('pendientesConAnotaciones: un oculto sin stock no aparece y el stock decimal positivo tampoco', () => {
+  const r = pendientesConAnotaciones([{ id: 'o', nombre: 'Viejo', stock: 0, oculto: true }, { id: 'k', nombre: 'Queso', stock: '0.25' }], []);
+  expect(r).toStrictEqual([]);
+});
+
+test('pendientesConAnotaciones: sin productos faltantes quedan solo las anotaciones, y sin nada, lista vacía', () => {
+  expect(pendientesConAnotaciones(prods.filter((p) => Number(p.stock) > 0), [nota('n', 'Pan', '2026-10-10T10:00:00Z')]).map((x) => x.tipo)).toStrictEqual(['anotacion']);
+  expect(pendientesConAnotaciones([], [])).toStrictEqual([]);
+});
+
+test('pendientesConAnotaciones: no modifica las listas que recibe', () => {
+  const anotaciones = [nota('n2', 'B', '2026-10-10T10:00:00Z'), nota('n1', 'A', '2026-10-09T10:00:00Z')];
+  pendientesConAnotaciones(prods, anotaciones);
+  expect(anotaciones.map((a) => a.id)).toStrictEqual(['n2', 'n1']);
 });

@@ -1,4 +1,4 @@
-// Tipos del dominio: una fila por tabla de supabase/schema.sql (con las migraciones 002 a 006).
+// Tipos del dominio: una fila por tabla de supabase/schema.sql (con las migraciones 002 a 007).
 // Los bigint (montos en centavos) y los numeric (stock, cantidades) llegan como number.
 // Las fechas 'date' llegan como 'AAAA-MM-DD'; las timestamptz, como texto ISO.
 
@@ -23,7 +23,12 @@ export type Categoria = {
   id: string;
   nombre: string;
   tipo: TipoCategoria;
+  /** De 1 a 365. Pasado ese tiempo sin movimiento, la app pregunta si todavía hay (por defecto 20). */
+  dias_sin_movimiento: number;
 };
+
+/** Cómo se cuenta un producto. Solo kg y litro admiten decimales. */
+export type Unidad = 'unidad' | 'paquete' | 'kg' | 'litro';
 
 export type Producto = {
   id: string;
@@ -32,6 +37,9 @@ export type Producto = {
   marca: string | null;
   categoria_id: string;
   stock: number;
+  unidad: Unidad;
+  /** Última vez que el stock se movió o que alguien confirmó que sigue habiendo (timestamptz ISO). */
+  ultimo_movimiento: string;
   /** Con compras viejas pero ya sin uso: sale de Stock, de pendientes y del buscador. */
   oculto: boolean;
   creado: string;
@@ -44,10 +52,25 @@ export type GastoItem = {
   gasto_id: string;
   producto_id: string;
   cantidad: number;
-  /** Centavos. */
-  precio_unitario: number;
+  /** Centavos. Null en los productos tildados de una compra por total: no tienen precio propio. */
+  precio_unitario: number | null;
   /** Embebido cuando la consulta pide gasto_items(productos(nombre, categoria_id)). */
   productos?: Pick<Producto, 'nombre' | 'categoria_id'> | null;
+};
+
+/** Producto tildado en una compra por total: suma stock sin precio. Va en p_gasto.tildados. */
+export type Tildado = {
+  producto_id: string;
+  cantidad: number;
+};
+
+/** Nota suelta para la próxima compra («comprar pan»). Se borra al tildarla en un gasto (p_gasto.anotaciones). */
+export type Anotacion = {
+  id: string;
+  /** De 1 a 120 caracteres. */
+  texto: string;
+  creado_por: string | null;
+  creado: string;
 };
 
 export type Gasto = {

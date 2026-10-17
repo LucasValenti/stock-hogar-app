@@ -29,7 +29,8 @@ export type GastoAGuardar = {
   destino?: string | null;
 };
 
-export type ItemAGuardar = Pick<GastoItem, 'producto_id' | 'cantidad' | 'precio_unitario'>;
+// Una compra por productos exige precio en cada ítem; los tildados de una compra por total viajan aparte (p_gasto.tildados).
+export type ItemAGuardar = Pick<GastoItem, 'producto_id' | 'cantidad'> & { precio_unitario: number };
 
 /** Ítem como lo trae gastosEntre: sin ids, con el nombre y la categoría del producto. */
 export type ItemResumen = Pick<GastoItem, 'cantidad' | 'precio_unitario'> & {

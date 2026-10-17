@@ -113,6 +113,8 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
         marca: p.marca ?? null,
         categoria_id: p.categoria_id,
         stock: p.stock ?? 0,
+        unidad: 'unidad',
+        ultimo_movimiento: ahora(),
         oculto: p.oculto ?? false,
         creado: ahora(),
       };
@@ -255,7 +257,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
       let fila = c.id ? categorias.find((x) => x.id === c.id) : undefined;
       if (fila) Object.assign(fila, c);
       else {
-        fila = { nombre: '', tipo: 'producto', ...c, id: c.id ?? nuevoId() };
+        fila = { nombre: '', tipo: 'producto', dias_sin_movimiento: 20, ...c, id: c.id ?? nuevoId() };
         categorias.push(fila);
       }
       avisar();
@@ -333,6 +335,8 @@ const prod = (id: string, nombre: string, categoria_id: string, stock: number, m
   marca,
   categoria_id,
   stock,
+  unidad: 'unidad',
+  ultimo_movimiento: CREADO,
   oculto: false,
   creado: CREADO,
 });
@@ -344,10 +348,10 @@ export const semillaDeEjemplo: Semilla = {
     persona('ejemplo-caro', 'Caro', 500_000_00),
   ],
   categorias: [
-    { id: 'ejemplo-almacen', nombre: 'Almacén', tipo: 'producto' },
-    { id: 'ejemplo-limpieza', nombre: 'Limpieza', tipo: 'producto' },
-    { id: 'ejemplo-luz', nombre: 'Luz', tipo: 'servicio' },
-    { id: 'ejemplo-internet', nombre: 'Internet', tipo: 'servicio' },
+    { id: 'ejemplo-almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 },
+    { id: 'ejemplo-limpieza', nombre: 'Limpieza', tipo: 'producto', dias_sin_movimiento: 20 },
+    { id: 'ejemplo-luz', nombre: 'Luz', tipo: 'servicio', dias_sin_movimiento: 20 },
+    { id: 'ejemplo-internet', nombre: 'Internet', tipo: 'servicio', dias_sin_movimiento: 20 },
   ],
   productos: [
     prod('ejemplo-yerba', 'Yerba', 'ejemplo-almacen', 1),
