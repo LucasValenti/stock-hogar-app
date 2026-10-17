@@ -4,7 +4,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { datos, esModoMemoria } from '@/datos';
+import { datos, esModoMemoria, fijarIntegrante } from '@/datos';
 import { obtenerCliente } from '@/datos/cliente';
 import { semillaDeEjemplo } from '@/datos/memoria';
 import type { Integrante } from '@/logica/tipos';
@@ -121,6 +121,12 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     }
     return { estado, yo, email, error, salir, reintentar };
   }, [error, session, email, miembro, salir, reintentar]);
+
+  // 3) La cola de escritura solo manda lo de quien tiene la sesión lista (ver datos/cola.ts).
+  const idListo = valor.estado === 'lista' ? (valor.yo?.id ?? null) : null;
+  useEffect(() => {
+    fijarIntegrante(idListo);
+  }, [idListo]);
 
   return <Contexto value={valor}>{children}</Contexto>;
 }

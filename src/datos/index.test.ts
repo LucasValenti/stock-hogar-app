@@ -47,4 +47,14 @@ describe('@/datos', () => {
     expect(await m.datos.ajustarStock('ejemplo-yerba', 1)).toBe(2);
     expect(await m.obtenerCola().pendientes()).toEqual([]);
   });
+
+  test('la cola escribe solo con un integrante con sesión lista', async () => {
+    const m = importar({ EXPO_PUBLIC_DATOS: 'memoria' });
+    const gasto = { fecha: '2026-10-12', pagado_por: 'ejemplo-ana', total: 500_00, modo: 'total' as const, categoria_id: 'ejemplo-luz' };
+    await expect(m.datos.guardarGasto(gasto, [])).rejects.toMatchObject({ code: 'SIN_SESION' });
+    m.fijarIntegrante('ejemplo-ana');
+    await expect(m.datos.guardarGasto(gasto, [])).resolves.toMatchObject({ estado: 'hecho' });
+    m.fijarIntegrante(null);
+    await expect(m.datos.guardarGasto(gasto, [])).rejects.toMatchObject({ code: 'SIN_SESION' });
+  });
 });

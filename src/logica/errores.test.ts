@@ -49,4 +49,6 @@ test('los errores de la capa de datos ya traen un mensaje para la persona', () =
   // Aunque el navegador diga que no hay red: lo que falta es la configuración.
   expect(mensajeError(sinConfig, false)).toBe('Falta configurar la conexión: completá .env.');
   expect(mensajeError(sinConexion)).toBe('Sin conexión: no se guardó el cambio de stock. Probá de nuevo.');
+  const sinSesion = Object.assign(new Error('Tenés que ingresar con tu cuenta de la casa para guardar.'), { code: 'SIN_SESION' });
+  expect(mensajeError(sinSesion)).toBe('Tenés que ingresar con tu cuenta de la casa para guardar.');
 });

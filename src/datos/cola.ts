@@ -2,12 +2,17 @@
 // y se manda cuando vuelve la conexión, en el mismo orden.
 // Solo entra lo que la base puede recibir dos veces sin duplicar: guardar_gasto lo es por
 // nuevo_id (on conflict do nothing). ajustar_stock_producto no (ver ajustarStock en conCola).
+// Cada op guarda quién la creó: sale solo con la sesión de ese integrante, nunca con otra
+// cuenta que entre después en el mismo teléfono. Las de otra cuenta esperan, no se descartan.
 
 import { nuevoId } from './id';
 import type { Datos, GastoAGuardar, ItemAGuardar } from './tipos';
 
 export type TipoOp = 'guardarGasto';
-export type Op = { id: string; tipo: TipoOp; datos: unknown };
+/** Op tal como queda en la cola: `duenio` es el id del integrante que la creó. */
+export type Op = { id: string; tipo: TipoOp; datos: unknown; duenio: string };
+/** Op a encolar: la cola le pone el dueño (el integrante con sesión en ese momento). */
+export type OpNueva = Omit<Op, 'duenio'>;
 
 /** La forma de AsyncStorage: se le puede pasar directo. */
 export type Almacen = {
@@ -21,13 +26,16 @@ export type OpcionesCola = {
   esErrorDeRed(e: unknown): boolean;
   /** Una op pendiente que la base rechazó (no por red): ya salió de la cola. */
   alDescartar?(op: Op, error: unknown): void;
+  /** Id del integrante con sesión lista, o `null` si no hay (cargando, sin sesión, cuenta ajena). */
+  integranteActual(): string | null;
   clave?: string;
 };
 
 export type ResultadoEncolar = { estado: 'hecho'; resultado: unknown } | { estado: 'en-cola' };
 
 export type Cola = {
-  encolar(op: Op): Promise<ResultadoEncolar>;
+  /** Rechaza con SIN_SESION si no hay integrante con sesión lista. */
+  encolar(op: OpNueva): Promise<ResultadoEncolar>;
   vaciar(): Promise<void>;
   pendientes(): Promise<Op[]>;
 };
@@ -45,7 +53,14 @@ export function esErrorDeRed(e: unknown): boolean {
   return typeof message === 'string' && MENSAJE_DE_RED.test(message);
 }
 
-export function crearCola({ almacen, ejecutar, esErrorDeRed, alDescartar, clave = 'cola-escritura' }: OpcionesCola): Cola {
+export function crearCola({
+  almacen,
+  ejecutar,
+  esErrorDeRed,
+  alDescartar,
+  integranteActual,
+  clave = 'cola-escritura',
+}: OpcionesCola): Cola {
   // Todo pasa de a uno: dos vaciar() a la vez no mandan la misma op dos veces.
   let turno: Promise<unknown> = Promise.resolve();
   function enTurno<T>(fn: () => Promise<T>): Promise<T> {
@@ -60,30 +75,42 @@ export function crearCola({ almacen, ejecutar, esErrorDeRed, alDescartar, clave 
   }
   const escribir = (ops: Op[]) => almacen.setItem(clave, JSON.stringify(ops));
 
-  // Manda las pendientes en orden. Ante un corte se detiene y deja el resto; un rechazo
-  // de la base saca esa op (reintentarla daría lo mismo) y sigue con la próxima.
+  // Manda en orden las pendientes del integrante con sesión; las de otro quedan en su lugar.
+  // El dueño se mira antes de cada op: si la sesión cambia a mitad, se corta ahí.
+  // Ante un corte se detiene y deja el resto; un rechazo de la base saca esa op
+  // (reintentarla daría lo mismo) y sigue con la próxima.
   async function vaciarAhora(): Promise<Op[]> {
     let ops = await leer();
-    while (ops.length) {
-      const [primera, ...resto] = ops;
+    let i = 0;
+    while (i < ops.length) {
+      const yo = integranteActual();
+      if (!yo) return ops;
+      const op = ops[i];
+      if (op.duenio !== yo) {
+        i++;
+        continue;
+      }
       try {
-        await ejecutar(primera);
+        await ejecutar(op);
       } catch (e) {
         if (esErrorDeRed(e)) return ops;
-        alDescartar?.(primera, e);
+        alDescartar?.(op, e);
       }
-      ops = resto;
+      ops = [...ops.slice(0, i), ...ops.slice(i + 1)];
       await escribir(ops);
     }
     return ops;
   }
 
   return {
-    encolar: (op) =>
+    encolar: (nueva) =>
       enTurno(async () => {
-        // Si hay pendientes, esta va detrás de ellas.
+        const yo = integranteActual();
+        if (!yo) throw errorSinSesion();
+        const op: Op = { ...nueva, duenio: yo };
+        // Si quedan pendientes de este integrante, esta va detrás de ellas.
         const quedan = await vaciarAhora();
-        if (quedan.length) {
+        if (quedan.some((o) => o.duenio === yo)) {
           await escribir([...quedan, op]);
           return { estado: 'en-cola' };
         }
@@ -91,7 +118,7 @@ export function crearCola({ almacen, ejecutar, esErrorDeRed, alDescartar, clave 
           return { estado: 'hecho', resultado: await ejecutar(op) };
         } catch (e) {
           if (!esErrorDeRed(e)) throw e;
-          await escribir([op]);
+          await escribir([...quedan, op]);
           return { estado: 'en-cola' };
         }
       }),
@@ -114,6 +141,13 @@ export type ErrorConCodigo = Error & { code: string };
 export function errorSinConexion(): ErrorConCodigo {
   return Object.assign(new Error('Sin conexión: no se guardó el cambio de stock. Probá de nuevo.'), {
     code: 'SIN_CONEXION',
+  });
+}
+
+/** Escribir sin un integrante con sesión lista: no se manda ni se guarda para después. */
+export function errorSinSesion(): ErrorConCodigo {
+  return Object.assign(new Error('Tenés que ingresar con tu cuenta de la casa para guardar.'), {
+    code: 'SIN_SESION',
   });
 }
 

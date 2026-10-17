@@ -13,7 +13,7 @@ import { crearDatosSupabase } from './supabase';
 import type { Datos } from './tipos';
 
 export type { Datos } from './tipos';
-export type { Cola, DatosConCola, ErrorConCodigo, GuardadoDeGasto, Op } from './cola';
+export type { Cola, DatosConCola, ErrorConCodigo, GuardadoDeGasto, Op, OpNueva } from './cola';
 
 type AlDescartar = (op: Op, error: unknown) => void;
 const oyentesDeDescarte = new Set<AlDescartar>();
@@ -31,6 +31,18 @@ export const esModoMemoria = (): boolean => process.env.EXPO_PUBLIC_DATOS === 'm
 
 let capa: { datos: DatosConCola; cola: Cola } | null = null;
 
+// El integrante con sesión lista (lo fija SesionProvider). La cola solo escribe con él.
+let integranteActual: string | null = null;
+
+/**
+ * La sesión avisa quién está usando la app: `null` si no hay sesión lista.
+ * Al entrar alguien, salen las escrituras que ese integrante dejó pendientes.
+ */
+export function fijarIntegrante(id: string | null): void {
+  integranteActual = id;
+  if (id && capa) capa.cola.vaciar().catch(() => undefined);
+}
+
 // Si falla (falta .env), no queda nada a medias: el próximo uso vuelve a intentar.
 function iniciar(): { datos: DatosConCola; cola: Cola } {
   if (capa) return capa;
@@ -42,6 +54,7 @@ function iniciar(): { datos: DatosConCola; cola: Cola } {
     almacen: AsyncStorage,
     ejecutar: ejecutorDe(base),
     esErrorDeRed,
+    integranteActual: () => integranteActual,
     alDescartar: (op, error) => oyentesDeDescarte.forEach((f) => f(op, error)),
   });
   capa = { datos: conCola(base, cola), cola };
