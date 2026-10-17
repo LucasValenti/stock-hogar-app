@@ -22,20 +22,37 @@ export function PantallaCarga() {
   );
 }
 
-/** No se pudo saber quién es la persona: falta la configuración (.env) o no hay conexión. */
+/**
+ * No se pudo saber quién es la persona: falta la configuración (.env) o no hay conexión.
+ * Si hay una sesión abierta, también se puede cerrar (por ejemplo, para entrar con otra cuenta).
+ */
 export function PantallaError({ error, onReintentar }: { error: unknown; onReintentar: () => void }) {
+  const { email } = useSesion();
   return (
     <Pagina>
       <Texto variante="tituloTarjeta">No se pudo abrir la app</Texto>
       <Alerta>{mensajeError(error)}</Alerta>
       <Boton texto="Probar de nuevo" onPress={onReintentar} />
+      {email ? <CerrarSesion variante="borde" /> : null}
     </Pagina>
   );
 }
 
 /** La cuenta existe pero nadie de la casa la agregó como integrante. */
 export function PantallaAjena() {
-  const { email, salir } = useSesion();
+  const { email } = useSesion();
+  return (
+    <Pagina>
+      <Texto variante="tituloTarjeta">Esta cuenta no pertenece a la casa</Texto>
+      <Texto>{`Pedile a alguien de la casa que agregue ${email ?? 'tu email'} en Ajustes → Integrantes.`}</Texto>
+      <CerrarSesion />
+    </Pagina>
+  );
+}
+
+/** «Cerrar sesión», con su espera y el error si no pudo. */
+function CerrarSesion({ variante }: { variante?: 'lleno' | 'borde' }) {
+  const { salir } = useSesion();
   const [saliendo, setSaliendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,11 +69,9 @@ export function PantallaAjena() {
   }
 
   return (
-    <Pagina>
-      <Texto variante="tituloTarjeta">Esta cuenta no pertenece a la casa</Texto>
-      <Texto>{`Pedile a alguien de la casa que agregue ${email ?? 'tu email'} en Ajustes → Integrantes.`}</Texto>
+    <>
       {error ? <Alerta>{error}</Alerta> : null}
-      <Boton texto="Cerrar sesión" onPress={cerrar} ocupado={saliendo} />
-    </Pagina>
+      <Boton texto="Cerrar sesión" variante={variante} onPress={cerrar} ocupado={saliendo} />
+    </>
   );
 }
