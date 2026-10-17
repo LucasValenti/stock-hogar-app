@@ -3,7 +3,7 @@
 // mostrar lo oculto. Sin «Precios pagados» (spec 2.0). Cambiar la unidad no convierte el stock: si pasa
 // a unidades o paquetes con decimales, se avisa y se ofrece redondear.
 
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
@@ -11,19 +11,16 @@ import { datos } from '@/datos';
 import { mensajeError } from '@/logica/errores';
 import { accionProducto, cantidadConUnidad, formatearCantidad, redondeoPorUnidad } from '@/logica/stock';
 import type { Categoria, Producto } from '@/logica/tipos';
-import { validarProducto, type ErroresProducto } from '@/logica/validar';
 import { useTema } from '@/tema/tema';
 import { Aviso } from '@/ui/Aviso';
 import { Boton } from '@/ui/Boton';
 import { Encabezado } from '@/ui/Encabezado';
 import { Esqueleto } from '@/ui/Esqueleto';
-import { FormularioProducto, MensajeError, NOMBRE_UNIDAD, type ValoresProducto } from '@/ui/FormularioProducto';
+import { FormularioProducto, MensajeError, NOMBRE_UNIDAD, useValoresProducto, volverAStock as volver } from '@/ui/FormularioProducto';
 import { Hoja } from '@/ui/Hoja';
 import { Pantalla } from '@/ui/Pantalla';
 import { Tarjeta } from '@/ui/Tarjeta';
 import { Texto } from '@/ui/Texto';
-
-const volver = () => (router.canGoBack() ? router.back() : router.replace('/stock'));
 
 type Base = { producto: Producto; categorias: Categoria[]; tieneCompras: boolean };
 type Carga = { estado: 'cargando' } | { estado: 'error'; error: unknown } | { estado: 'no-existe' } | { estado: 'listo'; base: Base };
@@ -94,13 +91,12 @@ export default function FichaProducto() {
 function Ficha({ base }: { base: Base }) {
   const tema = useTema();
   const { producto: p, categorias, tieneCompras } = base;
-  const [valores, setValores] = useState<ValoresProducto>({
+  const { valores, errores, cambiar, validar } = useValoresProducto({
     nombre: p.nombre,
     marca: p.marca ?? '',
     categoriaId: p.categoria_id,
     unidad: p.unidad,
   });
-  const [errores, setErrores] = useState<ErroresProducto>({});
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [hoja, setHoja] = useState<'redondeo' | 'confirmar' | null>(null);
@@ -113,22 +109,7 @@ function Ficha({ base }: { base: Base }) {
       ? `Cambiar cómo se cuenta no convierte lo que hay: ${cuanto} pasa a ser ${cuanto} ${NOMBRE_UNIDAD[valores.unidad].toLowerCase()}.`
       : null;
 
-  function cambiar(cambio: Partial<ValoresProducto>) {
-    setValores((v) => ({ ...v, ...cambio }));
-    setErrores((e) => {
-      const sigue = { ...e };
-      if ('nombre' in cambio) delete sigue.nombre;
-      if ('categoriaId' in cambio) delete sigue.categoria_id;
-      if ('unidad' in cambio) delete sigue.unidad;
-      return sigue;
-    });
-  }
 
-  function validar() {
-    const r = validarProducto({ nombre: valores.nombre, marca: valores.marca, categoria_id: valores.categoriaId, unidad: valores.unidad });
-    setErrores(r.errores);
-    return r;
-  }
 
   function pedirGuardar() {
     setErrorGuardar(null);

@@ -119,10 +119,14 @@ export default function Stock() {
     router.setParams({ vista: v });
   }
 
-  function ajustar(id: string, delta: number) {
+  // `cambio`: un delta fijo, o cómo sacarlo del stock que se ve ahora (el −). Se lee de productosRef y no
+  // del render: dos toques seguidos antes de redibujar parten cada uno de lo último (2,5 → 2 → 1).
+  function ajustar(id: string, cambio: number | ((stock: number) => number)) {
     const actual = productosRef.current.find((p) => p.id === id);
-    if (!actual || delta === 0) return;
+    if (!actual) return;
     const antes = Number(actual.stock);
+    const delta = typeof cambio === 'function' ? cambio(antes) : cambio;
+    if (delta === 0) return;
     const despues = aplicarDelta(antes, delta);
     const aplicado = redondear(despues - antes);
     if (aplicado === 0) return;
@@ -282,9 +286,7 @@ export default function Stock() {
                   separador={i > 0}
                   oculto={vista === 'ocultos'}
                   error={erroresFila[p.id]}
-                  alRestar={() => {
-                    if (Number(p.stock) > 0) ajustar(p.id, deltaMenos(p.stock));
-                  }}
+                  alRestar={() => ajustar(p.id, deltaMenos)}
                   alSumar={() => ajustar(p.id, 1)}
                   alTocarCantidad={() => setHojaCantidad(p)}
                 />
@@ -321,7 +323,7 @@ export default function Stock() {
         alCerrar={() => setHojaCantidad(null)}
         alGuardar={(p, valor) => {
           setHojaCantidad(null);
-          ajustar(p.id, redondear(valor - Number(p.stock)));
+          ajustar(p.id, (stock) => redondear(valor - stock));
         }}
       />
     </Pantalla>

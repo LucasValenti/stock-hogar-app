@@ -2,24 +2,21 @@
 // que queda en pendientes hasta que se compre o se sume con +. Con `?nombre=&anotacion=` viene de una
 // anotación rápida: arranca con su texto y, al crear el producto, la nota se borra.
 
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 
 import { datos } from '@/datos';
 import { mensajeError } from '@/logica/errores';
 import type { Categoria } from '@/logica/tipos';
-import { validarProducto, type ErroresProducto } from '@/logica/validar';
 import { useTema } from '@/tema/tema';
 import { Aviso } from '@/ui/Aviso';
 import { Boton } from '@/ui/Boton';
 import { Encabezado } from '@/ui/Encabezado';
 import { Esqueleto } from '@/ui/Esqueleto';
-import { FormularioProducto, MensajeError, type ValoresProducto } from '@/ui/FormularioProducto';
+import { FormularioProducto, MensajeError, useValoresProducto, volverAStock as volver } from '@/ui/FormularioProducto';
 import { Pantalla } from '@/ui/Pantalla';
 import { Tarjeta } from '@/ui/Tarjeta';
 import { Texto } from '@/ui/Texto';
-
-const volver = () => (router.canGoBack() ? router.back() : router.replace('/stock'));
 
 const unTexto = (v: string | string[] | undefined) => (typeof v === 'string' ? v : '');
 
@@ -30,13 +27,12 @@ export default function NuevoProducto() {
   const [categorias, setCategorias] = useState<Categoria[] | null>(null);
   const [errorCarga, setErrorCarga] = useState<unknown>(null);
   const [intento, setIntento] = useState(0);
-  const [valores, setValores] = useState<ValoresProducto>({
+  const { valores, errores, cambiar, validar } = useValoresProducto({
     nombre: unTexto(params.nombre),
     marca: '',
     categoriaId: null,
     unidad: 'unidad',
   });
-  const [errores, setErrores] = useState<ErroresProducto>({});
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   // El producto ya se creó pero la nota no se pudo borrar: no se ofrece crearlo de nuevo.
@@ -54,21 +50,10 @@ export default function NuevoProducto() {
     };
   }, [intento]);
 
-  function cambiar(cambio: Partial<ValoresProducto>) {
-    setValores((v) => ({ ...v, ...cambio }));
-    setErrores((e) => {
-      const sigue = { ...e };
-      if ('nombre' in cambio) delete sigue.nombre;
-      if ('categoriaId' in cambio) delete sigue.categoria_id;
-      if ('unidad' in cambio) delete sigue.unidad;
-      return sigue;
-    });
-  }
 
   async function crear() {
     setErrorGuardar(null);
-    const r = validarProducto({ nombre: valores.nombre, marca: valores.marca, categoria_id: valores.categoriaId, unidad: valores.unidad });
-    setErrores(r.errores);
+    const r = validar();
     if (!r.ok) return;
     setGuardando(true);
     try {

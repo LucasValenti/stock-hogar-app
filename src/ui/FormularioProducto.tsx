@@ -2,11 +2,12 @@
 // (chip con flecha → hoja, solo categorías de productos) y cómo se cuenta (unidad). Los errores son los
 // de validarProducto; `avisoUnidad` explica lo que pasa con el stock al cambiar la unidad.
 
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import type { Categoria, Unidad } from '@/logica/tipos';
-import type { ErroresProducto } from '@/logica/validar';
+import { validarProducto, type ErroresProducto, type ResultadoProducto } from '@/logica/validar';
 import { useTema } from '@/tema/tema';
 
 import { Campo } from './Campo';
@@ -20,6 +21,37 @@ export type ValoresProducto = { nombre: string; marca: string; categoriaId: stri
 /** Cómo se lee cada unidad en las opciones. */
 export const NOMBRE_UNIDAD: Record<Unidad, string> = { unidad: 'Unidades', paquete: 'Paquetes', kg: 'Kilos', litro: 'Litros' };
 const UNIDADES: Unidad[] = ['unidad', 'paquete', 'kg', 'litro'];
+
+/** Al terminar en el alta o la ficha: atrás si se puede; si se entró directo, a Stock. */
+export const volverAStock = () => (router.canGoBack() ? router.back() : router.replace('/stock'));
+
+/**
+ * El estado del formulario: los valores, `cambiar` (que borra el error del campo que se toca) y
+ * `validar` (validarProducto: muestra los errores y devuelve el resultado con el valor listo para guardar).
+ */
+export function useValoresProducto(inicial: ValoresProducto) {
+  const [valores, setValores] = useState<ValoresProducto>(inicial);
+  const [errores, setErrores] = useState<ErroresProducto>({});
+
+  function cambiar(cambio: Partial<ValoresProducto>) {
+    setValores((v) => ({ ...v, ...cambio }));
+    setErrores((e) => {
+      const sigue = { ...e };
+      if ('nombre' in cambio) delete sigue.nombre;
+      if ('categoriaId' in cambio) delete sigue.categoria_id;
+      if ('unidad' in cambio) delete sigue.unidad;
+      return sigue;
+    });
+  }
+
+  function validar(): ResultadoProducto {
+    const r = validarProducto({ nombre: valores.nombre, marca: valores.marca, categoria_id: valores.categoriaId, unidad: valores.unidad });
+    setErrores(r.errores);
+    return r;
+  }
+
+  return { valores, errores, cambiar, validar };
+}
 
 type Props = {
   valores: ValoresProducto;

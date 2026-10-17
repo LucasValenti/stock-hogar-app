@@ -155,6 +155,22 @@ test('− baja según deltaMenos (2,5 kg → 2) y + suma 1; en 0 el − no hace 
   expect(mockDatos.ajustarStock).toHaveBeenCalledTimes(2);
 });
 
+test('dos toques de − antes de que se vuelva a dibujar: 2,5 kg → 2 → 1 (cada uno parte de lo último)', async () => {
+  await abrir();
+  const menos = screen.getByRole('button', { name: 'Restar a Harina · Molino' });
+  // Los dos toques en el mismo act: entre uno y otro la fila no se vuelve a dibujar.
+  const toque = { nativeEvent: {}, persist() {}, stopPropagation() {} };
+  await act(async () => {
+    menos.props.onClick(toque);
+    menos.props.onClick(toque);
+  });
+  expect(mockDatos.ajustarStock.mock.calls).toEqual([
+    ['harina', -0.5],
+    ['harina', -1],
+  ]);
+  expect(await screen.findByRole('button', { name: 'Cantidad de Harina · Molino: 1 kg' })).toBeTruthy();
+});
+
 test('sin conexión: avisa y el número vuelve a lo que era', async () => {
   mockDatos.ajustarStock.mockRejectedValueOnce(sinConexion);
   await abrir();
