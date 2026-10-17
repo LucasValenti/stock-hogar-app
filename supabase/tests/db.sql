@@ -241,6 +241,17 @@ begin
   end if;
   update cierres set total = 1 where mes = '2000-03';
   if (select total from cierres where mes = '2000-03') <> 1400 then raise exception 'FALLA: se editó un cierre'; end if;
+  -- Reintento de un alta que ya estaba guardada, con el mes cerrado después: devuelve el mismo id sin MES_CERRADO.
+  v_otro := guardar_gasto(v_alta, v_items);
+  if v_otro <> v_gasto then raise exception 'FALLA: el reintento con el mes cerrado devolvió otro id'; end if;
+  if (select count(*) from gastos where fecha = '2000-03-10') <> 1 then raise exception 'FALLA: el reintento con el mes cerrado duplicó el gasto'; end if;
+  -- Un alta nueva en el mes cerrado sigue rechazada.
+  begin
+    perform guardar_gasto(v_alta || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d9'), v_items);
+    raise exception 'FALLA: se guardó un gasto nuevo en un mes cerrado';
+  exception when others then
+    if sqlerrm not like '%MES_CERRADO%' then raise; end if;
+  end;
   begin
     perform cerrar_mes('2000-03', 1400, '{}', '[]', v_integrantes);
     raise exception 'FALLA: se cerró dos veces el mismo mes';

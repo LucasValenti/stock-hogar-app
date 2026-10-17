@@ -213,6 +213,9 @@ begin
     where id = v_id;
     if not found then raise exception 'GASTO_INEXISTENTE'; end if;
   else
+    -- Ya estaba guardado (la respuesta anterior se perdió): se devuelve antes del insert, así un
+    -- reintento no choca con el trigger de mes cerrado si el mes se cerró después.
+    if exists (select 1 from gastos where id = v_nuevo) then return v_nuevo; end if;
     insert into gastos (id, fecha, pagado_por, total, modo, categoria_id, nota, creado_por, mp_operacion)
     values (
       v_nuevo,
@@ -226,7 +229,7 @@ begin
       nullif(p_gasto ->> 'mp_operacion', '')
     )
     on conflict (id) do nothing;
-    -- Ya estaba guardado (la respuesta anterior se perdió): no se repiten los ítems.
+    -- Dos reintentos a la vez: el que llega segundo no repite los ítems.
     if not found then return v_nuevo; end if;
     v_id := v_nuevo;
   end if;

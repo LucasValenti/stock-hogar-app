@@ -365,6 +365,10 @@ describe('conCola', () => {
       ...base,
       guardarGasto: (g, i) => (red.hay ? guardarGasto(g, i) : Promise.reject(sinRed())),
       ajustarStock: (p, d) => (red.hay ? ajustarStock(p, d) : Promise.reject(sinRed())),
+      crearAnotacion: (t) => (red.hay ? base.crearAnotacion(t) : Promise.reject(sinRed())),
+      borrarAnotacion: (id) => (red.hay ? base.borrarAnotacion(id) : Promise.reject(sinRed())),
+      editarProducto: (p) => (red.hay ? base.editarProducto(p) : Promise.reject(sinRed())),
+      confirmarHay: (id) => (red.hay ? base.confirmarHay(id) : Promise.reject(sinRed())),
     };
     const cola = crearCola({ almacen: almacenEnMemoria(), ejecutar: ejecutorDe(conRed), esErrorDeRed, integranteActual: comoAna });
     return { base, red, cola, datos: conCola(conRed, cola) };
@@ -387,6 +391,36 @@ describe('conCola', () => {
     const { datos } = datosConRed();
     await expect(datos.ajustarStock('ejemplo-yerba', 2)).resolves.toBe(3);
     await expect(datos.ajustarStock('no-existe', 1)).rejects.toMatchObject({ message: 'PRODUCTO_INEXISTENTE' });
+  });
+
+  test.each([
+    ['crearAnotacion', (d: Datos) => d.crearAnotacion('Pan lactal')],
+    ['borrarAnotacion', (d: Datos) => d.borrarAnotacion('ejemplo-nota-pan')],
+    [
+      'editarProducto',
+      (d: Datos) =>
+        d.editarProducto({ id: 'ejemplo-yerba', nombre: 'Yerba', marca: null, categoria_id: 'ejemplo-almacen', unidad: 'unidad' }),
+    ],
+    ['confirmarHay', (d: Datos) => d.confirmarHay('ejemplo-yerba')],
+  ] as const)('%s sin red rechaza con SIN_CONEXION y no deja nada pendiente', async (_, llamar) => {
+    const { red, cola, datos, base } = datosConRed();
+    const antes = { notas: await base.anotaciones(), yerba: await base.producto('ejemplo-yerba') };
+    red.hay = false;
+    await expect(llamar(datos as unknown as Datos)).rejects.toMatchObject({
+      code: 'SIN_CONEXION',
+      message: expect.stringContaining('Sin conexión'),
+    });
+    expect(await cola.pendientes()).toEqual([]);
+    red.hay = true;
+    await cola.vaciar();
+    expect(await base.anotaciones()).toEqual(antes.notas);
+    expect(await base.producto('ejemplo-yerba')).toEqual(antes.yerba);
+  });
+
+  test('crearAnotacion con red funciona y otros errores pasan tal cual', async () => {
+    const { datos } = datosConRed();
+    await expect(datos.crearAnotacion('Pan lactal')).resolves.toMatchObject({ texto: 'Pan lactal' });
+    await expect(datos.crearAnotacion('   ')).rejects.not.toMatchObject({ code: 'SIN_CONEXION' });
   });
 
   test('guardarGasto sin red queda en la cola con su nuevo_id y al volver se guarda una sola vez', async () => {

@@ -219,6 +219,9 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
     // Igual que la RPC guardar_gasto (007): todo o nada, alta idempotente por nuevo_id.
     // Por total, `tildados` suma stock sin precio; `anotaciones` se borran en la misma operación.
     async guardarGasto(gasto, nuevosItems) {
+      // Alta ya guardada (la respuesta anterior se perdió): se devuelve antes de cualquier control,
+      // también el de mes cerrado, igual que guardar_gasto.
+      if (!gasto.id && gasto.nuevo_id && gastos.some((g) => g.id === gasto.nuevo_id)) return gasto.nuevo_id;
       const productosModo = gasto.modo === 'productos';
       // Sin la clave (web vieja) al editar se conservan los tildados que ya tenía; con `[]` se sacan.
       const tildados = Array.isArray(gasto.tildados) ? gasto.tildados : null;
@@ -253,8 +256,6 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
         });
       } else {
         id = gasto.nuevo_id || nuevoId();
-        // Ya estaba guardado (la respuesta anterior se perdió): no se repiten los ítems.
-        if (gastos.some((g) => g.id === id)) return id;
         if (mesCerrado(gasto.fecha)) throw errorDeBase('MES_CERRADO');
         if (gasto.mp_operacion && gastos.some((g) => g.mp_operacion === gasto.mp_operacion)) {
           throw errorDeBase('duplicate key value violates unique constraint "gastos_mp_operacion_key"', '23505');

@@ -187,7 +187,7 @@ export function crearCola({
   };
 }
 
-// ——— Datos con cola: guardarGasto pasa por la cola; ajustarStock va directo ———
+// ——— Datos con cola: guardarGasto pasa por la cola; el resto de las escrituras va directo ———
 
 export type GuardadoDeGasto = { estado: 'hecho' | 'en-cola'; id: string };
 
@@ -198,8 +198,8 @@ export type DatosConCola = Omit<Datos, 'guardarGasto'> & {
 /** Error que la UI puede mostrar tal cual: `code` distingue el caso, `message` es para la persona. */
 export type ErrorConCodigo = Error & { code: string };
 
-export function errorSinConexion(): ErrorConCodigo {
-  return Object.assign(new Error('Sin conexión: no se guardó el cambio de stock. Probá de nuevo.'), {
+export function errorSinConexion(que = 'el cambio de stock'): ErrorConCodigo {
+  return Object.assign(new Error(`Sin conexión: no se guardó ${que}. Probá de nuevo.`), {
     code: 'SIN_CONEXION',
   });
 }
@@ -237,13 +237,21 @@ export function conCola(datos: Datos, cola: Cola, esDeRed: (e: unknown) => boole
     // No se encola: ajustar_stock_producto suma un delta sin clave de idempotencia. Si la base
     // confirmó pero la respuesta se perdió, reenviarlo lo aplicaría dos veces. Sin red, se avisa
     // y la persona lo vuelve a tocar. F10: clave de idempotencia en la RPC (pide migración).
-    async ajustarStock(productoId, delta) {
-      try {
-        return await datos.ajustarStock(productoId, delta);
-      } catch (e) {
-        if (esDeRed(e)) throw errorSinConexion();
-        throw e;
-      }
-    },
+    ajustarStock: (productoId, delta) => directo(() => datos.ajustarStock(productoId, delta)),
+    // Tampoco se encolan: son rápidas de repetir a mano y, sin clave de idempotencia, un reintento
+    // de crearAnotacion la duplicaría. Sin red, se avisa igual que con el stock.
+    crearAnotacion: (texto) => directo(() => datos.crearAnotacion(texto), 'la nota'),
+    borrarAnotacion: (id) => directo(() => datos.borrarAnotacion(id), 'el cambio en la nota'),
+    editarProducto: (p) => directo(() => datos.editarProducto(p), 'el cambio del producto'),
+    confirmarHay: (id) => directo(() => datos.confirmarHay(id), 'el cambio de stock'),
   };
+
+  async function directo<T>(fn: () => Promise<T>, que?: string): Promise<T> {
+    try {
+      return await fn();
+    } catch (e) {
+      if (esDeRed(e)) throw errorSinConexion(que);
+      throw e;
+    }
+  }
 }
