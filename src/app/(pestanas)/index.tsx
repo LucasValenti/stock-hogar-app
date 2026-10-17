@@ -2,11 +2,12 @@
 // (cargando, sin conexión y mes sin gastos). Se actualiza solo cuando cambia algo en la casa.
 
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { datos } from '@/datos';
 import { esErrorDeRed } from '@/datos/cola';
+import { crearRecarga, type Recarga } from '@/datos/recarga';
 import type { GastoConItems } from '@/datos/tipos';
 import { formatear, formatearPorcentaje } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
@@ -27,34 +28,40 @@ type Carga =
   | { estado: 'error'; error: unknown }
   | { estado: 'listo'; integrantes: Integrante[]; gastos: GastoConItems[] };
 
-/** Los gastos e integrantes del mes, y otra vez cada vez que alguien cambia algo. */
+/**
+ * Los gastos e integrantes del mes, y otra vez cuando alguien cambia algo: una sola vez por tanda
+ * de avisos, y sin que una respuesta vieja pise a una nueva (ver datos/recarga.ts).
+ */
 function useDatosDelMes(mes: string) {
   const [carga, setCarga] = useState<Carga>({ estado: 'cargando' });
-
-  const traer = useCallback(async () => {
-    const { desde, hastaExcl } = rangoMes(mes);
-    try {
-      const [integrantes, gastos] = await Promise.all([datos.integrantes(), datos.gastosEntre(desde, hastaExcl)]);
-      setCarga({ estado: 'listo', integrantes, gastos });
-    } catch (error) {
-      // Si ya había datos en pantalla, una actualización fallida no los borra.
-      setCarga((previa) => (previa.estado === 'listo' ? previa : { estado: 'error', error }));
-    }
-  }, [mes]);
+  const recarga = useRef<Recarga | null>(null);
 
   useEffect(() => {
-    traer();
+    const { desde, hastaExcl } = rangoMes(mes);
+    const r = crearRecarga({
+      pedir: () => Promise.all([datos.integrantes(), datos.gastosEntre(desde, hastaExcl)]),
+      alTener: ([integrantes, gastos]) => setCarga({ estado: 'listo', integrantes, gastos }),
+      // Si ya había datos en pantalla, una actualización fallida no los borra.
+      alFallar: (error) => setCarga((previa) => (previa.estado === 'listo' ? previa : { estado: 'error', error })),
+    });
+    recarga.current = r;
+    r.ahora();
+    let dejar: (() => void) | undefined;
     try {
-      return datos.escucharCambios(() => void traer());
+      dejar = datos.escucharCambios(() => r.pronto());
     } catch {
-      return undefined; // Sin configuración: el error ya llega por `traer`.
+      // Sin configuración: el error ya llega por el pedido.
     }
-  }, [traer]);
+    return () => {
+      r.cancelar();
+      dejar?.();
+    };
+  }, [mes]);
 
   const reintentar = useCallback(() => {
     setCarga({ estado: 'cargando' });
-    traer();
-  }, [traer]);
+    recarga.current?.ahora();
+  }, []);
 
   return { carga, reintentar };
 }

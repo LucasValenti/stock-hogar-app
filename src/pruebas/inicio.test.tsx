@@ -81,6 +81,21 @@ test('un mes sin gastos muestra $ 0 y el aviso con «Cargar gasto»', async () =
   expect(screen.getByRole('button', { name: 'Cargar gasto' })).toBeTruthy();
 });
 
+test('varios avisos seguidos (un gasto con sus ítems) piden los datos una sola vez', async () => {
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  await render(<Inicio />);
+  await screen.findByText('Todavía no cargó nadie');
+  expect(mockDatos.gastosEntre).toHaveBeenCalledTimes(1);
+  mockDatos.gastosEntre.mockResolvedValue([gasto('b', 500_00)]);
+  await act(async () => {
+    avisarCambio();
+    avisarCambio();
+    avisarCambio();
+  });
+  expect(await screen.findByLabelText(`Gastos del mes: ${formatear(500_00)}. 1 gasto.`)).toBeTruthy();
+  expect(mockDatos.gastosEntre).toHaveBeenCalledTimes(2);
+});
+
 test('se actualiza solo cuando alguien cambia algo', async () => {
   mockDatos.gastosEntre.mockResolvedValue([]);
   await render(<Inicio />);
