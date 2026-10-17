@@ -1,5 +1,5 @@
 import {
-  hoy, mesDe, mesActual, mesSiguiente, mesAnterior, rangoMes, nombreMes, fechaCorta, fechaLarga, ultimoDia, diaSiguiente,
+  hoy, mesDe, mesActual, mesSiguiente, mesAnterior, rangoMes, nombreMes, fechaCorta, fechaLarga, ultimoDia, diaSiguiente, fechaDesdeTexto,
 } from './meses';
 
 test('hoy y mesActual usan la fecha local', () => {
@@ -35,4 +35,15 @@ test('último día del mes y día siguiente, con años bisiestos y fin de año',
   expect(ultimoDia('2028-02')).toBe('2028-02-29');
   expect(diaSiguiente('2026-12-31')).toBe('2027-01-01');
   expect(diaSiguiente('2026-02-28')).toBe('2026-03-01');
+});
+
+test('fechaDesdeTexto lee dd/mm/aaaa (o d/m/aaaa) y rechaza fechas que no existen', () => {
+  expect(fechaDesdeTexto('17/10/2026')).toBe('2026-10-17');
+  expect(fechaDesdeTexto(' 5/3/2026 ')).toBe('2026-03-05');
+  expect(fechaDesdeTexto('29/02/2028')).toBe('2028-02-29');
+  expect(fechaDesdeTexto('29/02/2026')).toBeNull();
+  expect(fechaDesdeTexto('31/04/2026')).toBeNull();
+  expect(fechaDesdeTexto('2026-10-17')).toBeNull();
+  expect(fechaDesdeTexto('')).toBeNull();
+  expect(fechaDesdeTexto('17/13/2026')).toBeNull();
 });

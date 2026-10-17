@@ -51,3 +51,13 @@ export function diaSiguiente(fecha: string): string {
   const [a, m, d] = fecha.split('-').map(Number);
   return hoy(new Date(a, m - 1, d + 1));
 }
+
+/** Fecha tipeada «dd/mm/aaaa» (también «d/m/aaaa») → 'AAAA-MM-DD'; null si no es una fecha que existe. */
+export function fechaDesdeTexto(texto: string): string | null {
+  const m = texto.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const [d, mes, a] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const f = new Date(a, mes - 1, d);
+  if (f.getFullYear() !== a || f.getMonth() !== mes - 1 || f.getDate() !== d) return null;
+  return hoy(f);
+}

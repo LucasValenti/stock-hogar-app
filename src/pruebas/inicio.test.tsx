@@ -9,17 +9,20 @@ import type { Integrante } from '@/logica/tipos';
 
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
-jest.mock('@/sesion/sesion', () => ({ useSesion: () => ({ yo: { nombre: 'Ana' } }) }));
+jest.mock('@/sesion/sesion', () => ({ useSesion: () => ({ yo: { id: 'a', nombre: 'Ana' } }) }));
 
 const mockDatos = {
   integrantes: jest.fn(),
   gastosEntre: jest.fn(),
   escucharCambios: jest.fn(),
 };
+const mockCola = { pendientes: jest.fn(), rechazadas: jest.fn(), olvidarRechazada: jest.fn() };
 jest.mock('@/datos', () => ({
   get datos() {
     return mockDatos;
   },
+  obtenerCola: () => mockCola,
+  escucharDescartes: () => () => undefined,
 }));
 
 const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
@@ -39,6 +42,8 @@ let avisarCambio: () => void = () => undefined;
 beforeEach(() => {
   jest.clearAllMocks();
   mockDatos.integrantes.mockResolvedValue(casa);
+  mockCola.pendientes.mockResolvedValue([]);
+  mockCola.rechazadas.mockResolvedValue([]);
   mockDatos.escucharCambios.mockImplementation((f: () => void) => {
     avisarCambio = f;
     return () => undefined;
@@ -103,4 +108,14 @@ test('se actualiza solo cuando alguien cambia algo', async () => {
   mockDatos.gastosEntre.mockResolvedValue([gasto('b', 500_00)]);
   await act(async () => avisarCambio());
   expect(await screen.findByLabelText(`Gastos del mes: ${formatear(500_00)}. 1 gasto.`)).toBeTruthy();
+});
+
+test('avisa los gastos de quien tiene la sesión que esperan conexión', async () => {
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  mockCola.pendientes.mockResolvedValue([
+    { id: 'o1', tipo: 'guardarGasto', duenio: 'a', datos: {} },
+    { id: 'o2', tipo: 'guardarGasto', duenio: 'b', datos: {} },
+  ]);
+  await render(<Inicio />);
+  expect(await screen.findByText('1 gasto guardado en el celu: se manda cuando vuelva la conexión.')).toBeTruthy();
 });

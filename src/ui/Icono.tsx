@@ -15,6 +15,11 @@ const TRAZOS = {
   candado: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   nota: '<path d="M5 4h14v12l-4 4H5z"/><path d="M15 20v-4h4"/>',
   nube: '<path d="M8 18h9a4 4 0 0 0 1-7.9A6 6 0 0 0 7 9.2 4.5 4.5 0 0 0 8 18z"/><path d="M3 3l18 18"/>',
+  ok: '<path d="m5 12 4 4 10-10"/>',
+  falta: '<circle cx="12" cy="12" r="8"/><path d="M12 8v5M12 16h0"/>',
+  atras: '<path d="m14 6-6 6 6 6"/>',
+  abajo: '<path d="m6 9 6 6 6-6"/>',
+  lupa: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>',
 } as const;
 
 export type NombreIcono = keyof typeof TRAZOS;

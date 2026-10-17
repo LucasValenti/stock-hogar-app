@@ -17,6 +17,7 @@ import type { FilaReparto, Integrante } from '@/logica/tipos';
 import { useSesion } from '@/sesion/sesion';
 import { useTema } from '@/tema/tema';
 import { Aviso } from '@/ui/Aviso';
+import { AvisoCola } from '@/ui/AvisoCola';
 import { Esqueleto } from '@/ui/Esqueleto';
 import { Monto } from '@/ui/Monto';
 import { Pantalla } from '@/ui/Pantalla';
@@ -81,6 +82,7 @@ export default function Inicio() {
 
   return (
     <Pantalla saludo={yo ? `Hola, ${yo.nombre}` : undefined} titulo={enMayuscula(nombre)} ocupado={carga.estado === 'cargando'}>
+      <AvisoCola />
       {carga.estado === 'cargando' ? (
         <Cargando />
       ) : carga.estado === 'error' ? (

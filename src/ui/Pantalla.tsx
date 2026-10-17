@@ -24,6 +24,7 @@ export function Pantalla({ children, titulo, saludo, ocupado = false }: Props) {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: tema.color.fondo }}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           flexGrow: 1,
           padding: tema.espacio.l,
