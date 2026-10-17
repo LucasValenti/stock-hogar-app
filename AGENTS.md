@@ -1,41 +1,28 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+# Stock del hogar (app)
 
-## Expo has changed — do not trust your training data
+App Expo (React Native + TypeScript + Expo Router) para gastos compartidos y stock de una casa. Ver `README.md` para correrla.
 
-Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
+## Antes de tocar código de Expo
 
-1. Read the major version of the `expo` package in `package.json`.
-2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
-3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
+Expo cambia en cada SDK y la memoria sobre sus APIs puede estar vieja. Mirá la versión de `expo` en `package.json` y consultá los docs de esa versión (`https://docs.expo.dev/versions/v<major>.0.0/`; índice en `https://docs.expo.dev/llms.txt`) antes de usar una API de Expo, EAS o React Native.
 
-## Commands
-
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
+## Comandos
 
 ```bash
-npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
-npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
-npx expo-doctor             # diagnose dependency and config issues
-npx expo install --fix      # fix incompatible package versions
+npm test               # Jest
+npm run typecheck      # tsc --noEmit
+npx expo start         # servidor de desarrollo
+npx expo install <paquete>   # siempre así: resuelve la versión compatible con el SDK
 ```
 
-Run lint and typecheck before declaring any task done.
+No hay linter configurado. Correr tests y typecheck antes de dar algo por terminado.
 
-## Navigation & Routing
+## Convenciones
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
-
-## Building with EAS
-
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
-
-## Rules
-
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+- Rutas solo en `src/app/`; componentes, hooks y utilidades fuera de ahí.
+- La lógica del reparto, el stock y las fechas vive en `src/logica/` como funciones puras con tests. Los montos son enteros en centavos.
+- Los datos se piden por `src/datos` (Supabase o memoria según `EXPO_PUBLIC_DATOS`); las pantallas no usan el cliente de Supabase directo. Solo `src/datos` y `src/sesion` (ingreso) lo tocan.
+- Valores visuales (color, tamaño, espacio, movimiento) solo desde `src/tema/tokens.json`. Animar `transform` y `opacity`, y respetar movimiento reducido.
+- Textos de la interfaz en español rioplatense, con voseo.
+- Sin claves ni datos reales en el repo: `.env` no se sube y la casa de ejemplo de `src/datos/memoria.ts` es ficticia.
+- `ios/` y `android/` se generan solos (Continuous Native Generation): no se crean ni editan a mano; la configuración nativa va en `app.json` y plugins.
