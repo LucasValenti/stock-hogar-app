@@ -1,10 +1,12 @@
-// Cola de escritura: si no hay red, guardar un gasto o ajustar el stock queda pendiente
-// en el dispositivo y se manda cuando vuelve la conexión, en el mismo orden.
+// Cola de escritura: si no hay red, guardar un gasto queda pendiente en el dispositivo
+// y se manda cuando vuelve la conexión, en el mismo orden.
+// Solo entra lo que la base puede recibir dos veces sin duplicar: guardar_gasto lo es por
+// nuevo_id (on conflict do nothing). ajustar_stock_producto no (ver ajustarStock en conCola).
 
 import { nuevoId } from './id';
 import type { Datos, GastoAGuardar, ItemAGuardar } from './tipos';
 
-export type TipoOp = 'guardarGasto' | 'ajustarStock';
+export type TipoOp = 'guardarGasto';
 export type Op = { id: string; tipo: TipoOp; datos: unknown };
 
 /** La forma de AsyncStorage: se le puede pasar directo. */
@@ -98,38 +100,35 @@ export function crearCola({ almacen, ejecutar, esErrorDeRed, alDescartar, clave 
   };
 }
 
-// ——— Datos con cola: guardarGasto y ajustarStock pasan por la cola ———
+// ——— Datos con cola: guardarGasto pasa por la cola; ajustarStock va directo ———
 
 export type GuardadoDeGasto = { estado: 'hecho' | 'en-cola'; id: string };
-export type AjusteDeStock = { estado: 'hecho'; stock: number } | { estado: 'en-cola' };
 
-export type DatosConCola = Omit<Datos, 'guardarGasto' | 'ajustarStock'> & {
+export type DatosConCola = Omit<Datos, 'guardarGasto'> & {
   guardarGasto(gasto: GastoAGuardar, items: ItemAGuardar[]): Promise<GuardadoDeGasto>;
-  ajustarStock(productoId: string, delta: number): Promise<AjusteDeStock>;
 };
 
+/** Error que la UI puede mostrar tal cual: `code` distingue el caso, `message` es para la persona. */
+export type ErrorConCodigo = Error & { code: string };
+
+export function errorSinConexion(): ErrorConCodigo {
+  return Object.assign(new Error('Sin conexión: no se guardó el cambio de stock. Probá de nuevo.'), {
+    code: 'SIN_CONEXION',
+  });
+}
+
 type DatosGuardarGasto = { gasto: GastoAGuardar; items: ItemAGuardar[] };
-type DatosAjustarStock = { productoId: string; delta: number };
 
 /** Cómo se manda cada op a la base. */
 export function ejecutorDe(datos: Datos): (op: Op) => Promise<unknown> {
   return async (op) => {
-    switch (op.tipo) {
-      case 'guardarGasto': {
-        const { gasto, items } = op.datos as DatosGuardarGasto;
-        return datos.guardarGasto(gasto, items);
-      }
-      case 'ajustarStock': {
-        const { productoId, delta } = op.datos as DatosAjustarStock;
-        return datos.ajustarStock(productoId, delta);
-      }
-      default:
-        throw new Error(`Op desconocida: ${String((op as Op).tipo)}`);
-    }
+    if (op.tipo !== 'guardarGasto') throw new Error(`Op desconocida: ${String(op.tipo)}`);
+    const { gasto, items } = op.datos as DatosGuardarGasto;
+    return datos.guardarGasto(gasto, items);
   };
 }
 
-export function conCola(datos: Datos, cola: Cola): DatosConCola {
+export function conCola(datos: Datos, cola: Cola, esDeRed: (e: unknown) => boolean = esErrorDeRed): DatosConCola {
   return {
     ...datos,
     // El alta lleva nuevo_id desde ya: si se reintenta, la base no la duplica.
@@ -140,10 +139,16 @@ export function conCola(datos: Datos, cola: Cola): DatosConCola {
       const id = (g.id ?? g.nuevo_id) as string;
       return r.estado === 'hecho' ? { estado: 'hecho', id: String(r.resultado) } : { estado: 'en-cola', id };
     },
+    // No se encola: ajustar_stock_producto suma un delta sin clave de idempotencia. Si la base
+    // confirmó pero la respuesta se perdió, reenviarlo lo aplicaría dos veces. Sin red, se avisa
+    // y la persona lo vuelve a tocar. F10: clave de idempotencia en la RPC (pide migración).
     async ajustarStock(productoId, delta) {
-      const datosOp: DatosAjustarStock = { productoId, delta };
-      const r = await cola.encolar({ id: nuevoId(), tipo: 'ajustarStock', datos: datosOp });
-      return r.estado === 'hecho' ? { estado: 'hecho', stock: Number(r.resultado) } : { estado: 'en-cola' };
+      try {
+        return await datos.ajustarStock(productoId, delta);
+      } catch (e) {
+        if (esDeRed(e)) throw errorSinConexion();
+        throw e;
+      }
     },
   };
 }

@@ -5,15 +5,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 
+import type { ErrorConCodigo } from './cola';
+
+/** Falta la configuración de Supabase: la UI lo muestra en vez de caerse. */
+export function errorSinConfig(): ErrorConCodigo {
+  return Object.assign(
+    new Error(
+      'Falta configurar la conexión: completá EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY en .env, o usá EXPO_PUBLIC_DATOS=memoria.',
+    ),
+    { code: 'SIN_CONFIG' },
+  );
+}
+
 export function crearCliente(): SupabaseClient {
   // Expo reemplaza process.env.EXPO_PUBLIC_* al compilar: hay que nombrarlas así, completas.
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const clave = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !clave) {
-    throw new Error(
-      'Faltan EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY en .env (o usá EXPO_PUBLIC_DATOS=memoria).',
-    );
-  }
+  if (!url || !clave) throw errorSinConfig();
 
   const cliente = createClient(url, clave, {
     auth: {

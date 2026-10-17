@@ -1,4 +1,6 @@
-import { crearCola, esErrorDeRed, type Almacen, type Op } from './cola';
+import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Almacen, type Op } from './cola';
+import { crearDatosEnMemoria } from './memoria';
+import type { Datos } from './tipos';
 
 function almacenEnMemoria(): Almacen {
   const valores = new Map<string, string>();
@@ -11,7 +13,7 @@ function almacenEnMemoria(): Almacen {
 }
 
 const sinRed = () => new TypeError('Network request failed');
-const op = (id: string, tipo: Op['tipo'] = 'ajustarStock'): Op => ({ id, tipo, datos: { id } });
+const op = (id: string): Op => ({ id, tipo: 'guardarGasto', datos: { id } });
 
 // `ejecutar` de prueba: con red responde el id de la op; sin red, falla como fetch.
 function servidor() {
@@ -136,10 +138,10 @@ describe('crearCola', () => {
     const almacen = almacenEnMemoria();
     const { estado, ejecutar } = servidor();
     estado.hayRed = false;
-    await crearCola({ almacen, ejecutar, esErrorDeRed }).encolar(op('a', 'guardarGasto'));
+    await crearCola({ almacen, ejecutar, esErrorDeRed }).encolar(op('a'));
 
     const despues = crearCola({ almacen, ejecutar, esErrorDeRed });
-    expect(await despues.pendientes()).toEqual([op('a', 'guardarGasto')]);
+    expect(await despues.pendientes()).toEqual([op('a')]);
     estado.hayRed = true;
     await despues.vaciar();
     expect(estado.ejecutadas).toEqual(['a']);
@@ -154,5 +156,58 @@ describe('crearCola', () => {
     await Promise.all([cola.vaciar(), cola.vaciar()]);
     await cola.vaciar();
     expect(estado.ejecutadas).toEqual(['a']);
+  });
+});
+
+describe('conCola', () => {
+  // Memoria con un interruptor de red: sin red, guardarGasto y ajustarStock fallan como fetch.
+  function datosConRed() {
+    const base = crearDatosEnMemoria();
+    const red = { hay: true };
+    const guardarGasto = base.guardarGasto;
+    const ajustarStock = base.ajustarStock;
+    const conRed: Datos = {
+      ...base,
+      guardarGasto: (g, i) => (red.hay ? guardarGasto(g, i) : Promise.reject(sinRed())),
+      ajustarStock: (p, d) => (red.hay ? ajustarStock(p, d) : Promise.reject(sinRed())),
+    };
+    const cola = crearCola({ almacen: almacenEnMemoria(), ejecutar: ejecutorDe(conRed), esErrorDeRed });
+    return { base, red, cola, datos: conCola(conRed, cola) };
+  }
+
+  test('ajustarStock sin red rechaza con SIN_CONEXION y no deja nada pendiente', async () => {
+    const { red, cola, datos, base } = datosConRed();
+    red.hay = false;
+    await expect(datos.ajustarStock('ejemplo-yerba', 1)).rejects.toMatchObject({
+      code: 'SIN_CONEXION',
+      message: expect.stringContaining('Sin conexión'),
+    });
+    expect(await cola.pendientes()).toEqual([]);
+    red.hay = true;
+    await cola.vaciar();
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(1); // no se aplicó nunca
+  });
+
+  test('ajustarStock con red devuelve el stock nuevo y otros errores pasan tal cual', async () => {
+    const { datos } = datosConRed();
+    await expect(datos.ajustarStock('ejemplo-yerba', 2)).resolves.toBe(3);
+    await expect(datos.ajustarStock('no-existe', 1)).rejects.toMatchObject({ message: 'PRODUCTO_INEXISTENTE' });
+  });
+
+  test('guardarGasto sin red queda en la cola con su nuevo_id y al volver se guarda una sola vez', async () => {
+    const { red, cola, datos, base } = datosConRed();
+    red.hay = false;
+    const r = await datos.guardarGasto(
+      { fecha: '2026-10-12', pagado_por: 'ejemplo-ana', total: 500_00, modo: 'total', categoria_id: 'ejemplo-luz' },
+      [],
+    );
+    expect(r.estado).toBe('en-cola');
+    expect(await cola.pendientes()).toHaveLength(1);
+    red.hay = true;
+    await cola.vaciar();
+    await cola.vaciar();
+    const guardado = await base.gasto(r.id);
+    expect(guardado.gasto.total).toBe(500_00);
+    expect((await base.gastosEntre('2026-10-12', '2026-10-13')).length).toBe(1);
   });
 });

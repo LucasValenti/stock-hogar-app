@@ -1,22 +1,19 @@
 // La capa de datos de la app: memoria o Supabase según EXPO_PUBLIC_DATOS, con la cola de escritura.
-// guardarGasto y ajustarStock pasan por la cola: sin red quedan pendientes y salen al volver la conexión.
+// guardarGasto pasa por la cola: sin red queda pendiente y sale al volver la conexión.
+// Todo se arma en el primer uso, no al importar: si falta .env, el error (SIN_CONFIG) llega
+// a quien llamó y la UI lo puede mostrar, en vez de romper la app al arrancar.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
 import { crearCliente } from './cliente';
-import { conCola, crearCola, ejecutorDe, esErrorDeRed, type DatosConCola, type Op } from './cola';
+import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Cola, type DatosConCola, type Op } from './cola';
 import { crearDatosEnMemoria, semillaDeEjemplo } from './memoria';
 import { crearDatosSupabase } from './supabase';
 import type { Datos } from './tipos';
 
 export type { Datos } from './tipos';
-export type { AjusteDeStock, DatosConCola, GuardadoDeGasto, Op } from './cola';
-
-const base: Datos =
-  process.env.EXPO_PUBLIC_DATOS === 'memoria'
-    ? crearDatosEnMemoria(semillaDeEjemplo)
-    : crearDatosSupabase(crearCliente());
+export type { Cola, DatosConCola, ErrorConCodigo, GuardadoDeGasto, Op } from './cola';
 
 type AlDescartar = (op: Op, error: unknown) => void;
 const oyentesDeDescarte = new Set<AlDescartar>();
@@ -29,17 +26,50 @@ export function escucharDescartes(fn: AlDescartar): () => void {
   };
 }
 
-export const cola = crearCola({
-  almacen: AsyncStorage,
-  ejecutar: ejecutorDe(base),
-  esErrorDeRed,
-  alDescartar: (op, error) => oyentesDeDescarte.forEach((f) => f(op, error)),
-});
+let capa: { datos: DatosConCola; cola: Cola } | null = null;
 
-export const datos: DatosConCola = conCola(base, cola);
+// Si falla (falta .env), no queda nada a medias: el próximo uso vuelve a intentar.
+function iniciar(): { datos: DatosConCola; cola: Cola } {
+  if (capa) return capa;
+  const base: Datos =
+    process.env.EXPO_PUBLIC_DATOS === 'memoria'
+      ? crearDatosEnMemoria(semillaDeEjemplo)
+      : crearDatosSupabase(crearCliente());
+  const cola = crearCola({
+    almacen: AsyncStorage,
+    ejecutar: ejecutorDe(base),
+    esErrorDeRed,
+    alDescartar: (op, error) => oyentesDeDescarte.forEach((f) => f(op, error)),
+  });
+  capa = { datos: conCola(base, cola), cola };
+  // NetInfo anda en nativo y en la web (ahí escucha los eventos online/offline del navegador).
+  // Avisa también al suscribirse: si quedó algo de la sesión anterior, sale ahora.
+  NetInfo.addEventListener((estado) => {
+    if (estado.isConnected !== false) cola.vaciar().catch(() => undefined);
+  });
+  return capa;
+}
 
-// NetInfo anda en nativo y en la web (ahí escucha los eventos online/offline del navegador).
-// Avisa también al arrancar: si quedó algo de la sesión anterior, sale ahora.
-NetInfo.addEventListener((estado) => {
-  if (estado.isConnected !== false) cola.vaciar().catch(() => undefined);
+/** Lanza el error SIN_CONFIG si falta la configuración de Supabase. */
+export const obtenerDatos = (): DatosConCola => iniciar().datos;
+export const obtenerCola = (): Cola => iniciar().cola;
+
+// Los métodos que no devuelven promesa: ahí el error se lanza; en el resto, la promesa rechaza.
+const SINCRONOS = new Set<PropertyKey>(['escucharCambios']);
+
+/** `datos.metodo(...)` arma la capa en la primera llamada. */
+export const datos: DatosConCola = new Proxy({} as DatosConCola, {
+  get(_, clave) {
+    // Que no parezca una promesa (then) ni engañe a quien inspecciona símbolos.
+    if (typeof clave === 'symbol' || clave === 'then') return undefined;
+    return (...args: unknown[]) => {
+      try {
+        const d = iniciar().datos as unknown as Record<PropertyKey, (...a: unknown[]) => unknown>;
+        return d[clave](...args);
+      } catch (e) {
+        if (SINCRONOS.has(clave)) throw e;
+        return Promise.reject(e);
+      }
+    };
+  },
 });
