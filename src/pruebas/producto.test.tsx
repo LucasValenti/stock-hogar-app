@@ -189,6 +189,7 @@ describe('Ficha de producto', () => {
     await tocar('button', 'Guardar cambios');
     const hoja = within(screen.getByTestId('hoja'));
     expect(hoja.getByRole('header', { name: '¿Redondeamos lo que hay?' })).toBeTruthy();
+    expect(hoja.getByText('Hay 1,5 en casa: en paquetes solo van números enteros.')).toBeTruthy();
     await fireEvent.press(hoja.getByRole('button', { name: 'Guardar y redondear a 2' }));
     expect(mockDatos.editarProducto).toHaveBeenCalledWith(expect.objectContaining({ unidad: 'paquete' }));
     expect(mockDatos.ajustarStock).toHaveBeenCalledWith('harina', 0.5);

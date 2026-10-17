@@ -186,7 +186,7 @@ function Ficha({ base }: { base: Base }) {
         <Hoja
           visible={hoja === 'redondeo'}
           titulo="¿Redondeamos lo que hay?"
-          subtitulo={`Hay ${cuanto} en casa y las ${NOMBRE_UNIDAD[valores.unidad].toLowerCase()} se cuentan enteras.`}
+          subtitulo={`Hay ${cuanto} en casa: en ${NOMBRE_UNIDAD[valores.unidad].toLowerCase()} solo van números enteros.`}
           alCerrar={() => setHoja(null)}
           pie={
             <>
