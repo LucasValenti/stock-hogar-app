@@ -133,19 +133,51 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
       ok(await supabase.rpc('reabrir_mes', { p_mes: mes }));
     },
 
-    // Si el canal se cae y vuelve, se avisa igual: lo que cambió durante el corte no llegó.
-    escucharCambios(alCambiar) {
-      let caido = false;
-      const canal = supabase
-        .channel('casa')
-        .on('postgres_changes', { event: '*', schema: 'public' }, () => alCambiar())
-        .subscribe((estado) => {
-          if (estado === 'SUBSCRIBED' && caido) alCambiar();
-          caido = estado !== 'SUBSCRIBED';
-        });
-      return () => {
-        void supabase.removeChannel(canal);
-      };
-    },
+    escucharCambios: (alCambiar) => escucharCambios(supabase, alCambiar),
+  };
+}
+
+// ——— Tiempo real: un solo canal por cliente, compartido por todas las pantallas que escuchan ———
+// realtime-js devuelve el canal que ya existe con ese nombre, y sumarle un .on() después de
+// subscribe() lanza; además, removeChannel lo cierra para todos. Por eso el canal se abre con el
+// primer oyente, reparte cada cambio a todos y se cierra recién cuando se va el último.
+
+type CanalCompartido = { oyentes: Set<() => void>; cerrar(): void };
+const canales = new WeakMap<SupabaseClient, CanalCompartido>();
+// Cada canal abierto lleva un nombre nuevo: si uno se está cerrando, el siguiente no lo reutiliza.
+let abiertos = 0;
+
+function abrirCanal(supabase: SupabaseClient): CanalCompartido {
+  const oyentes = new Set<() => void>();
+  const avisar = () => [...oyentes].forEach((f) => f());
+  // Si el canal se cae y vuelve, se avisa igual: lo que cambió durante el corte no llegó.
+  let caido = false;
+  const canal = supabase
+    .channel(`casa-${++abiertos}`)
+    .on('postgres_changes', { event: '*', schema: 'public' }, avisar)
+    .subscribe((estado) => {
+      if (estado === 'SUBSCRIBED' && caido) avisar();
+      caido = estado !== 'SUBSCRIBED';
+    });
+  return {
+    oyentes,
+    cerrar: () => void supabase.removeChannel(canal),
+  };
+}
+
+function escucharCambios(supabase: SupabaseClient, alCambiar: () => void): () => void {
+  let compartido = canales.get(supabase);
+  if (!compartido) {
+    compartido = abrirCanal(supabase);
+    canales.set(supabase, compartido);
+  }
+  const c = compartido;
+  // Un envoltorio propio: el mismo `alCambiar` registrado dos veces cuenta como dos oyentes.
+  const oyente = () => alCambiar();
+  c.oyentes.add(oyente);
+  return () => {
+    if (!c.oyentes.delete(oyente) || c.oyentes.size > 0) return;
+    if (canales.get(supabase) === c) canales.delete(supabase);
+    c.cerrar();
   };
 }
