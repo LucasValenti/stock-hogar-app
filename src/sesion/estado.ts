@@ -20,3 +20,27 @@ export function estadoDeSesion(
   if (!session) return 'sin-sesion';
   return integrante ? 'lista' : 'ajena';
 }
+
+/** El integrante con el que la cola de escritura puede mandar: solo con la sesión lista. */
+export function integranteDeLaCola(estado: EstadoSesion, yo: Integrante | null): string | null {
+  return estado === 'lista' && yo ? yo.id : null;
+}
+
+/**
+ * Cierra la sesión sin dejar una ventana en la que la cola mande lo pendiente con la sesión cerrándose:
+ * primero se le quita el integrante a la cola y recién después se cierra. Si no se pudo cerrar,
+ * la cola vuelve a ser de quien estaba.
+ */
+export async function salirSinCola(
+  cerrar: () => Promise<void>,
+  fijar: (id: string | null) => void,
+  idActual: string | null,
+): Promise<void> {
+  fijar(null);
+  try {
+    await cerrar();
+  } catch (e) {
+    fijar(idActual);
+    throw e;
+  }
+}

@@ -2,7 +2,7 @@
 // Supabase guarda la sesión en el dispositivo (AsyncStorage): al abrir la app no hay que volver a ingresar.
 // Con EXPO_PUBLIC_DATOS=memoria no hay cuentas: se entra directo como Ana, de la casa de ejemplo.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { datos, esModoMemoria, fijarIntegrante } from '@/datos';
 import { obtenerCliente } from '@/datos/cliente';
@@ -10,7 +10,7 @@ import { semillaDeEjemplo } from '@/datos/memoria';
 import type { Integrante } from '@/logica/tipos';
 
 import { cerrarSesion } from './acceso';
-import { estadoDeSesion, type EstadoSesion, type SesionAuth } from './estado';
+import { estadoDeSesion, integranteDeLaCola, salirSinCola, type EstadoSesion, type SesionAuth } from './estado';
 
 export { estadoDeSesion } from './estado';
 export type { EstadoSesion, SesionAuth } from './estado';
@@ -52,6 +52,9 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   const [miembro, setMiembro] = useState<{ email: string; yo: Integrante | null } | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [intento, setIntento] = useState(0);
+  // El email con el que la cola puede estar mandando ahora (se lee dentro del aviso de Supabase).
+  const emailVigente = useRef<string | null>(null);
+  const idEnCola = useRef<string | null>(null);
 
   // 1) La sesión de Supabase, ahora y cada vez que cambia (ingreso, cierre, renovación del token).
   useEffect(() => {
@@ -67,6 +70,8 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = auth.onAuthStateChange((_evento, nueva) => {
+      // Sin sesión o con otra cuenta, la cola deja de mandar ya, sin esperar al próximo render.
+      if (!nueva || nueva.user.email !== emailVigente.current) fijarIntegrante(null);
       setSession(nueva);
       if (!nueva) setMiembro(null);
     });
@@ -100,7 +105,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 
   const salir = useCallback(async () => {
     if (esModoMemoria()) return;
-    await cerrarSesion();
+    await salirSinCola(cerrarSesion, fijarIntegrante, idEnCola.current);
   }, []);
 
   const reintentar = useCallback(() => {
@@ -123,10 +128,12 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   }, [error, session, email, miembro, salir, reintentar]);
 
   // 3) La cola de escritura solo manda lo de quien tiene la sesión lista (ver datos/cola.ts).
-  const idListo = valor.estado === 'lista' ? (valor.yo?.id ?? null) : null;
+  const idListo = integranteDeLaCola(valor.estado, valor.yo);
   useEffect(() => {
+    emailVigente.current = idListo ? email : null;
+    idEnCola.current = idListo;
     fijarIntegrante(idListo);
-  }, [idListo]);
+  }, [idListo, email]);
 
   return <Contexto value={valor}>{children}</Contexto>;
 }
