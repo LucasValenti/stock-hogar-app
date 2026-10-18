@@ -218,12 +218,27 @@ export function errorSinSesion(): ErrorConCodigo {
 /** Lo que queda guardado de la op: `gasto` con sus `tildados` y `anotaciones`, tal como van a la base. */
 type DatosGuardarGasto = { gasto: GastoAGuardar; items: ItemAGuardar[] };
 
-/** Cómo se manda cada op a la base. */
+/** guardar_gasto avisa que ese nuevo_id ya está guardado, con otros datos. */
+const esYaGuardado = (e: unknown): boolean =>
+  /GASTO_YA_GUARDADO/.test(String((e as { message?: unknown } | null)?.message ?? ''));
+
+/**
+ * Cómo se manda cada op a la base (al guardar con red y al vaciar la cola).
+ * Si el alta ya estaba guardada con otros datos (la base la guardó, la respuesta se perdió y la persona
+ * cambió algo antes de volver a guardar), se reenvía como edición de ese id con los mismos tildados y
+ * anotaciones: guardar_gasto aplica solo la diferencia, así que no se pierde ni se duplica nada.
+ */
 export function ejecutorDe(datos: Datos): (op: Op) => Promise<unknown> {
   return async (op) => {
     if (op.tipo !== 'guardarGasto') throw new Error(`Op desconocida: ${String(op.tipo)}`);
     const { gasto, items } = op.datos as DatosGuardarGasto;
-    return datos.guardarGasto(gasto, items);
+    try {
+      return await datos.guardarGasto(gasto, items);
+    } catch (e) {
+      if (gasto.id || !gasto.nuevo_id || !esYaGuardado(e)) throw e;
+      const { nuevo_id, ...resto } = gasto;
+      return datos.guardarGasto({ ...resto, id: nuevo_id }, items);
+    }
   };
 }
 

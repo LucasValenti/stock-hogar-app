@@ -1,6 +1,6 @@
 import { conCola, crearCola, ejecutorDe, esCorte, esErrorDeRed, esRechazoDefinitivo, type Almacen, type Op, type OpNueva } from './cola';
 import { crearDatosEnMemoria } from './memoria';
-import type { Datos } from './tipos';
+import type { Datos, GastoAGuardar } from './tipos';
 
 function almacenEnMemoria(): Almacen {
   const valores = new Map<string, string>();
@@ -492,6 +492,65 @@ describe('conCola', () => {
     expect(await cola.pendientes()).toEqual([]);
     expect((await base.producto('ejemplo-yerba'))?.stock).toBe(3);
     expect((await base.gasto(r.id)).items).toHaveLength(1);
+  });
+
+  // La base guardó el alta pero respondió con un error que no es de red (timeout, 5xx): la pantalla
+  // lo muestra, la persona cambia algo y vuelve a guardar con el mismo nuevo_id.
+  function conRespuestaPerdida() {
+    const base = crearDatosEnMemoria();
+    let perder = true;
+    const guardar = base.guardarGasto;
+    const enviados: GastoAGuardar[] = [];
+    const conPerdida: Datos = {
+      ...base,
+      guardarGasto: async (g, i) => {
+        enviados.push(g);
+        const id = await guardar(g, i);
+        if (perder) {
+          perder = false;
+          throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+        }
+        return id;
+      },
+    };
+    const cola = crearCola({ almacen: almacenEnMemoria(), ejecutar: ejecutorDe(conPerdida), esErrorDeRed, integranteActual: comoAna });
+    return { base, cola, enviados, datos: conCola(conPerdida, cola) };
+  }
+
+  test('un alta ya guardada que se vuelve a mandar con otros datos (GASTO_YA_GUARDADO) se reenvía como edición', async () => {
+    const { base, cola, enviados, datos } = conRespuestaPerdida();
+    const alta = { ...conTildados, nuevo_id: '00000000-0000-4000-8000-0000000000a1' };
+    await expect(datos.guardarGasto(alta, [])).rejects.toMatchObject({ code: '57014' });
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(3);
+
+    const cambiado = { ...alta, total: 650_00, nota: 'Con el vuelto', tildados: [{ producto_id: 'ejemplo-yerba', cantidad: 3 }] };
+    await expect(datos.guardarGasto(cambiado, [])).resolves.toEqual({ estado: 'hecho', id: alta.nuevo_id });
+    const { gasto, items } = await base.gasto(alta.nuevo_id);
+    expect([gasto.total, gasto.nota]).toEqual([650_00, 'Con el vuelto']);
+    expect(items.map((i) => i.cantidad)).toEqual([3]);
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(4); // 2 → 3: suma 1, no 3
+    expect(enviados.at(-1)).toMatchObject({ id: alta.nuevo_id, tildados: cambiado.tildados, anotaciones: alta.anotaciones });
+    expect(enviados.at(-1)).not.toHaveProperty('nuevo_id');
+    expect(await cola.pendientes()).toEqual([]);
+    expect(await cola.rechazadas()).toEqual([]);
+  });
+
+  test('una op en cola que choca con GASTO_YA_GUARDADO sale como edición y no queda rechazada', async () => {
+    const base = crearDatosEnMemoria();
+    const alta = { ...conTildados, nuevo_id: '00000000-0000-4000-8000-0000000000a2' };
+    await base.guardarGasto(alta, []);
+    const almacen = almacenEnMemoria();
+    const cambiado = { ...alta, total: 700_00 };
+    const pendiente: Op = { id: 'op-1', tipo: 'guardarGasto', datos: { gasto: cambiado, items: [] }, duenio: 'ana' };
+    await almacen.setItem('cola-escritura', JSON.stringify([pendiente]));
+    const alDescartar = jest.fn();
+    const cola = crearCola({ almacen, ejecutar: ejecutorDe(base), esErrorDeRed, integranteActual: comoAna, alDescartar });
+    await cola.vaciar();
+    expect(await cola.pendientes()).toEqual([]);
+    expect(await cola.rechazadas()).toEqual([]);
+    expect(alDescartar).not.toHaveBeenCalled();
+    expect((await base.gasto(alta.nuevo_id)).gasto.total).toBe(700_00);
+    expect((await base.producto('ejemplo-yerba'))?.stock).toBe(3);
   });
 });
 
