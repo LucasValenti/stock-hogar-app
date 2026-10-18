@@ -1,10 +1,11 @@
 // La sesión de la app: quién entró y si esa cuenta es de la casa.
 // Supabase guarda la sesión en el dispositivo (AsyncStorage): al abrir la app no hay que volver a ingresar.
 // Con EXPO_PUBLIC_DATOS=memoria no hay cuentas: se entra directo como Ana, de la casa de ejemplo.
+// La demo de tiempo de ejecución (entrarDemo) hace lo mismo en el build normal, sin crear el cliente.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { datos, esModoMemoria, fijarIntegrante } from '@/datos';
+import { datos, entrarDemo as entrarEnDemo, esModoMemoria, fijarIntegrante, salirDemo } from '@/datos';
 import { obtenerCliente } from '@/datos/cliente';
 import { semillaDeEjemplo } from '@/datos/memoria';
 import type { Integrante } from '@/logica/tipos';
@@ -26,6 +27,13 @@ export type Sesion = {
    * Mientras haya error, `estado` queda en `cargando`: la pantalla lo muestra con `mensajeError(error)`.
    */
   error: unknown;
+  /**
+   * Verdadero viendo la casa de ejemplo: con la demo de tiempo de ejecución, o en el build solo-memoria.
+   * En los dos casos no se habla con Supabase.
+   */
+  demo: boolean;
+  /** Entra a la casa de ejemplo sin cuenta ni conexión, sin tocar Supabase. */
+  entrarDemo(): void;
   /** Cierra la sesión de este dispositivo. Lanza el error si no pudo. En modo memoria no hace nada. */
   salir(): Promise<void>;
   /** Vuelve a intentar después de un error. */
@@ -48,6 +56,8 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SesionAuth | null | undefined>(() =>
     esModoMemoria() ? SESION_DE_EJEMPLO : undefined,
   );
+  // El build solo-memoria arranca en demo; el normal la enciende con `entrarDemo`.
+  const [demo, setDemo] = useState(() => esModoMemoria());
   // El integrante que corresponde a ese email (o `null` si la cuenta no es de la casa).
   const [miembro, setMiembro] = useState<{ email: string; yo: Integrante | null } | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -58,7 +68,8 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 
   // 1) La sesión de Supabase, ahora y cada vez que cambia (ingreso, cierre, renovación del token).
   useEffect(() => {
-    if (esModoMemoria()) return;
+    // En demo no hay cuenta de Supabase que escuchar (y no se crea el cliente).
+    if (demo) return;
     let auth;
     try {
       auth = obtenerCliente().auth;
@@ -81,7 +92,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
       .then(({ data }) => setSession((previa) => (previa === undefined ? data.session : previa)))
       .catch(() => undefined);
     return () => subscription.unsubscribe();
-  }, [intento]);
+  }, [intento, demo]);
 
   // 2) A qué integrante corresponde ese email. Se repite solo si cambia el email, no en cada renovación del token.
   const email = session?.user.email ?? null;
@@ -103,10 +114,28 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     };
   }, [email, intento]);
 
-  const salir = useCallback(async () => {
-    if (esModoMemoria()) return;
-    await salirSinCola(cerrarSesion, fijarIntegrante, idEnCola.current);
+  const entrarDemo = useCallback(() => {
+    entrarEnDemo();
+    setError(null);
+    setMiembro(null);
+    setSession(SESION_DE_EJEMPLO);
+    setDemo(true);
   }, []);
+
+  const salir = useCallback(async () => {
+    // El build solo-memoria no tiene cuenta que cerrar.
+    if (esModoMemoria()) return;
+    // En la demo se sale de vuelta a la pantalla de ingreso, sin tocar Supabase.
+    if (demo) {
+      salirDemo();
+      setError(null);
+      setMiembro(null);
+      setSession(null);
+      setDemo(false);
+      return;
+    }
+    await salirSinCola(cerrarSesion, fijarIntegrante, idEnCola.current);
+  }, [demo]);
 
   const reintentar = useCallback(() => {
     setError(null);
@@ -124,8 +153,8 @@ export function SesionProvider({ children }: { children: ReactNode }) {
         estado = estadoDeSesion(session, yo);
       }
     }
-    return { estado, yo, email, error, salir, reintentar };
-  }, [error, session, email, miembro, salir, reintentar]);
+    return { estado, yo, email, error, demo, entrarDemo, salir, reintentar };
+  }, [error, session, email, miembro, demo, entrarDemo, salir, reintentar]);
 
   // 3) La cola de escritura solo manda lo de quien tiene la sesión lista (ver datos/cola.ts).
   const idListo = integranteDeLaCola(valor.estado, valor.yo);

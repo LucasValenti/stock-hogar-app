@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { AppState, Platform } from 'react-native';
 
+import { almacenEnMemoria } from './almacenEnMemoria';
 import { obtenerCliente } from './cliente';
 import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Cola, type DatosConCola, type Op } from './cola';
 import { crearDatosEnMemoria, semillaDeEjemplo } from './memoria';
@@ -36,6 +37,31 @@ let capa: { datos: DatosConCola; cola: Cola } | null = null;
 // El integrante con sesión lista (lo fija SesionProvider). La cola solo escribe con él.
 let integranteActual: string | null = null;
 
+// La demo de tiempo de ejecución: la casa de ejemplo sin cuenta ni red, que se reinicia al salir.
+// Es distinta del build solo-memoria (esModoMemoria), que no tiene a dónde volver.
+let demo = false;
+
+/** Verdadero mientras la app muestra la casa de ejemplo por la demo. */
+export const enDemo = (): boolean => demo;
+
+/** Entra a la demo: descarta la capa armada para que el próximo uso arme la de memoria. */
+export function entrarDemo(): void {
+  demo = true;
+  olvidarCapa();
+}
+
+/** Sale de la demo: descarta la capa en memoria para que el próximo uso vuelva a armar la real. */
+export function salirDemo(): void {
+  demo = false;
+  olvidarCapa();
+}
+
+// La capa se rearma en el próximo uso; lo que haya en la cola real (AsyncStorage) no se toca.
+function olvidarCapa(): void {
+  capa = null;
+  integranteActual = null;
+}
+
 /**
  * La sesión avisa quién está usando la app: `null` si no hay sesión lista.
  * Al entrar alguien, salen las escrituras que ese integrante dejó pendientes.
@@ -48,12 +74,11 @@ export function fijarIntegrante(id: string | null): void {
 // Si falla (falta .env), no queda nada a medias: el próximo uso vuelve a intentar.
 function iniciar(): { datos: DatosConCola; cola: Cola } {
   if (capa) return capa;
-  const base: Datos =
-    esModoMemoria()
-      ? crearDatosEnMemoria(semillaDeEjemplo())
-      : crearDatosSupabase(obtenerCliente());
+  // En la demo (o en el build solo-memoria) no hay cuenta ni red: la casa de ejemplo y una cola que no guarda.
+  const enMemoria = esModoMemoria() || demo;
+  const base: Datos = enMemoria ? crearDatosEnMemoria(semillaDeEjemplo()) : crearDatosSupabase(obtenerCliente());
   const cola = crearCola({
-    almacen: AsyncStorage,
+    almacen: enMemoria ? almacenEnMemoria() : AsyncStorage,
     ejecutar: ejecutorDe(base),
     esErrorDeRed,
     integranteActual: () => integranteActual,
