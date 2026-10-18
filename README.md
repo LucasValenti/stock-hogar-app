@@ -70,6 +70,8 @@ npm run publicar:web
 
 El comando hace `npx expo export -p web`, escribe todo en `dist/` y agrega ahí mismo los archivos de Cloudflare Pages: `_headers` con la CSP y las cabeceras de seguridad, y `_redirects` para que cualquier ruta sirva `index.html`. Lee `EXPO_PUBLIC_SUPABASE_URL` de `.env` para el `connect-src` (https y wss); sin esa variable falla salvo que corras con `EXPO_PUBLIC_DATOS=memoria`, que deja el `connect-src` solo en `'self'`.
 
+Para la demo pública de kusak.dev, `npm run publicar:demo` exporta con `EXPO_PUBLIC_DATOS=memoria` a `dist-demo/` (ignorado por git) y escribe el mismo `_headers`, con el `connect-src` sin Supabase.
+
 Se sube únicamente `dist/`. Para probarlo como lo hace Cloudflare, antes de publicar:
 
 ```bash

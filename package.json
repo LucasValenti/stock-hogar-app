@@ -49,7 +49,8 @@
     "typecheck": "tsc --noEmit",
     "db:probar": "node herramientas/pg/correr.mjs",
     "db:probar:migracion": "node herramientas/pg/correr.mjs --esquema supabase/schema-pre-007.sql supabase/migraciones/007-app-nativa.sql",
-    "publicar:web": "node herramientas/publicar-web.mjs"
+    "publicar:web": "node herramientas/publicar-web.mjs",
+    "publicar:demo": "node herramientas/publicar-web.mjs --demo"
   },
   "private": true
 }

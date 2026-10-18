@@ -3,12 +3,23 @@
 //
 // Uso: EXPO_PUBLIC_DATOS=memoria npm run publicar:web
 // La clave y la URL de Supabase entran por .env (ignorado): acá solo se leen para armar la CSP.
+//
+// Web solo-demo (kusak.dev): npm run publicar:demo → `--demo` fuerza EXPO_PUBLIC_DATOS=memoria
+// y exporta a dist-demo/. `--destino <carpeta>` cambia el destino (por defecto dist/).
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Opciones de la CLI: `--demo` (memoria, dist-demo por defecto) y `--destino <carpeta>`. */
+export function opcionesDe(argv) {
+  const demo = argv.includes('--demo');
+  const i = argv.indexOf('--destino');
+  const destino = i !== -1 && argv[i + 1] ? argv[i + 1] : demo ? 'dist-demo' : 'dist';
+  return { destino, demo };
+}
 
 /** Deja solo el host del proyecto de Supabase, venga como URL completa o como host pelado. */
 function hostDe(valor) {
@@ -85,6 +96,8 @@ function leerEnv() {
 }
 
 function principal() {
+  const { destino, demo } = opcionesDe(process.argv.slice(2));
+  if (demo) process.env.EXPO_PUBLIC_DATOS = 'memoria';
   const env = { ...leerEnv(), ...process.env };
   const enMemoria = env.EXPO_PUBLIC_DATOS === 'memoria';
   const urlSupabase = env.EXPO_PUBLIC_SUPABASE_URL || null;
@@ -96,18 +109,18 @@ function principal() {
     process.exit(1);
   }
 
-  console.log('Exportando la web…');
+  console.log(`Exportando la web a ${destino}/…`);
   // El CLI local de expo (lo mismo que `npx expo export -p web`, pero sin shell).
   const cliExpo = join(raiz, 'node_modules', 'expo', 'bin', 'cli');
-  execFileSync(process.execPath, [cliExpo, 'export', '-p', 'web'], {
+  execFileSync(process.execPath, [cliExpo, 'export', '-p', 'web', '--output-dir', destino], {
     cwd: raiz,
     stdio: 'inherit',
   });
 
-  const dist = join(raiz, 'dist');
+  const dist = join(raiz, destino);
   writeFileSync(join(dist, '_headers'), armarHeaders(enMemoria ? null : urlSupabase));
   writeFileSync(join(dist, '_redirects'), '/* /index.html 200\n');
-  console.log('Listo: dist/ con _headers y _redirects.');
+  console.log(`Listo: ${destino}/ con _headers y _redirects.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) principal();
