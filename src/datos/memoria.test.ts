@@ -5,6 +5,9 @@ import type { Integrante, Producto } from '@/logica/tipos';
 import { crearDatosEnMemoria, semillaDeEjemplo, type Semilla } from './memoria';
 import type { Datos, GastoAGuardar } from './tipos';
 
+// La casa de ejemplo depende del día: estos tests la arman con uno fijo.
+const HOY_EJEMPLO = new Date('2026-10-15T12:00:00');
+
 const ana: Integrante = {
   id: 'i-ana',
   nombre: 'Ana',
@@ -162,7 +165,7 @@ describe('crearDatosEnMemoria', () => {
   });
 
   test('semillaDeEjemplo trae la casa ficticia de Ana, Bruno y Caro', async () => {
-    const datos = crearDatosEnMemoria(semillaDeEjemplo());
+    const datos = crearDatosEnMemoria(semillaDeEjemplo(HOY_EJEMPLO));
     const nombres = (await datos.integrantes()).map((i) => i.nombre);
     expect(nombres).toEqual(['Ana', 'Bruno', 'Caro']);
     expect((await datos.miIntegrante('ANA@example.com'))?.nombre).toBe('Ana');
@@ -691,7 +694,7 @@ describe('categorías: días sin movimiento', () => {
 
 describe('semillaDeEjemplo', () => {
   test('trae unidades variadas y dos anotaciones', async () => {
-    const datos = crearDatosEnMemoria(semillaDeEjemplo());
+    const datos = crearDatosEnMemoria(semillaDeEjemplo(HOY_EJEMPLO));
     const unidades = new Set((await datos.productos()).map((p) => p.unidad));
     expect(unidades).toEqual(new Set(['unidad', 'paquete', 'kg', 'litro']));
     const notas = await datos.anotaciones();
@@ -700,7 +703,7 @@ describe('semillaDeEjemplo', () => {
   });
 
   test('«¿Todavía hay?» muestra algo, solo productos con stock, y no todo el stock', async () => {
-    const datos = crearDatosEnMemoria(semillaDeEjemplo());
+    const datos = crearDatosEnMemoria(semillaDeEjemplo(HOY_EJEMPLO));
     const productos = await datos.productos();
     const revisar = paraRevisar(productos, await datos.categorias(), new Date());
     expect(revisar.length).toBeGreaterThanOrEqual(2);
@@ -709,10 +712,10 @@ describe('semillaDeEjemplo', () => {
   });
 
   test('sigue siendo una casa de ejemplo: ids marcados y sin pisarse entre instancias', async () => {
-    expect(semillaDeEjemplo().productos.every((p) => p.id.startsWith('ejemplo-'))).toBe(true);
-    const a = crearDatosEnMemoria(semillaDeEjemplo());
+    expect(semillaDeEjemplo(HOY_EJEMPLO).productos.every((p) => p.id.startsWith('ejemplo-'))).toBe(true);
+    const a = crearDatosEnMemoria(semillaDeEjemplo(HOY_EJEMPLO));
     await a.crearAnotacion('Solo en A');
-    expect(await crearDatosEnMemoria(semillaDeEjemplo()).anotaciones()).toHaveLength(2);
+    expect(await crearDatosEnMemoria(semillaDeEjemplo(HOY_EJEMPLO)).anotaciones()).toHaveLength(2);
   });
 });
 

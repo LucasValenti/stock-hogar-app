@@ -1,5 +1,8 @@
 import { conCola, crearCola, ejecutorDe, esCorte, esErrorDeRed, esRechazoDefinitivo, type Almacen, type Op, type OpNueva } from './cola';
-import { crearDatosEnMemoria } from './memoria';
+import { crearDatosEnMemoria, semillaDeEjemplo } from './memoria';
+
+// La casa de ejemplo depende del día: los tests la arman siempre con el mismo, así no cambian con el mes.
+const HOY = new Date('2026-10-15T12:00:00');
 import type { Datos, GastoAGuardar } from './tipos';
 
 function almacenEnMemoria(): Almacen {
@@ -357,7 +360,7 @@ describe('dueño de cada op', () => {
 describe('conCola', () => {
   // Memoria con un interruptor de red: sin red, guardarGasto y ajustarStock fallan como fetch.
   function datosConRed() {
-    const base = crearDatosEnMemoria();
+    const base = crearDatosEnMemoria(semillaDeEjemplo(HOY));
     const red = { hay: true };
     const guardarGasto = base.guardarGasto;
     const ajustarStock = base.ajustarStock;
@@ -469,7 +472,7 @@ describe('conCola', () => {
   });
 
   test('si la base guardó pero la respuesta se perdió, el reintento no suma el stock otra vez', async () => {
-    const base = crearDatosEnMemoria();
+    const base = crearDatosEnMemoria(semillaDeEjemplo(HOY));
     let perderRespuesta = true;
     const guardar = base.guardarGasto;
     const conPerdida: Datos = {
@@ -497,7 +500,7 @@ describe('conCola', () => {
   // La base guardó el alta pero respondió con un error que no es de red (timeout, 5xx): la pantalla
   // lo muestra, la persona cambia algo y vuelve a guardar con el mismo nuevo_id.
   function conRespuestaPerdida() {
-    const base = crearDatosEnMemoria();
+    const base = crearDatosEnMemoria(semillaDeEjemplo(HOY));
     let perder = true;
     const guardar = base.guardarGasto;
     const enviados: GastoAGuardar[] = [];
@@ -536,7 +539,7 @@ describe('conCola', () => {
   });
 
   test('una op en cola que choca con GASTO_YA_GUARDADO sale como edición y no queda rechazada', async () => {
-    const base = crearDatosEnMemoria();
+    const base = crearDatosEnMemoria(semillaDeEjemplo(HOY));
     const alta = { ...conTildados, nuevo_id: '00000000-0000-4000-8000-0000000000a2' };
     await base.guardarGasto(alta, []);
     const almacen = almacenEnMemoria();
