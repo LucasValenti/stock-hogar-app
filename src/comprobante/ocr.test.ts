@@ -61,6 +61,7 @@ test('en web prepara la imagen y usa el worker autoalojado', async () => {
     corePath: '/ocr/',
     langPath: '/ocr/',
     gzip: true,
+    workerBlobURL: false,
   });
   expect(mockTerminar).toHaveBeenCalledTimes(1);
 });

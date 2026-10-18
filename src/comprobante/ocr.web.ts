@@ -35,6 +35,8 @@ export async function leerTexto(uri: string): Promise<string> {
   const { createWorker } = await cargarTesseract();
   const worker = await createWorker('spa', 1, {
     workerPath: '/ocr/worker.min.js', corePath: '/ocr/', langPath: '/ocr/', gzip: true,
+    // Worker desde /ocr/ y no desde un blob: así alcanza con worker-src 'self' en la CSP.
+    workerBlobURL: false,
   });
   try {
     const { data } = await worker.recognize(imagen);
