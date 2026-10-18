@@ -60,6 +60,23 @@ npm run db:probar:migracion   # las mismas, sobre schema-pre-007.sql + la migrac
 
 Las pruebas de la base corren en un Postgres en memoria (PGlite) y nunca se conectan a Supabase.
 
+## Publicar la web
+
+La web es una app estática (SPA) que se sube a Cloudflare Pages:
+
+```bash
+npm run publicar:web
+```
+
+El comando hace `npx expo export -p web`, escribe todo en `dist/` y agrega ahí mismo los archivos de Cloudflare Pages: `_headers` con la CSP y las cabeceras de seguridad, y `_redirects` para que cualquier ruta sirva `index.html`. Lee `EXPO_PUBLIC_SUPABASE_URL` de `.env` para el `connect-src` (https y wss); sin esa variable falla salvo que corras con `EXPO_PUBLIC_DATOS=memoria`, que deja el `connect-src` solo en `'self'`.
+
+Se sube únicamente `dist/`. Para probarlo como lo hace Cloudflare, antes de publicar:
+
+```bash
+npx wrangler pages dev dist
+```
+
+
 ## Estructura
 
 | Carpeta | Qué hay |
