@@ -45,15 +45,20 @@ Las variables `EXPO_PUBLIC_*` quedan dentro de la app: nunca pongas claves secre
 
 `supabase/` trae además:
 
-- `migraciones/`: los cambios en orden (002 a 006) para una base creada con una versión anterior. Una base nueva solo necesita `schema.sql`.
-- `tests/db.sql`: pruebas de las reglas de la base (permisos, stock, cierre de mes). Se corren en el SQL Editor y se deshacen solas al final.
+- `migraciones/`: los cambios en orden (002 a 007) para una base creada con una versión anterior. Una base nueva solo necesita `schema.sql`.
+- `schema-pre-007.sql`: el esquema tal como está en producción antes de la 007, congelado para probar la migración.
+- `tests/db.sql`: pruebas de las reglas de la base (permisos, stock, cierre de mes, tildados, anotaciones). Se corren en el SQL Editor y se deshacen solas al final, o en local con `npm run db:probar`.
 
 ## Tests
 
 ```bash
 npm test               # Jest
 npm run typecheck      # tsc --noEmit
+npm run db:probar             # pruebas de la base (supabase/tests/db.sql) sobre schema.sql, en un Postgres en memoria
+npm run db:probar:migracion   # las mismas, sobre schema-pre-007.sql + la migración 007 (el camino de producción)
 ```
+
+Las pruebas de la base corren en un Postgres en memoria (PGlite) y nunca se conectan a Supabase.
 
 ## Estructura
 

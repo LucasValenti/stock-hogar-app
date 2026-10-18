@@ -11,11 +11,13 @@ Expo cambia en cada SDK y la memoria sobre sus APIs puede estar vieja. Mirá la 
 ```bash
 npm test               # Jest
 npm run typecheck      # tsc --noEmit
+npm run db:probar             # pruebas de la base (supabase/tests/db.sql) sobre schema.sql, en un Postgres en memoria
+npm run db:probar:migracion   # las mismas, sobre schema-pre-007.sql + la migración 007 (el camino de producción)
 npx expo start         # servidor de desarrollo
 npx expo install <paquete>   # siempre así: resuelve la versión compatible con el SDK
 ```
 
-No hay linter configurado. Correr tests y typecheck antes de dar algo por terminado.
+No hay linter configurado. Correr tests y typecheck antes de dar algo por terminado; si se toca `supabase/`, también `db:probar` y `db:probar:migracion` (nunca se conectan a Supabase).
 
 ## Convenciones
 
