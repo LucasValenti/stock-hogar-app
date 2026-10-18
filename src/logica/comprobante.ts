@@ -26,9 +26,10 @@ const dos = (n: number) => String(n).padStart(2, '0');
 export const normalizarNombre = (texto: string | null | undefined): string => String(texto ?? '')
   .normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
-// "8/octubre/2026 a las 11:29" → 2026-10-08
+// "8/octubre/2026 a las 11:29" o "18 de octubre de 2026" → 2026-10-08
 function leerFecha(texto: string): string | undefined {
-  const m = texto.match(/(\d{1,2})\s*\/\s*([a-záéíóú]+)\s*\/\s*(\d{4})/i);
+  const m = texto.match(/(\d{1,2})\s*\/\s*([a-záéíóú]+)\s*\/\s*(\d{4})/i)
+    ?? texto.match(/(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})/i);
   if (!m) return undefined;
   const mes = MESES[normalizarNombre(m[2])];
   const dia = Number(m[1]);
@@ -38,13 +39,20 @@ function leerFecha(texto: string): string | undefined {
 // La primera línea que es solo un monto. Con signo ("$ 950") vale un número de hasta 3 cifras;
 // si no, tiene que traer punto de miles o coma decimal: así el n.º de operación no cuenta, y
 // unos centavos que el OCR pegó ("$ 95050" por $ 950,50) quedan sin leer en vez de dar 100 veces más.
+// En los comprobantes de pago los centavos vienen en superíndice y el OCR los pega al punto de miles
+// ("$ 56.90000" por $ 56.900,00): se aceptan los grupos de miles seguidos de exactamente 2 dígitos,
+// pegados o con un espacio. Es seguro porque después de los grupos de 3 del punto de miles no puede
+// venir otro número entero, así que "1.234.56750" es $ 1.234.567,50 y no una cifra de miles.
 // El OCR a veces lee el "$" como S, § o 5 (el 5 solo si lo separa un espacio).
 const CON_MILES = /^(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+,\d{1,2})$/;
+const MILES_MAS_CENTAVOS = /^(\d{1,3}(?:\.\d{3})+)\s?(\d{2})$/;
 function leerMonto(lineas: string[]): number | undefined {
   for (const linea of lineas) {
     const l = linea.replace(/\.$/, '');
     const conSigno = l.match(/^(?:[$S§]\s*|5\s+)(.+)$/);
     const resto = conSigno ? conSigno[1] : l;
+    const superindice = resto.match(MILES_MAS_CENTAVOS);
+    if (superindice) return Number(superindice[1].replace(/\./g, '')) * 100 + Number(superindice[2]);
     const valido = (conSigno && /^\d{1,3}(?:,\d{1,2})?$/.test(resto)) || CON_MILES.test(resto);
     if (valido) return aCentavos(resto) ?? undefined;
   }

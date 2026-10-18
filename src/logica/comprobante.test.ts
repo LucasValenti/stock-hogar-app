@@ -26,10 +26,41 @@ mensaje o audio
 o Enviado!
 ¡Descargá la app y conocela! I 4`;
 
+// Comprobante de PAGO (QR, tarjeta o link): otra fecha (larga) y los centavos en superíndice.
+const MUESTRA_PAGO = `Comprobante de pago
+Domingo, 18 de octubre de 2026, 10:03 hs.
+$ 56.90000
+Origen y destino
+Ana Ejemplo
+CUIL: 00-00000000-0
+Mercado Pago
+La Verduleria
+CUIT: 00-00000000-0
+Mercado Pago
+N.º de operación de Mercado Pago
+123456789012`;
+
 test('lee los cinco datos de una transferencia real', () => {
   expect(extraerComprobante(MUESTRA)).toStrictEqual({
     fecha: '2026-10-08', centavos: 4860000, origen: 'Marta Elena Quiroga', destino: 'Bruno Salas', operacion: '123456789012',
   });
+});
+
+test('lee los cinco datos de un comprobante de pago', () => {
+  expect(extraerComprobante(MUESTRA_PAGO)).toStrictEqual({
+    fecha: '2026-10-18', centavos: 5690000, origen: 'Ana Ejemplo', destino: 'La Verduleria', operacion: '123456789012',
+  });
+});
+
+test('centavos en superíndice pegados o separados por un espacio', () => {
+  expect(extraerComprobante(MUESTRA_PAGO.replace('$ 56.90000', '$ 56.900 00')).centavos).toBe(5690000);
+  expect(extraerComprobante(MUESTRA_PAGO.replace('$ 56.90000', '$ 1.234.56750')).centavos).toBe(123456750);
+});
+
+test('fecha larga sin día de la semana, con setiembre y mayúsculas', () => {
+  expect(extraerComprobante(MUESTRA_PAGO.replace('Domingo, ', '')).fecha).toBe('2026-10-18');
+  expect(extraerComprobante(MUESTRA_PAGO.replace('18 de octubre de 2026', '18 de Setiembre de 2026')).fecha).toBe('2026-09-18');
+  expect(extraerComprobante(MUESTRA_PAGO.replace('18 de octubre de 2026', '18 DE OCTUBRE DE 2026')).fecha).toBe('2026-10-18');
 });
 
 test('el $ leído como S, 5 o §, y montos con centavos', () => {
