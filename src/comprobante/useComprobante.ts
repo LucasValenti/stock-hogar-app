@@ -1,7 +1,7 @@
-// «Subir comprobante» en Cargar: elige una imagen de la galería, la lee en el dispositivo y pasa lo leído
-// al formulario. El OCR no está en Expo Go: ahí solo avisa. Si la pantalla se va mientras lee, no toca nada.
+// «Subir comprobante» en Cargar: elige una imagen o un PDF, lo lee en el dispositivo y pasa lo leído
+// al formulario. El OCR y el lector de PDF no están en Expo Go: ahí solo avisa. Si la pantalla se va mientras lee, no toca nada.
 
-import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { datos } from '@/datos';
@@ -11,10 +11,11 @@ import { lecturaAFormulario, sinRepetido } from '@/logica/lectura';
 import type { CambiosLectura } from '@/logica/lectura';
 import { fechaCorta } from '@/logica/meses';
 
-import { MAX_BYTES, OcrNoDisponible, leerTexto } from './ocr';
+import { leerArchivo } from './leer';
+import { MAX_BYTES, OcrNoDisponible } from './ocr';
 
 const AVISO_GRANDE = 'La imagen pesa más de 15 MB. Probá con una captura más chica.';
-const AVISO_TIPO = 'Ese archivo no es una imagen. Probá con una captura del comprobante.';
+const AVISO_TIPO = 'Ese archivo no es una imagen ni un PDF. Probá con el comprobante de Mercado Pago.';
 const AVISO_NO_LEIDO = 'No pudimos abrir esa imagen. Probá con una captura del comprobante.';
 const AVISO_EXPO_GO = 'Para leer comprobantes instalá la app (APK); en Expo Go no se puede.';
 
@@ -43,7 +44,7 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
         setAviso(AVISO_GRANDE);
         return;
       }
-      if (tipo && !tipo.startsWith('image/')) {
+      if (tipo && !tipo.startsWith('image/') && tipo !== 'application/pdf') {
         setAviso(AVISO_TIPO);
         return;
       }
@@ -52,7 +53,7 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
       setLeyendo(true);
       let r: DatosComprobante | null = null;
       try {
-        r = extraerComprobante(await leerTexto(uri));
+        r = extraerComprobante(await leerArchivo({ uri, tipo, bytes }));
       } catch (e) {
         if (e instanceof OcrNoDisponible) {
           if (vigente.current && n === intento.current) {
@@ -95,10 +96,10 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
   );
 
   const elegir = useCallback(async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    const res = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true });
     if (res.canceled || !res.assets?.length) return;
     const a = res.assets[0];
-    await usar(a.uri, a.fileSize, a.mimeType);
+    await usar(a.uri, a.size, a.mimeType);
   }, [usar]);
 
   return { elegir, usar, leyendo, aviso };

@@ -32,7 +32,7 @@ jest.mock('@/comprobante/ocr', () => {
   };
 });
 const mockPicker = jest.fn();
-jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: (...args: unknown[]) => mockPicker(...args) }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: (...args: unknown[]) => mockPicker(...args) }));
 
 const mockDatos = {
   integrantes: jest.fn(),
@@ -377,7 +377,7 @@ test('con el gasto en cola, sigue mostrando los que la base rechazó (sin repeti
 });
 
 test('sin la app instalada, «Subir comprobante» avisa que el OCR no está y no llena nada', async () => {
-  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', fileSize: 1000, mimeType: 'image/png' }] });
+  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', size: 1000, mimeType: 'image/png' }] });
   mockLeerTexto.mockRejectedValue(new (jest.requireActual('@/comprobante/ocr.comun').OcrNoDisponible)());
   await abrir();
   await tocar('button', 'Subir comprobante');
@@ -386,7 +386,7 @@ test('sin la app instalada, «Subir comprobante» avisa que el OCR no está y no
 });
 
 test('mientras lee, avisa «Leyendo el comprobante…»', async () => {
-  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', fileSize: 1000, mimeType: 'image/png' }] });
+  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', size: 1000, mimeType: 'image/png' }] });
   let resolver: (texto: string) => void = () => undefined;
   mockLeerTexto.mockReturnValue(new Promise<string>((r) => { resolver = r; }));
   await abrir();
@@ -398,7 +398,7 @@ test('mientras lee, avisa «Leyendo el comprobante…»', async () => {
 });
 
 test('«Subir comprobante» llena el formulario y al guardar manda mp_operacion y destino', async () => {
-  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', fileSize: 1000, mimeType: 'image/png' }] });
+  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', size: 1000, mimeType: 'image/png' }] });
   mockLeerTexto.mockResolvedValue(COMPROBANTE);
   mockDatos.categoriaDeDestino.mockResolvedValue('super');
   await abrir();
