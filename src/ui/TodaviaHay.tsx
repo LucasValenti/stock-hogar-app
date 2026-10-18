@@ -24,6 +24,29 @@ import { Texto } from './Texto';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 const redondear = (n: number) => Math.round(n * 1000) / 1000;
+// ajustar_stock_producto rechaza deltas de más de 1000 (DELTA_INVALIDO): lo que se aleja más va en pasos.
+const LIMITE_DELTA = 1000;
+
+/** Mueve el stock `delta` en pasos que la base acepta. */
+async function moverEnPasos(id: string, delta: number): Promise<void> {
+  let resto = redondear(delta);
+  while (resto !== 0) {
+    const paso = Math.max(-LIMITE_DELTA, Math.min(LIMITE_DELTA, resto));
+    await datos.ajustarStock(id, paso);
+    resto = redondear(resto - paso);
+  }
+}
+
+/**
+ * «Falta»: lleva el stock a 0 desde `stock` (el del producto al tocar), en pasos que la base acepta.
+ * Sigue con lo que la base dice que quedó, así una compra que entró mientras tanto también se vacía.
+ */
+async function vaciar(id: string, stock: number): Promise<void> {
+  let queda = stock;
+  for (let i = 0; queda > 0 && i < 100; i++) {
+    queda = Number(await datos.ajustarStock(id, -Math.min(queda, LIMITE_DELTA)));
+  }
+}
 
 type Props = {
   productos: Producto[];
@@ -57,7 +80,8 @@ export function TodaviaHay({ productos, categorias, sinLleno = false }: Props) {
   }
 
   const dias = Math.floor((ahora.getTime() - Date.parse(p.ultimo_movimiento)) / DIA_MS);
-  const stock = Number(p.stock);
+  // El producto como está al tocar (la lista se renueva en vivo), no el de cuando se dibujó la tarjeta.
+  const actualDe = (prod: Producto) => productos.find((x) => x.id === prod.id) ?? prod;
 
   return (
     <>
@@ -72,7 +96,7 @@ export function TodaviaHay({ productos, categorias, sinLleno = false }: Props) {
             <Boton texto="Hay" icono="ok" variante={sinLleno ? 'borde' : 'lleno'} onPress={() => responder(p, () => datos.confirmarHay(p.id))} />
           </View>
           <View style={{ flexGrow: 1, flexBasis: tema.medida.fila * 1.5 }}>
-            <Boton texto="Falta" variante="borde" onPress={() => responder(p, () => datos.ajustarStock(p.id, -stock))} />
+            <Boton texto="Falta" variante="borde" onPress={() => responder(p, () => vaciar(p.id, Number(actualDe(p).stock)))} />
           </View>
           <View style={{ flexGrow: 1, flexBasis: tema.medida.fila * 1.5 }}>
             <Boton texto="Ajustar" variante="borde" onPress={() => setAjustando(p)} />
@@ -85,10 +109,9 @@ export function TodaviaHay({ productos, categorias, sinLleno = false }: Props) {
         alGuardar={(prod, valor) => {
           setAjustando(null);
           // Contra el stock de ahora: si alguien lo cambió con la hoja abierta, queda lo que se dijo.
-          const actual = productos.find((x) => x.id === prod.id) ?? prod;
-          const delta = redondear(valor - Number(actual.stock));
+          const delta = redondear(valor - Number(actualDe(prod).stock));
           // La misma cantidad que figuraba: es un «Hay».
-          responder(prod, () => (delta === 0 ? datos.confirmarHay(prod.id) : datos.ajustarStock(prod.id, delta)));
+          responder(prod, () => (delta === 0 ? datos.confirmarHay(prod.id) : moverEnPasos(prod.id, delta)));
         }}
       />
     </>

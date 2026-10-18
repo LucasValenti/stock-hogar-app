@@ -193,6 +193,57 @@ test('Falta deja el stock en 0', async () => {
   expect(screen.queryByTestId('todavia-hay')).toBeNull();
 });
 
+// La base mueve el stock como ajustar_stock_producto: rechaza deltas de más de 1000 y no baja de 0.
+function baseConStock(inicial: number) {
+  let stock = inicial;
+  mockDatos.ajustarStock.mockImplementation(async (_id: string, delta: number) => {
+    if (!delta || Math.abs(delta) > 1000) throw Object.assign(new Error('DELTA_INVALIDO'), { code: 'P0001' });
+    stock = Math.max(0, Math.round((stock + delta) * 1000) / 1000);
+    return stock;
+  });
+  return () => stock;
+}
+
+test('Falta usa el stock del producto al tocar y, si pasa de 1000, lo baja en pasos que la base acepta', async () => {
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  mockDatos.productos.mockResolvedValue([yerba()]);
+  await render(<Inicio />);
+  await screen.findByText('¿Todavía hay Yerba?');
+  // Alguien cargó una compra grande mientras la tarjeta estaba a la vista.
+  mockDatos.productos.mockResolvedValue([producto('yerba', 'Yerba', 2500, 40)]);
+  await act(async () => avisarCambio());
+  await screen.findByText(/En Stock: 2\.?500/);
+  const stock = baseConStock(2500);
+  await act(async () => fireEvent.press(tarjetaHay().getByRole('button', { name: 'Falta' })));
+  expect(mockDatos.ajustarStock.mock.calls).toEqual([
+    ['yerba', -1000],
+    ['yerba', -1000],
+    ['yerba', -500],
+  ]);
+  expect(stock()).toBe(0);
+  expect(screen.queryByTestId('todavia-hay')).toBeNull();
+  expect(screen.queryByText(/Algo salió mal/)).toBeNull();
+});
+
+test('Ajustar a una cantidad que se aleja más de 1000 la mueve en pasos que la base acepta', async () => {
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  mockDatos.productos.mockResolvedValue([yerba()]);
+  const stock = baseConStock(3);
+  await render(<Inicio />);
+  await screen.findByText('¿Todavía hay Yerba?');
+  await act(async () => fireEvent.press(tarjetaHay().getByRole('button', { name: 'Ajustar' })));
+  const hoja = within(screen.getByTestId('hoja'));
+  await act(async () => fireEvent.changeText(hoja.getByLabelText('Cantidad'), '2500'));
+  await act(async () => fireEvent.press(hoja.getByRole('button', { name: 'Guardar cantidad' })));
+  expect(mockDatos.ajustarStock.mock.calls).toEqual([
+    ['yerba', 1000],
+    ['yerba', 1000],
+    ['yerba', 497],
+  ]);
+  expect(stock()).toBe(2500);
+  expect(screen.queryByText(/Algo salió mal/)).toBeNull();
+});
+
 test('Ajustar pide la cantidad según la unidad y la deja como dijo', async () => {
   mockDatos.gastosEntre.mockResolvedValue([]);
   mockDatos.productos.mockResolvedValue([yerba(), producto('harina', 'Harina', 2, 25, { unidad: 'kg' })]);
