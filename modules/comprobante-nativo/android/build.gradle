@@ -1,0 +1,18 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'dev.kusak.comprobantenativo'
+version = '1.0.0'
+
+android {
+  namespace "dev.kusak.comprobantenativo"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  // Lee el texto de los comprobantes en PDF sin salir del teléfono.
+  implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+}

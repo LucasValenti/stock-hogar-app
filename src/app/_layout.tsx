@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { useCompartidoPendiente } from '@/comprobante/useCompartidoPendiente';
 import { PantallaAjena, PantallaCarga, PantallaError } from '@/sesion/pantallas';
 import { SesionProvider, useSesion } from '@/sesion/sesion';
 import { useFuentesCargadas } from '@/tema/fuentes';
@@ -25,6 +26,8 @@ function Raiz() {
   const tema = useTema();
   const fuentesListas = useFuentesCargadas();
   const { estado, error, reintentar } = useSesion();
+  // Un comprobante compartido desde otra app abre Cargar cuando la sesión está lista.
+  useCompartidoPendiente();
 
   useEffect(() => {
     if (fuentesListas) SplashScreen.hideAsync();

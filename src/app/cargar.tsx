@@ -10,6 +10,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 
+import { tomarPendiente } from '@/comprobante/useCompartidoPendiente';
 import { useComprobante } from '@/comprobante/useComprobante';
 import { datos } from '@/datos';
 import { nuevoId } from '@/datos/id';
@@ -63,8 +64,9 @@ function enLista(partes: string[]): string {
 }
 
 export default function Cargar() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, compartido } = useLocalSearchParams<{ id?: string; compartido?: string }>();
   const idGasto = typeof id === 'string' && id ? id : null;
+  const esCompartido = compartido === '1';
   const [carga, setCarga] = useState<Carga>({ estado: 'cargando' });
   const [intento, setIntento] = useState(0);
 
@@ -115,12 +117,12 @@ export default function Cargar() {
   }
   const { existente } = carga.base;
   if (existente?.gasto.modo === 'productos') return <GastoPorProductos base={carga.base} existente={existente} />;
-  return <Formulario base={carga.base} />;
+  return <Formulario base={carga.base} compartido={esCompartido} />;
 }
 
 // ——— Cargar o editar (por total, con tildados) ———
 
-function Formulario({ base }: { base: Base }) {
+function Formulario({ base, compartido }: { base: Base; compartido: boolean }) {
   const tema = useTema();
   const { yo } = useSesion();
   const { integrantes, categorias, productos, anotaciones, cerrados, existente } = base;
@@ -198,6 +200,16 @@ function Formulario({ base }: { base: Base }) {
       setComprobante(c.comprobante);
     },
   });
+
+  // Un comprobante que llegó compartido desde otra app: se lee una sola vez, solo en el alta.
+  const { usar } = lectura;
+  const yaTomoCompartido = useRef(false);
+  useEffect(() => {
+    if (!compartido || g || yaTomoCompartido.current) return;
+    yaTomoCompartido.current = true;
+    const a = tomarPendiente();
+    if (a) void usar(a.uri, a.bytes, a.tipo);
+  }, [compartido, g, usar]);
 
   async function guardar() {
     setErrorGuardar(null);

@@ -11,6 +11,7 @@
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "dev.kusak.stockhogar",
       "adaptiveIcon": {
         "backgroundColor": "#dce8e3",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -32,7 +33,8 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "./modules/comprobante-nativo/app.plugin.js"
     ],
     "experiments": {
       "typedRoutes": true,
