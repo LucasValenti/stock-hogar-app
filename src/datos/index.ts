@@ -50,7 +50,7 @@ function iniciar(): { datos: DatosConCola; cola: Cola } {
   if (capa) return capa;
   const base: Datos =
     esModoMemoria()
-      ? crearDatosEnMemoria(semillaDeEjemplo)
+      ? crearDatosEnMemoria(semillaDeEjemplo())
       : crearDatosSupabase(obtenerCliente());
   const cola = crearCola({
     almacen: AsyncStorage,

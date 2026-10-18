@@ -32,7 +32,7 @@ export type Sesion = {
   reintentar(): void;
 };
 
-const EMAIL_DE_ANA = semillaDeEjemplo.integrantes.find((i) => i.nombre === 'Ana')?.email ?? '';
+const EMAIL_DE_ANA = semillaDeEjemplo().integrantes.find((i) => i.nombre === 'Ana')?.email ?? '';
 const SESION_DE_EJEMPLO: SesionAuth = { user: { email: EMAIL_DE_ANA } };
 
 const Contexto = createContext<Sesion | null>(null);

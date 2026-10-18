@@ -162,7 +162,7 @@ describe('crearDatosEnMemoria', () => {
   });
 
   test('semillaDeEjemplo trae la casa ficticia de Ana, Bruno y Caro', async () => {
-    const datos = crearDatosEnMemoria(semillaDeEjemplo);
+    const datos = crearDatosEnMemoria(semillaDeEjemplo());
     const nombres = (await datos.integrantes()).map((i) => i.nombre);
     expect(nombres).toEqual(['Ana', 'Bruno', 'Caro']);
     expect((await datos.miIntegrante('ANA@example.com'))?.nombre).toBe('Ana');
@@ -691,7 +691,7 @@ describe('categorías: días sin movimiento', () => {
 
 describe('semillaDeEjemplo', () => {
   test('trae unidades variadas y dos anotaciones', async () => {
-    const datos = crearDatosEnMemoria(semillaDeEjemplo);
+    const datos = crearDatosEnMemoria(semillaDeEjemplo());
     const unidades = new Set((await datos.productos()).map((p) => p.unidad));
     expect(unidades).toEqual(new Set(['unidad', 'paquete', 'kg', 'litro']));
     const notas = await datos.anotaciones();
@@ -700,7 +700,7 @@ describe('semillaDeEjemplo', () => {
   });
 
   test('«¿Todavía hay?» muestra algo, solo productos con stock, y no todo el stock', async () => {
-    const datos = crearDatosEnMemoria(semillaDeEjemplo);
+    const datos = crearDatosEnMemoria(semillaDeEjemplo());
     const productos = await datos.productos();
     const revisar = paraRevisar(productos, await datos.categorias(), new Date());
     expect(revisar.length).toBeGreaterThanOrEqual(2);
@@ -709,9 +709,40 @@ describe('semillaDeEjemplo', () => {
   });
 
   test('sigue siendo una casa de ejemplo: ids marcados y sin pisarse entre instancias', async () => {
-    expect(semillaDeEjemplo.productos.every((p) => p.id.startsWith('ejemplo-'))).toBe(true);
-    const a = crearDatosEnMemoria(semillaDeEjemplo);
+    expect(semillaDeEjemplo().productos.every((p) => p.id.startsWith('ejemplo-'))).toBe(true);
+    const a = crearDatosEnMemoria(semillaDeEjemplo());
     await a.crearAnotacion('Solo en A');
-    expect(await crearDatosEnMemoria(semillaDeEjemplo).anotaciones()).toHaveLength(2);
+    expect(await crearDatosEnMemoria(semillaDeEjemplo()).anotaciones()).toHaveLength(2);
+  });
+});
+
+describe('semillaDeEjemplo con fechas relativas a hoy', () => {
+  const HOY = new Date('2027-03-15T12:00:00');
+
+  test('trae gastos del mes en curso y del anterior, y solo el anterior queda cerrado', async () => {
+    const datos = crearDatosEnMemoria(semillaDeEjemplo(HOY));
+    const marzo = await datos.gastosEntre('2027-03-01', '2027-04-01');
+    const febrero = await datos.gastosEntre('2027-02-01', '2027-03-01');
+    expect(marzo.length).toBeGreaterThanOrEqual(4);
+    expect(febrero.length).toBeGreaterThanOrEqual(4);
+    expect(marzo.every((g) => g.fecha <= '2027-03-15')).toBe(true);
+    expect(await datos.mesesCerrados()).toEqual(new Set(['2027-02']));
+  });
+
+  test('con hoy el día 1 del mes, ningún gasto del mes en curso queda en el futuro', async () => {
+    const datos = crearDatosEnMemoria(semillaDeEjemplo(new Date('2027-03-01T12:00:00')));
+    const marzo = await datos.gastosEntre('2027-03-01', '2027-04-01');
+    expect(marzo.length).toBeGreaterThanOrEqual(4);
+    expect(marzo.every((g) => g.fecha <= '2027-03-01')).toBe(true);
+  });
+
+  test('dos llamadas devuelven objetos distintos y no comparten estado', () => {
+    const a = semillaDeEjemplo(HOY);
+    const b = semillaDeEjemplo(HOY);
+    expect(a).not.toBe(b);
+    expect(a.gastos).not.toBe(b.gastos);
+    expect(a.integrantes).not.toBe(b.integrantes);
+    a.gastos[0].nota = 'Cambiada';
+    expect(b.gastos[0].nota).not.toBe('Cambiada');
   });
 });

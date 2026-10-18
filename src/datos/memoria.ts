@@ -1,7 +1,8 @@
 // Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 007:
 // para las pruebas y para ver la app sin cuenta (EXPO_PUBLIC_DATOS=memoria). No guarda nada.
 
-import { mesDe } from '@/logica/meses';
+import { mesActual, mesAnterior, mesDe } from '@/logica/meses';
+import { repartoDelMes } from '@/logica/reparto';
 import { aplicarDelta } from '@/logica/stock';
 import type { Anotacion, Categoria, Cierre, Gasto, GastoItem, Integrante, Producto, Unidad } from '@/logica/tipos';
 
@@ -42,7 +43,7 @@ const violaCheck = (tabla: string, regla: string) =>
 const violaClave = (tabla: string) =>
   errorDeBase(`insert or update on table "${tabla}" violates foreign key constraint`, '23503');
 
-export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos {
+export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Datos {
   const s = copia(semilla);
   const integrantes = s.integrantes;
   const categorias = s.categorias;
@@ -456,8 +457,10 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
 // EJEMPLO: datos ficticios (Ana, Bruno y Caro, como en las maquetas). No son personas ni montos reales.
 
 const CREADO = '2026-01-01T12:00:00.000Z';
-// Las fechas del stock se cuentan hacia atrás desde ahora: así «¿Todavía hay?» muestra lo mismo cualquier día.
-const haceDias = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+const UN_DIA = 24 * 60 * 60 * 1000;
+const dosDigitos = (n: number) => String(n).padStart(2, '0');
+// Las fechas del stock se cuentan hacia atrás desde `hoy`: así «¿Todavía hay?» muestra lo mismo cualquier día.
+const haceDias = (n: number, hoy: Date) => new Date(hoy.getTime() - n * UN_DIA).toISOString();
 const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
   id,
   nombre,
@@ -475,6 +478,7 @@ const prod = (
   stock: number,
   unidad: Unidad,
   movidoHaceDias: number,
+  hoy: Date,
 ): Producto => ({
   id,
   codigo_barras: null,
@@ -483,49 +487,142 @@ const prod = (
   categoria_id,
   stock,
   unidad,
-  ultimo_movimiento: haceDias(movidoHaceDias),
+  ultimo_movimiento: haceDias(movidoHaceDias, hoy),
   oculto: false,
   creado: CREADO,
 });
 
-export const semillaDeEjemplo: Semilla = {
-  integrantes: [
+/**
+ * Casa de ejemplo: cada llamada arma una copia nueva (no se comparte estado). Las fechas salen de
+ * `hoy`: gastos del mes en curso (ninguno con fecha futura) y del anterior, y el mes anterior ya
+ * cerrado, con el reparto de los sueldos de la semilla.
+ */
+export function semillaDeEjemplo(hoy: Date = new Date()): Semilla {
+  const esteMes = mesActual(hoy);
+  const mesPasado = mesAnterior(esteMes);
+  const diasDelMes = (mes: string) => new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0).getDate();
+  // El día del mes recortado a lo que ya pasó: la demo no muestra gastos con fecha futura.
+  const enCurso = (dia: number) => `${esteMes}-${dosDigitos(Math.min(dia, hoy.getDate()))}`;
+  const enPasado = (dia: number) => `${mesPasado}-${dosDigitos(Math.min(dia, diasDelMes(mesPasado)))}`;
+  const sellado = (fecha: string, hora: number) => `${fecha}T${dosDigitos(hora)}:00:00.000Z`;
+
+  const integrantes = [
     persona('ejemplo-ana', 'Ana', 900_000_00),
     persona('ejemplo-bruno', 'Bruno', 600_000_00),
     persona('ejemplo-caro', 'Caro', 500_000_00),
-  ],
-  categorias: [
+  ];
+  const categorias: Categoria[] = [
     { id: 'ejemplo-almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 },
     { id: 'ejemplo-limpieza', nombre: 'Limpieza', tipo: 'producto', dias_sin_movimiento: 30 },
     { id: 'ejemplo-luz', nombre: 'Luz', tipo: 'servicio', dias_sin_movimiento: 20 },
     { id: 'ejemplo-internet', nombre: 'Internet', tipo: 'servicio', dias_sin_movimiento: 20 },
-  ],
+  ];
   // Arroz y Esponjas llevan semanas quietos: son los que «¿Todavía hay?» pregunta.
-  productos: [
-    prod('ejemplo-yerba', 'Yerba', 'ejemplo-almacen', 1, 'paquete', 3),
-    prod('ejemplo-leche', 'Leche', 'ejemplo-almacen', 0, 'litro', 9),
-    prod('ejemplo-fideos', 'Fideos', 'ejemplo-almacen', 3, 'paquete', 4),
-    prod('ejemplo-arroz', 'Arroz', 'ejemplo-almacen', 2, 'paquete', 41),
-    prod('ejemplo-harina', 'Harina', 'ejemplo-almacen', 1.5, 'kg', 14),
-    prod('ejemplo-detergente', 'Detergente', 'ejemplo-limpieza', 0, 'unidad', 6),
-    prod('ejemplo-lavandina', 'Lavandina', 'ejemplo-limpieza', 2, 'unidad', 4),
-    prod('ejemplo-esponjas', 'Esponjas', 'ejemplo-limpieza', 4, 'unidad', 36),
-  ],
-  anotaciones: [
-    { id: 'ejemplo-nota-pan', texto: 'Comprar pan', creado_por: 'ejemplo-ana', creado: haceDias(2) },
-    { id: 'ejemplo-nota-pilas', texto: 'Pilas AA para el control', creado_por: 'ejemplo-bruno', creado: haceDias(1) },
-  ],
-  gastos: [
+  const productos = [
+    prod('ejemplo-yerba', 'Yerba', 'ejemplo-almacen', 1, 'paquete', 3, hoy),
+    prod('ejemplo-leche', 'Leche', 'ejemplo-almacen', 0, 'litro', 9, hoy),
+    prod('ejemplo-fideos', 'Fideos', 'ejemplo-almacen', 3, 'paquete', 4, hoy),
+    prod('ejemplo-arroz', 'Arroz', 'ejemplo-almacen', 2, 'paquete', 41, hoy),
+    prod('ejemplo-harina', 'Harina', 'ejemplo-almacen', 1.5, 'kg', 14, hoy),
+    prod('ejemplo-detergente', 'Detergente', 'ejemplo-limpieza', 0, 'unidad', 6, hoy),
+    prod('ejemplo-lavandina', 'Lavandina', 'ejemplo-limpieza', 2, 'unidad', 4, hoy),
+    prod('ejemplo-esponjas', 'Esponjas', 'ejemplo-limpieza', 4, 'unidad', 36, hoy),
+  ];
+  const anotaciones: Anotacion[] = [
+    { id: 'ejemplo-nota-pan', texto: 'Comprar pan', creado_por: 'ejemplo-ana', creado: haceDias(2, hoy) },
+    { id: 'ejemplo-nota-pilas', texto: 'Pilas AA para el control', creado_por: 'ejemplo-bruno', creado: haceDias(1, hoy) },
+  ];
+
+  const gastos: Gasto[] = [
+    // Mes anterior (abajo queda cerrado).
+    {
+      id: 'ejemplo-gasto-verdu-pasado',
+      fecha: enPasado(4),
+      pagado_por: 'ejemplo-ana',
+      total: 18_500_00,
+      modo: 'total',
+      categoria_id: 'ejemplo-almacen',
+      nota: 'Verdulería',
+      creado_por: 'ejemplo-ana',
+      creado: sellado(enPasado(4), 11),
+      mp_operacion: null,
+    },
+    {
+      id: 'ejemplo-gasto-super-pasado',
+      fecha: enPasado(9),
+      pagado_por: 'ejemplo-bruno',
+      total: 7_600_00,
+      modo: 'productos',
+      categoria_id: null,
+      nota: 'Súper',
+      creado_por: 'ejemplo-bruno',
+      creado: sellado(enPasado(9), 18),
+      mp_operacion: null,
+      gasto_items: [
+        { id: 'ejemplo-item-pasado-1', gasto_id: 'ejemplo-gasto-super-pasado', producto_id: 'ejemplo-leche', cantidad: 2, precio_unitario: 1_300_00 },
+        { id: 'ejemplo-item-pasado-2', gasto_id: 'ejemplo-gasto-super-pasado', producto_id: 'ejemplo-harina', cantidad: 1, precio_unitario: 1_800_00 },
+        { id: 'ejemplo-item-pasado-3', gasto_id: 'ejemplo-gasto-super-pasado', producto_id: 'ejemplo-detergente', cantidad: 1, precio_unitario: 3_200_00 },
+      ],
+    },
+    {
+      id: 'ejemplo-gasto-farmacia-pasado',
+      fecha: enPasado(14),
+      pagado_por: 'ejemplo-caro',
+      total: 12_800_00,
+      modo: 'total',
+      categoria_id: null,
+      nota: 'Farmacia',
+      creado_por: 'ejemplo-caro',
+      creado: sellado(enPasado(14), 17),
+      mp_operacion: null,
+    },
+    {
+      id: 'ejemplo-gasto-luz-pasado',
+      fecha: enPasado(18),
+      pagado_por: 'ejemplo-bruno',
+      total: 39_400_00,
+      modo: 'total',
+      categoria_id: 'ejemplo-luz',
+      nota: 'Luz',
+      creado_por: 'ejemplo-bruno',
+      creado: sellado(enPasado(18), 10),
+      mp_operacion: null,
+    },
+    {
+      id: 'ejemplo-gasto-internet-pasado',
+      fecha: enPasado(22),
+      pagado_por: 'ejemplo-caro',
+      total: 22_000_00,
+      modo: 'total',
+      categoria_id: 'ejemplo-internet',
+      nota: 'Internet',
+      creado_por: 'ejemplo-caro',
+      creado: sellado(enPasado(22), 9),
+      mp_operacion: null,
+    },
+    // Mes en curso (sin cerrar).
+    {
+      id: 'ejemplo-gasto-verdu',
+      fecha: enCurso(2),
+      pagado_por: 'ejemplo-bruno',
+      total: 16_900_00,
+      modo: 'total',
+      categoria_id: 'ejemplo-almacen',
+      nota: 'Verdulería',
+      creado_por: 'ejemplo-bruno',
+      creado: sellado(enCurso(2), 11),
+      mp_operacion: null,
+    },
     {
       id: 'ejemplo-gasto-super',
-      fecha: '2026-10-05',
+      fecha: enCurso(5),
       pagado_por: 'ejemplo-ana',
       total: 12_400_00,
       modo: 'productos',
       categoria_id: null,
-      nota: 'Ejemplo',
+      nota: 'Súper',
       creado_por: 'ejemplo-ana',
-      creado: '2026-10-05T18:00:00.000Z',
+      creado: sellado(enCurso(5), 18),
       mp_operacion: null,
       gasto_items: [
         { id: 'ejemplo-item-1', gasto_id: 'ejemplo-gasto-super', producto_id: 'ejemplo-yerba', cantidad: 1, precio_unitario: 5_200_00 },
@@ -534,29 +631,57 @@ export const semillaDeEjemplo: Semilla = {
       ],
     },
     {
+      id: 'ejemplo-gasto-farmacia',
+      fecha: enCurso(7),
+      pagado_por: 'ejemplo-caro',
+      total: 9_700_00,
+      modo: 'total',
+      categoria_id: null,
+      nota: 'Farmacia',
+      creado_por: 'ejemplo-caro',
+      creado: sellado(enCurso(7), 17),
+      mp_operacion: null,
+    },
+    {
       id: 'ejemplo-gasto-luz',
-      fecha: '2026-10-08',
+      fecha: enCurso(9),
       pagado_por: 'ejemplo-bruno',
-      total: 38_000_00,
+      total: 41_100_00,
       modo: 'total',
       categoria_id: 'ejemplo-luz',
-      nota: 'Ejemplo',
+      nota: 'Luz',
       creado_por: 'ejemplo-bruno',
-      creado: '2026-10-08T10:00:00.000Z',
+      creado: sellado(enCurso(9), 10),
       mp_operacion: null,
     },
     {
       id: 'ejemplo-gasto-internet',
-      fecha: '2026-10-10',
+      fecha: enCurso(11),
       pagado_por: 'ejemplo-caro',
       total: 22_000_00,
       modo: 'total',
       categoria_id: 'ejemplo-internet',
-      nota: 'Ejemplo',
+      nota: 'Internet',
       creado_por: 'ejemplo-caro',
-      creado: '2026-10-10T09:30:00.000Z',
+      creado: sellado(enCurso(11), 9),
       mp_operacion: null,
     },
-  ],
-  cierres: [],
-};
+  ];
+
+  // El mes pasado quedó cerrado: el reparto sale de sus gastos y los sueldos de la semilla.
+  const delPasado = gastos.filter((g) => mesDe(g.fecha) === mesPasado);
+  const reparto = repartoDelMes(integrantes, mesPasado, delPasado);
+  const cierres: Cierre[] = reparto.ok
+    ? [
+        {
+          mes: mesPasado,
+          total: reparto.total,
+          detalle: { filas: reparto.filas, transferencias: reparto.transferencias },
+          cerrado_por: 'ejemplo-ana',
+          fecha: sellado(enPasado(diasDelMes(mesPasado)), 20),
+        },
+      ]
+    : [];
+
+  return { integrantes, categorias, productos, anotaciones, gastos, cierres };
+}
