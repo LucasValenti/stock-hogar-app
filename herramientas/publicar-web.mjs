@@ -21,10 +21,13 @@ function hostDe(valor) {
   }
 }
 
-/** Arma el contenido de dist/_headers: proyecto nulo (modo memoria) deja connect-src solo en 'self'. */
+/** Arma el contenido de dist/_headers: proyecto nulo (modo memoria) deja connect-src sin Supabase. */
 export function armarHeaders(proyectoSupabase) {
   const host = hostDe(proyectoSupabase);
-  const connectSrc = host ? `'self' https://${host} wss://${host}` : "'self'";
+  // blob: el comprobante elegido se lee desde una URL blob (fetch en pdf.js); data: el OCR intenta
+  // bajar su wasm desde una URL data antes de usar otro camino.
+  const local = "'self' data: blob:";
+  const connectSrc = host ? `${local} https://${host} wss://${host}` : local;
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval'", // el OCR corre wasm

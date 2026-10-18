@@ -6,13 +6,13 @@ test('con proyecto Supabase, connect-src incluye el https y el wss del proyecto'
   const texto = armarHeaders('https://abcdefgh.supabase.co');
   assert.match(
     texto,
-    /connect-src 'self' https:\/\/abcdefgh\.supabase\.co wss:\/\/abcdefgh\.supabase\.co/,
+    /connect-src 'self' data: blob: https:\/\/abcdefgh\.supabase\.co wss:\/\/abcdefgh\.supabase\.co/,
   );
 });
 
-test('sin proyecto (modo memoria), connect-src queda solo en self', () => {
+test('sin proyecto (modo memoria), connect-src no tiene Supabase', () => {
   const texto = armarHeaders(null);
-  assert.match(texto, /connect-src 'self';/);
+  assert.match(texto, /connect-src 'self' data: blob:;/);
   assert.doesNotMatch(texto, /supabase\.co/);
 });
 
