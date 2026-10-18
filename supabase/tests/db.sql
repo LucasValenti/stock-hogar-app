@@ -484,5 +484,125 @@ begin
 end $$;
 reset role;
 
+-- 11. Editar un gasto por total aplica solo la diferencia de los tildados; un alta repetida con otros datos
+--     avisa (GASTO_YA_GUARDADO) en vez de esconder el cambio; creado_por de una anotación lo pone la base.
+select set_config('request.jwt.claims', '{"email":"prueba-a@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+declare
+  v_gasto uuid;
+  v_item uuid;
+  v_otra_cat uuid := (select id from categorias where id <> '00000000-0000-0000-0000-0000000000c1' and tipo = 'producto' limit 1);
+  v_externo uuid := (select id from integrantes where email = 'externo-prueba@example.com');
+  v_base jsonb := jsonb_build_object('fecha', '2000-04-10', 'pagado_por', '00000000-0000-0000-0000-0000000000a1', 'modo', 'total',
+    'total', 5000, 'categoria_id', '00000000-0000-0000-0000-0000000000c1', 'nota', null, 'mp_operacion', null, 'destino', null);
+  v_dos jsonb := jsonb_build_array(
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b3', 'cantidad', 2),
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 1));
+  v_cambio jsonb;
+begin
+  if v_otra_cat is null or v_externo is null then raise exception 'FALLA: faltan datos para la prueba 11'; end if;
+  update productos set stock = 0
+  where id in ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000000b4');
+  v_gasto := guardar_gasto(v_base || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d6', 'tildados', v_dos), '[]'::jsonb);
+  select id into v_item from gasto_items where gasto_id = v_gasto and producto_id = '00000000-0000-0000-0000-0000000000b3';
+
+  -- Lo comprado se consumió (stock en 0): editar la nota con los mismos tildados no lo devuelve ni lo «mueve».
+  update productos set stock = 0 where id = '00000000-0000-0000-0000-0000000000b3';
+  update productos set ultimo_movimiento = '2000-01-01'
+  where id in ('00000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000000b4');
+  perform guardar_gasto(v_base || jsonb_build_object('id', v_gasto, 'nota', 'Otra nota', 'tildados', v_dos), '[]'::jsonb);
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3') <> 0 then
+    raise exception 'FALLA: editar la nota devolvió el stock ya consumido';
+  end if;
+  if (select ultimo_movimiento from productos where id = '00000000-0000-0000-0000-0000000000b3') <> '2000-01-01'::timestamptz then
+    raise exception 'FALLA: editar la nota movió ultimo_movimiento';
+  end if;
+  if not exists (select 1 from gasto_items where id = v_item) then raise exception 'FALLA: editar la nota rehízo los tildados'; end if;
+  if (select nota from gastos where id = v_gasto) is distinct from 'Otra nota' then raise exception 'FALLA: no se guardó la nota'; end if;
+
+  -- Cantidad 2 → 3: suma 1 (la diferencia), aunque lo anterior se haya consumido; el otro tildado no se toca.
+  perform guardar_gasto(v_base || jsonb_build_object('id', v_gasto, 'tildados', jsonb_build_array(
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b3', 'cantidad', 3),
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 1))), '[]'::jsonb);
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3') <> 1 then
+    raise exception 'FALLA: pasar de 2 a 3 no sumó 1 (%)', (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3');
+  end if;
+  if (select cantidad from gasto_items where id = v_item) is distinct from 3::numeric then raise exception 'FALLA: no se actualizó la cantidad'; end if;
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b4') <> 1
+     or (select ultimo_movimiento from productos where id = '00000000-0000-0000-0000-0000000000b4') <> '2000-01-01'::timestamptz then
+    raise exception 'FALLA: se tocó un tildado que no cambió';
+  end if;
+
+  -- Sacar un tildado resta lo suyo, sin bajar de 0.
+  update productos set stock = 1 where id = '00000000-0000-0000-0000-0000000000b3';
+  perform guardar_gasto(v_base || jsonb_build_object('id', v_gasto, 'tildados', jsonb_build_array(
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 1))), '[]'::jsonb);
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b3') <> 0 then
+    raise exception 'FALLA: sacar un tildado no restó o bajó de 0';
+  end if;
+  if exists (select 1 from gasto_items where gasto_id = v_gasto and producto_id = '00000000-0000-0000-0000-0000000000b3') then
+    raise exception 'FALLA: el tildado sacado sigue en el gasto';
+  end if;
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b4') <> 1 then raise exception 'FALLA: sacar uno tocó al otro'; end if;
+
+  -- Un producto repetido en los tildados cuenta una vez, con la suma.
+  perform guardar_gasto(v_base || jsonb_build_object('id', v_gasto, 'tildados', jsonb_build_array(
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 1),
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b1', 'cantidad', 1),
+    jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b1', 'cantidad', 2))), '[]'::jsonb);
+  if (select stock from productos where id = '00000000-0000-0000-0000-0000000000b1') <> 3
+     or (select count(*) from gasto_items where gasto_id = v_gasto and producto_id = '00000000-0000-0000-0000-0000000000b1') <> 1 then
+    raise exception 'FALLA: un tildado repetido no se sumó en un solo ítem';
+  end if;
+
+  -- Alta repetida con los mismos datos (reintento tras un corte): devuelve el id sin tocar nada.
+  v_gasto := guardar_gasto(v_base || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d7', 'nota', 'Hola'), '[]'::jsonb);
+  if guardar_gasto(v_base || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d7', 'nota', 'Hola'), '[]'::jsonb) <> v_gasto then
+    raise exception 'FALLA: el reintento idéntico devolvió otro id';
+  end if;
+  -- Alta repetida con otro total, fecha, pagador, categoría o nota: avisa en vez de esconder el cambio.
+  for v_cambio in select * from jsonb_array_elements(jsonb_build_array(
+    jsonb_build_object('total', 6000),
+    jsonb_build_object('fecha', '2000-04-11'),
+    jsonb_build_object('pagado_por', v_externo),
+    jsonb_build_object('categoria_id', v_otra_cat),
+    jsonb_build_object('nota', 'Chau'),
+    jsonb_build_object('nota', null)))
+  loop
+    begin
+      perform guardar_gasto(v_base || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d7', 'nota', 'Hola') || v_cambio, '[]'::jsonb);
+      raise exception 'FALLA: el alta repetida con otro dato (%) no avisó', v_cambio;
+    exception when raise_exception then
+      if sqlerrm not like '%GASTO_YA_GUARDADO%' then raise; end if;
+    end;
+  end loop;
+  if (select total from gastos where id = v_gasto) <> 5000 or (select nota from gastos where id = v_gasto) <> 'Hola' then
+    raise exception 'FALLA: el alta repetida cambió el gasto guardado';
+  end if;
+  -- Por productos el total sale de los ítems: el mismo pedido otra vez no avisa; con otro precio, sí.
+  v_gasto := guardar_gasto(v_base || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d8', 'modo', 'productos', 'total', 1, 'categoria_id', null),
+    jsonb_build_array(jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 2, 'precio_unitario', 850)));
+  perform guardar_gasto(v_base || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d8', 'modo', 'productos', 'total', 1, 'categoria_id', null),
+    jsonb_build_array(jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 2, 'precio_unitario', 850)));
+  begin
+    perform guardar_gasto(v_base || jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d8', 'modo', 'productos', 'total', 1, 'categoria_id', null),
+      jsonb_build_array(jsonb_build_object('producto_id', '00000000-0000-0000-0000-0000000000b4', 'cantidad', 2, 'precio_unitario', 900)));
+    raise exception 'FALLA: el alta por productos repetida con otro precio no avisó';
+  exception when raise_exception then
+    if sqlerrm not like '%GASTO_YA_GUARDADO%' then raise; end if;
+  end;
+
+  -- creado_por de una anotación es siempre quien la escribe, mande lo que mande la app.
+  insert into anotaciones (id, texto, creado_por) values
+    ('00000000-0000-0000-0000-0000000000e3', 'A nombre de otro', v_externo),
+    ('00000000-0000-0000-0000-0000000000e4', 'Sin nombre', null);
+  if exists (select 1 from anotaciones where id in ('00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4')
+             and creado_por is distinct from '00000000-0000-0000-0000-0000000000a1') then
+    raise exception 'FALLA: la anotación quedó a nombre de otro';
+  end if;
+end $$;
+reset role;
+
 rollback;
 select 'OK: todas las pruebas de la base pasaron' as resultado;

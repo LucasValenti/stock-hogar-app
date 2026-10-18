@@ -26,6 +26,13 @@ function errorDeBase(message: string, code = 'P0001'): Error & { code: string } 
 }
 
 const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+/** Un producto tildado dos veces queda una vez, con la suma (en el orden en que apareció primero). */
+function sumarRepetidos(tildados: Array<{ producto_id: string; cantidad: number }>) {
+  const suma = new Map<string, number>();
+  for (const t of tildados) suma.set(t.producto_id, (suma.get(t.producto_id) ?? 0) + Number(t.cantidad));
+  return [...suma].map(([producto_id, cantidad]) => ({ producto_id, cantidad }));
+}
 const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.localeCompare(b.nombre, 'es');
 const ahora = () => new Date().toISOString();
 
@@ -223,12 +230,27 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
     // Igual que la RPC guardar_gasto (007): todo o nada, alta idempotente por nuevo_id.
     // Por total, `tildados` suma stock sin precio; `anotaciones` se borran en la misma operación.
     async guardarGasto(gasto, nuevosItems) {
-      // Alta ya guardada (la respuesta anterior se perdió): se devuelve antes de cualquier control,
-      // también el de mes cerrado, igual que guardar_gasto.
-      if (!gasto.id && gasto.nuevo_id && gastos.some((g) => g.id === gasto.nuevo_id)) return gasto.nuevo_id;
       const productosModo = gasto.modo === 'productos';
+      const totalDeItems = () =>
+        nuevosItems.reduce((t, it) => t + Math.round(Number(it.cantidad) * it.precio_unitario), 0);
+      // Alta ya guardada (la respuesta anterior se perdió): se devuelve antes de cualquier control,
+      // también el de mes cerrado, igual que guardar_gasto. Con otros datos avisa, en vez de esconderlos.
+      const previo = !gasto.id && gasto.nuevo_id ? gastos.find((g) => g.id === gasto.nuevo_id) : undefined;
+      if (previo) {
+        if (
+          previo.fecha !== gasto.fecha ||
+          previo.pagado_por !== gasto.pagado_por ||
+          previo.categoria_id !== (gasto.categoria_id || null) ||
+          previo.nota !== (gasto.nota || null) ||
+          previo.total !== (productosModo ? totalDeItems() : gasto.total)
+        ) {
+          throw errorDeBase('GASTO_YA_GUARDADO');
+        }
+        return previo.id;
+      }
       // Sin la clave (web vieja) al editar se conservan los tildados que ya tenía; con `[]` se sacan.
-      const tildados = Array.isArray(gasto.tildados) ? gasto.tildados : null;
+      // Un producto repetido cuenta una vez, con la suma.
+      const tildados = Array.isArray(gasto.tildados) ? sumarRepetidos(gasto.tildados) : null;
       if (productosModo) {
         if (!nuevosItems.length) throw errorDeBase('SIN_ITEMS');
         if (nuevosItems.some((i) => i.precio_unitario == null)) throw errorDeBase('SIN_PRECIO', '23502');
@@ -247,9 +269,9 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
         const g = gastos.find((x) => x.id === gasto.id) as Gasto;
         if (mesCerrado(g.fecha) || mesCerrado(gasto.fecha)) throw errorDeBase('MES_CERRADO');
         id = g.id;
-        // Se borran y se vuelven a insertar: lo viejo resta y lo nuevo suma. Por total sin `tildados`
-        // solo se van los ítems con precio (un gasto que antes era por productos).
-        quitarItems(id, (it) => productosModo || tildados !== null || it.precio_unitario !== null);
+        // Por productos se borran y se vuelven a insertar: lo viejo resta y lo nuevo suma. Por total se van
+        // los ítems con precio (un gasto que antes era por productos); los tildados se ajustan abajo.
+        quitarItems(id, (it) => productosModo || it.precio_unitario !== null);
         Object.assign(g, {
           fecha: gasto.fecha,
           pagado_por: gasto.pagado_por,
@@ -279,13 +301,35 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo): Datos 
       }
 
       const g = gastos.find((x) => x.id === id) as Gasto;
-      for (const it of aInsertar) {
+      const insertar = (it: (typeof aInsertar)[number]) => {
         items.push({ id: nuevoId(), gasto_id: id, producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario });
         sumarStock(it.producto_id, Number(it.cantidad));
-      }
+      };
       if (productosModo) {
-        g.total = nuevosItems.reduce((t, it) => t + Math.round(Number(it.cantidad) * it.precio_unitario), 0);
-      } else if (gasto.destino) {
+        aInsertar.forEach(insertar);
+        g.total = totalDeItems();
+      } else if (tildados) {
+        // Solo la diferencia con lo que ya tenía (como guardar_gasto): se van los que no están (y copias
+        // repetidas), cambia la cantidad de los que cambiaron (mueve la diferencia) y entran los nuevos.
+        // Lo que no cambió no se toca: no vuelve el stock consumido ni se renueva ultimo_movimiento.
+        const pedidos = new Map(tildados.map((t) => [t.producto_id, t.cantidad]));
+        const vistos = new Set<string>();
+        quitarItems(id, (it) => {
+          if (it.precio_unitario !== null) return false;
+          const quitar = !pedidos.has(it.producto_id) || vistos.has(it.producto_id);
+          vistos.add(it.producto_id);
+          return quitar;
+        });
+        for (const it of aInsertar) {
+          const actual = items.find((x) => x.gasto_id === id && x.precio_unitario === null && x.producto_id === it.producto_id);
+          if (!actual) insertar(it);
+          else if (Number(actual.cantidad) !== Number(it.cantidad)) {
+            sumarStock(it.producto_id, Number(it.cantidad) - Number(actual.cantidad));
+            actual.cantidad = it.cantidad;
+          }
+        }
+      }
+      if (!productosModo && gasto.destino) {
         destinos.set(gasto.destino, gasto.categoria_id ?? '');
       }
       if (Array.isArray(gasto.anotaciones)) {

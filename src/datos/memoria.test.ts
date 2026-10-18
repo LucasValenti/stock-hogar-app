@@ -258,6 +258,100 @@ describe('gastos por total con productos tildados', () => {
     expect(items).toHaveLength(1);
   });
 
+  test('editar solo la nota con los mismos tildados no devuelve el stock ya consumido ni mueve la fecha', async () => {
+    const datos = crearDatosEnMemoria(semilla());
+    const tildados = [
+      { producto_id: 'p-yerba', cantidad: 2 },
+      { producto_id: 'p-harina', cantidad: 1 },
+    ];
+    await datos.guardarGasto(gastoTotal('2026-03-10', { nuevo_id: 'g-n', tildados }), []);
+    await datos.ajustarStock('p-yerba', -3); // se consumió todo: 3 → 0
+    const [itemAntes] = (await datos.gasto('g-n')).items;
+    const yerbaAntes = await movimientoDe(datos, 'p-yerba');
+    const harinaAntes = await movimientoDe(datos, 'p-harina');
+    await new Promise((r) => setTimeout(r, 5));
+
+    await datos.guardarGasto(gastoTotal('2026-03-10', { id: 'g-n', nota: 'Otra nota', tildados }), []);
+    expect(await stockDe(datos, 'p-yerba')).toBe(0);
+    expect(await stockDe(datos, 'p-harina')).toBe(3.5);
+    expect(await movimientoDe(datos, 'p-yerba')).toBe(yerbaAntes);
+    expect(await movimientoDe(datos, 'p-harina')).toBe(harinaAntes);
+    const { gasto, items } = await datos.gasto('g-n');
+    expect(gasto.nota).toBe('Otra nota');
+    expect(items[0].id).toBe(itemAntes.id);
+  });
+
+  test('editar la cantidad de un tildado mueve solo la diferencia; sacarlo resta sin bajar de 0', async () => {
+    const datos = crearDatosEnMemoria(semilla());
+    const yerba = (cantidad: number) => ({ producto_id: 'p-yerba', cantidad });
+    const harina = { producto_id: 'p-harina', cantidad: 1 };
+    await datos.guardarGasto(gastoTotal('2026-03-10', { nuevo_id: 'g-c', tildados: [yerba(2), harina] }), []);
+    expect(await stockDe(datos, 'p-yerba')).toBe(3);
+    await datos.ajustarStock('p-yerba', -3); // consumido: 0
+    const harinaAntes = await movimientoDe(datos, 'p-harina');
+
+    await datos.guardarGasto(gastoTotal('2026-03-10', { id: 'g-c', tildados: [yerba(3), harina] }), []);
+    expect(await stockDe(datos, 'p-yerba')).toBe(1); // 2 → 3 suma 1
+    expect(await stockDe(datos, 'p-harina')).toBe(3.5);
+    expect(await movimientoDe(datos, 'p-harina')).toBe(harinaAntes);
+    expect((await datos.gasto('g-c')).items.find((i) => i.producto_id === 'p-yerba')?.cantidad).toBe(3);
+
+    await datos.guardarGasto(gastoTotal('2026-03-10', { id: 'g-c', tildados: [harina] }), []);
+    expect(await stockDe(datos, 'p-yerba')).toBe(0); // 1 − 3, sin bajar de 0
+    expect(await stockDe(datos, 'p-harina')).toBe(3.5);
+    expect((await datos.gasto('g-c')).items.map((i) => i.producto_id)).toEqual(['p-harina']);
+  });
+
+  test('un producto repetido en los tildados queda en un solo ítem con la suma', async () => {
+    const datos = crearDatosEnMemoria(semilla());
+    await datos.guardarGasto(
+      gastoTotal('2026-03-10', {
+        nuevo_id: 'g-d',
+        tildados: [
+          { producto_id: 'p-yerba', cantidad: 1 },
+          { producto_id: 'p-yerba', cantidad: 2 },
+        ],
+      }),
+      [],
+    );
+    expect(await stockDe(datos, 'p-yerba')).toBe(4);
+    expect((await datos.gasto('g-d')).items.map((i) => [i.producto_id, i.cantidad])).toEqual([['p-yerba', 3]]);
+  });
+
+  test('un alta repetida con otros datos rechaza con GASTO_YA_GUARDADO; igual, devuelve el id', async () => {
+    const datos = crearDatosEnMemoria(semilla());
+    const g = gastoTotal('2026-03-10', { nuevo_id: 'g-y', nota: 'Hola', tildados: [{ producto_id: 'p-yerba', cantidad: 1 }] });
+    await datos.guardarGasto(g, []);
+    await expect(datos.guardarGasto(g, [])).resolves.toBe('g-y');
+    for (const cambio of [
+      { total: 2000_00 },
+      { fecha: '2026-03-11' },
+      { pagado_por: 'i-bruno' },
+      { categoria_id: 'c-limpieza' },
+      { nota: 'Chau' },
+      { nota: null },
+    ]) {
+      await expect(datos.guardarGasto({ ...g, ...cambio }, [])).rejects.toMatchObject({
+        message: 'GASTO_YA_GUARDADO',
+        code: 'P0001',
+      });
+    }
+    const { gasto } = await datos.gasto('g-y');
+    expect([gasto.total, gasto.nota]).toEqual([1000_00, 'Hola']);
+    expect(await stockDe(datos, 'p-yerba')).toBe(2);
+  });
+
+  test('un alta por productos repetida compara el total que sale de los ítems', async () => {
+    const datos = crearDatosEnMemoria(semilla());
+    const g: GastoAGuardar = { nuevo_id: 'g-p', fecha: '2026-03-10', pagado_por: 'i-ana', total: 1, modo: 'productos', categoria_id: null };
+    const items = [{ producto_id: 'p-yerba', cantidad: 2, precio_unitario: 850 }];
+    await datos.guardarGasto(g, items);
+    await expect(datos.guardarGasto(g, items)).resolves.toBe('g-p');
+    await expect(datos.guardarGasto(g, [{ ...items[0], precio_unitario: 900 }])).rejects.toMatchObject({
+      message: 'GASTO_YA_GUARDADO',
+    });
+  });
+
   test('pasar un gasto de productos a total sin tildados borra los ítems con precio y descuenta', async () => {
     const datos = crearDatosEnMemoria(semilla());
     await datos.guardarGasto(
