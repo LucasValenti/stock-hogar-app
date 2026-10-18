@@ -15,7 +15,8 @@ jest.mock('expo-router', () => ({
     return mockRouter;
   },
 }));
-jest.mock('@/sesion/sesion', () => ({ useSesion: () => ({ yo: { id: 'a', nombre: 'Ana' } }) }));
+const mockSesion = { yo: { id: 'a', nombre: 'Ana' }, demo: false, salir: jest.fn() };
+jest.mock('@/sesion/sesion', () => ({ useSesion: () => mockSesion }));
 
 const mockDatos = {
   integrantes: jest.fn(),
@@ -28,10 +29,12 @@ const mockDatos = {
   ajustarStock: jest.fn(),
 };
 const mockCola = { pendientes: jest.fn(), rechazadas: jest.fn(), olvidarRechazada: jest.fn() };
+let mockMemoria = false;
 jest.mock('@/datos', () => ({
   get datos() {
     return mockDatos;
   },
+  esModoMemoria: () => mockMemoria,
   obtenerCola: () => mockCola,
   escucharDescartes: () => () => undefined,
 }));
@@ -70,6 +73,9 @@ const sinConexion = () => Object.assign(new Error('Sin conexión: no se guardó.
 let avisarCambio: () => void = () => undefined;
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMemoria = false;
+  mockSesion.demo = false;
+  mockSesion.salir.mockResolvedValue(undefined);
   mockDatos.integrantes.mockResolvedValue(casa);
   mockDatos.categorias.mockResolvedValue([almacen]);
   mockDatos.productos.mockResolvedValue([]);
@@ -342,4 +348,31 @@ test('muestra los últimos 5 gastos y cada uno abre Cargar para editarlo', async
   expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/cargar', params: { id: 'g2' } });
   await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Ver todos los gastos' })));
   expect(mockRouter.push).toHaveBeenLastCalledWith({ pathname: '/analisis', params: { vista: 'detalle' } });
+});
+
+// ——— Demo ———
+
+test('fuera de la demo no hay aviso', async () => {
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  await render(<Inicio />);
+  await screen.findByText('Todavía no cargó nadie');
+  expect(screen.queryByText('Estás en la demo: los datos son inventados.')).toBeNull();
+});
+
+test('en la demo avisa arriba y «Salir de la demo» llama a salir', async () => {
+  mockSesion.demo = true;
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  await render(<Inicio />);
+  expect(await screen.findByText('Estás en la demo: los datos son inventados.')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Salir de la demo' })));
+  expect(mockSesion.salir).toHaveBeenCalledTimes(1);
+});
+
+test('en el build solo-memoria el aviso va sin botón de salir', async () => {
+  mockSesion.demo = true;
+  mockMemoria = true;
+  mockDatos.gastosEntre.mockResolvedValue([]);
+  await render(<Inicio />);
+  expect(await screen.findByText('Estás en la demo: los datos son inventados.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Salir de la demo' })).toBeNull();
 });

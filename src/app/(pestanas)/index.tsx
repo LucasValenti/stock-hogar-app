@@ -5,7 +5,7 @@
 import { router } from 'expo-router';
 import { View } from 'react-native';
 
-import { datos } from '@/datos';
+import { datos, esModoMemoria } from '@/datos';
 import { esCorte } from '@/datos/cola';
 import type { GastoConItems } from '@/datos/tipos';
 import { formatear } from '@/logica/dinero';
@@ -56,13 +56,14 @@ function pedirCasa(mes: string): Promise<Casa> {
 }
 
 export default function Inicio() {
-  const { yo } = useSesion();
+  const { yo, demo } = useSesion();
   const mes = mesActual();
   const { carga, reintentar } = useEnVivo(() => pedirCasa(mes), mes);
   const nombre = soloMes(mes);
 
   return (
     <Pantalla saludo={yo ? `Hola, ${yo.nombre}` : undefined} titulo={enMayuscula(nombre)} ocupado={carga.estado === 'cargando'}>
+      {demo ? <AvisoDemo /> : null}
       <AvisoCola />
       {carga.estado === 'cargando' ? (
         <Cargando />
@@ -109,6 +110,23 @@ function DelMes({ mes, nombre, casa }: { mes: string; nombre: string; casa: Casa
       <TodaviaHay productos={productos} categorias={categorias} sinLleno={cuantos === 0} />
       {cuantos ? <UltimosGastos gastos={gastos.slice(0, ULTIMOS)} integrantes={integrantes} categorias={categorias} /> : null}
     </>
+  );
+}
+
+/** Aviso de la demo de tiempo de ejecución. En el build solo-memoria no hay a dónde salir: va sin botón. */
+function AvisoDemo() {
+  const tema = useTema();
+  const { salir } = useSesion();
+  return (
+    <Tarjeta style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: tema.espacio.m }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: tema.espacio.s, flexGrow: 1, flexShrink: 1 }}>
+        <Icono nombre="casa" tamano={tema.medida.icono} color={tema.color.textoSuave} />
+        <Texto variante="fuerte" style={{ flexShrink: 1 }}>
+          Estás en la demo: los datos son inventados.
+        </Texto>
+      </View>
+      {esModoMemoria() ? null : <Boton texto="Salir de la demo" variante="borde" onPress={() => void salir()} />}
+    </Tarjeta>
   );
 }
 

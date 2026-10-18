@@ -8,6 +8,7 @@ import { View } from 'react-native';
 import { mensajeError } from '@/logica/errores';
 import { pedirCodigo, verificarCodigo } from '@/sesion/acceso';
 import { codigoValido, emailValido, mensajeDeCodigo, normalizarCodigo, normalizarEmail } from '@/sesion/codigo';
+import { useSesion } from '@/sesion/sesion';
 import { Campo, Pagina } from '@/sesion/ui';
 import { useTema } from '@/tema/tema';
 import { Boton } from '@/ui/Boton';
@@ -15,6 +16,7 @@ import { Texto } from '@/ui/Texto';
 
 export default function Ingresar() {
   const tema = useTema();
+  const { entrarDemo } = useSesion();
   const [paso, setPaso] = useState<'email' | 'codigo'>('email');
   const [email, setEmail] = useState('');
   // El email al que se mandó el código (ya limpio): es con el que se verifica.
@@ -114,6 +116,10 @@ export default function Ingresar() {
         onSubmitEditing={enviarCodigo}
       />
       <Boton texto="Enviarme un código" onPress={enviarCodigo} ocupado={enviando} />
+      <View style={{ gap: tema.espacio.s }}>
+        <Boton texto="Probar la demo" onPress={entrarDemo} variante="borde" />
+        <Texto variante="sub" centrado>Con datos inventados de una casa de ejemplo. No se guarda nada.</Texto>
+      </View>
     </Pagina>
   );
 }
