@@ -1,10 +1,10 @@
 // Cargar con la capa de datos simulada: validación, la hoja «Agregar producto», el guardado (también en
 // cola), el mes cerrado y el gasto viejo por productos. (Fuera de src/app para que Expo Router no la tome.)
 
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import Cargar from '@/app/cargar';
-import { formatear } from '@/logica/dinero';
+import { centavosATexto, formatear } from '@/logica/dinero';
 import { fechaLarga, hoy, mesActual, mesAnterior } from '@/logica/meses';
 import type { Integrante, Producto } from '@/logica/tipos';
 
@@ -22,6 +22,18 @@ const mockNuevoId = jest.fn(() => '00000000-0000-4000-8000-000000000001');
 jest.mock('@/datos/id', () => ({ nuevoId: () => mockNuevoId() }));
 jest.mock('@/sesion/sesion', () => ({ useSesion: () => ({ yo: { id: 'ana', nombre: 'Ana' } }) }));
 
+const mockLeerTexto = jest.fn();
+jest.mock('@/comprobante/ocr', () => {
+  const real = jest.requireActual('@/comprobante/ocr.comun');
+  return {
+    leerTexto: (...args: unknown[]) => mockLeerTexto(...args),
+    MAX_BYTES: real.MAX_BYTES,
+    OcrNoDisponible: real.OcrNoDisponible,
+  };
+});
+const mockPicker = jest.fn();
+jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: (...args: unknown[]) => mockPicker(...args) }));
+
 const mockDatos = {
   integrantes: jest.fn(),
   categorias: jest.fn(),
@@ -31,6 +43,8 @@ const mockDatos = {
   gasto: jest.fn(),
   guardarGasto: jest.fn(),
   borrarGasto: jest.fn(),
+  gastoPorOperacion: jest.fn(),
+  categoriaDeDestino: jest.fn(),
   escucharCambios: jest.fn(() => () => undefined),
 };
 const mockCola = { pendientes: jest.fn(), rechazadas: jest.fn(), olvidarRechazada: jest.fn() };
@@ -81,6 +95,21 @@ const gastoBase = {
   mp_operacion: null,
 };
 
+// Nombres de fantasía: el comprobante original traía los de personas reales.
+const COMPROBANTE = `Comprobante de transferencia
+8/octubre/2026 a las 11:29.
+$ 48.600
+Motivo: Varios
+Origen y destino
+EG Ana Gómez
+Mercado Pago
+CVU: 0000000000000000000000
+EG Beto Salas
+Mercado Pago
+CVU: 0000000000000000000000
+N.* de operación de Mercado Pago
+123456789012`;
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockParams = {};
@@ -104,6 +133,8 @@ beforeEach(() => {
   mockDatos.mesesCerrados.mockResolvedValue(new Set());
   mockDatos.guardarGasto.mockResolvedValue({ estado: 'hecho', id: 'nuevo' });
   mockDatos.borrarGasto.mockResolvedValue(undefined);
+  mockDatos.gastoPorOperacion.mockResolvedValue(null);
+  mockDatos.categoriaDeDestino.mockResolvedValue(null);
   mockCola.pendientes.mockResolvedValue([]);
   mockCola.rechazadas.mockResolvedValue([]);
 });
@@ -343,4 +374,50 @@ test('con el gasto en cola, sigue mostrando los que la base rechazó (sin repeti
   expect(screen.getByText(/^No se pudo guardar el gasto del /)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Descartar' })).toBeTruthy();
   expect(screen.queryByText(/gastos? guardados? en el celu: se mand/)).toBeNull();
+});
+
+test('sin la app instalada, «Subir comprobante» avisa que el OCR no está y no llena nada', async () => {
+  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', fileSize: 1000, mimeType: 'image/png' }] });
+  mockLeerTexto.mockRejectedValue(new (jest.requireActual('@/comprobante/ocr.comun').OcrNoDisponible)());
+  await abrir();
+  await tocar('button', 'Subir comprobante');
+  expect(await screen.findByText('Para leer comprobantes instalá la app (APK); en Expo Go no se puede.')).toBeTruthy();
+  expect(screen.getByLabelText('Monto').props.value).toBe('');
+});
+
+test('mientras lee, avisa «Leyendo el comprobante…»', async () => {
+  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', fileSize: 1000, mimeType: 'image/png' }] });
+  let resolver: (texto: string) => void = () => undefined;
+  mockLeerTexto.mockReturnValue(new Promise<string>((r) => { resolver = r; }));
+  await abrir();
+  await tocar('button', 'Subir comprobante');
+  expect(await screen.findByText('Leyendo el comprobante…')).toBeTruthy();
+  await act(async () => {
+    resolver(COMPROBANTE);
+  });
+});
+
+test('«Subir comprobante» llena el formulario y al guardar manda mp_operacion y destino', async () => {
+  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', fileSize: 1000, mimeType: 'image/png' }] });
+  mockLeerTexto.mockResolvedValue(COMPROBANTE);
+  mockDatos.categoriaDeDestino.mockResolvedValue('super');
+  await abrir();
+  await tocar('button', 'Subir comprobante');
+  expect(await screen.findByText('Leímos el comprobante: revisá los datos y guardá.')).toBeTruthy();
+  await waitFor(() => expect(screen.getByLabelText('Monto').props.value).toBe(centavosATexto(4860000)));
+  expect(screen.getByRole('button', { name: 'Categoría: Súper' })).toBeTruthy();
+  expect(screen.getByLabelText('Fecha').props.value).toBe(fechaLarga('2026-10-08'));
+  expect(screen.getByLabelText('Nota').props.value).toBe('Beto Salas');
+
+  await tocar('button', 'Guardar gasto');
+  const [g] = mockDatos.guardarGasto.mock.calls[0];
+  expect(g).toEqual(expect.objectContaining({ total: 48_600_00, mp_operacion: '123456789012', destino: 'beto salas' }));
+});
+
+test('en edición no se ofrece subir comprobante', async () => {
+  mockParams = { id: 'g1' };
+  mockDatos.gasto.mockResolvedValue({ gasto: gastoBase, items: [] });
+  await render(<Cargar />);
+  await screen.findByRole('button', { name: 'Guardar cambios' });
+  expect(screen.queryByRole('button', { name: 'Subir comprobante' })).toBeNull();
 });

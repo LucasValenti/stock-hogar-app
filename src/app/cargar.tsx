@@ -10,6 +10,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 
+import { useComprobante } from '@/comprobante/useComprobante';
 import { datos } from '@/datos';
 import { nuevoId } from '@/datos/id';
 import type { GastoAGuardar } from '@/datos/tipos';
@@ -145,6 +146,8 @@ function Formulario({ base }: { base: Base }) {
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [enCola, setEnCola] = useState(false);
+  // Lo que viaja con el gasto si se cargó un comprobante: el n.º de operación y el destinatario (normalizado).
+  const [comprobante, setComprobante] = useState<{ operacion: string | null; destino: string | null } | null>(null);
   const [hoja, setHoja] = useState<'categoria' | 'productos' | 'borrar' | null>(null);
   // El id del alta se elige una vez: si se reintenta (error o cola), la base no lo duplica.
   const idNuevo = useRef<string | null>(null);
@@ -169,6 +172,32 @@ function Formulario({ base }: { base: Base }) {
       delete resto[campo];
       return resto;
     });
+
+  // Subir un comprobante solo en el alta: pasa lo leído al formulario y deja lo que viaja con el gasto.
+  const lectura = useComprobante({
+    integrantes,
+    notaActual: () => nota,
+    aplicar: (c, categoriaSugerida) => {
+      if (c.monto !== undefined) {
+        setMonto(c.monto);
+        sinError('total');
+      }
+      if (c.fecha) {
+        setFecha(fechaLarga(c.fecha));
+        sinError('fecha');
+      }
+      if (c.pagadoPor) {
+        setPagadoPor(c.pagadoPor);
+        sinError('pagado_por');
+      }
+      if (c.nota !== undefined) setNota(c.nota);
+      if (categoriaSugerida) {
+        setCategoriaId(categoriaSugerida);
+        sinError('categoria_id');
+      }
+      setComprobante(c.comprobante);
+    },
+  });
 
   async function guardar() {
     setErrorGuardar(null);
@@ -203,6 +232,7 @@ function Formulario({ base }: { base: Base }) {
       modo: 'total',
       categoria_id: categoriaId,
       nota: nota.trim() || null,
+      ...(comprobante ? { mp_operacion: comprobante.operacion, destino: comprobante.destino } : {}),
       tildados: listos,
       anotaciones: [...notas],
     };
@@ -235,6 +265,22 @@ function Formulario({ base }: { base: Base }) {
           mostrando los gastos que la base rechazó. */}
       <AvisoCola soloRechazadas={enCola} />
       {cerrado ? <AvisoCerrado /> : null}
+
+      {!g && !enCola ? (
+        <View style={{ gap: tema.espacio.s }}>
+          <Boton texto="Subir comprobante" variante="borde" icono="nota" ocupado={lectura.leyendo} onPress={() => void lectura.elegir()} />
+          {lectura.leyendo ? (
+            <Texto variante="sub" accessibilityLiveRegion="polite">
+              Leyendo el comprobante…
+            </Texto>
+          ) : null}
+          {lectura.aviso ? (
+            <Texto variante="sub" accessibilityRole="alert" accessibilityLiveRegion="polite">
+              {lectura.aviso}
+            </Texto>
+          ) : null}
+        </View>
+      ) : null}
 
       <Campo
         etiqueta="Monto"
