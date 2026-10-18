@@ -11,7 +11,7 @@
       "icon": "./assets/expo.icon"
     },
     "android": {
-      "package": "dev.kusak.stockhogar",
+      "package": "dev.kusak.hogar",
       "adaptiveIcon": {
         "backgroundColor": "#dce8e3",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
