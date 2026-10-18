@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { registrarSw } from '@/comprobante/registrarSw';
 import { useCompartidoPendiente } from '@/comprobante/useCompartidoPendiente';
 import { PantallaAjena, PantallaCarga, PantallaError } from '@/sesion/pantallas';
 import { SesionProvider, useSesion } from '@/sesion/sesion';
@@ -28,6 +29,11 @@ function Raiz() {
   const { estado, error, reintentar } = useSesion();
   // Un comprobante compartido desde otra app abre Cargar cuando la sesión está lista.
   useCompartidoPendiente();
+
+  // En la web instalada, el service worker recibe los comprobantes compartidos desde otra app.
+  useEffect(() => {
+    registrarSw();
+  }, []);
 
   useEffect(() => {
     if (fuentesListas) SplashScreen.hideAsync();
