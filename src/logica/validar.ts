@@ -1,7 +1,7 @@
 // Validación de formularios. Devuelve mensajes listos para mostrar al lado de cada campo.
 import { mesDe } from './meses';
 import { aCantidad, aCentavos } from './dinero';
-import type { Integrante, ModoGasto, Producto, Tildado, TipoIntegrante, Unidad } from './tipos';
+import type { Integrante, ModoGasto, Producto, Tildado, TipoCategoria, TipoIntegrante, Unidad } from './tipos';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -193,4 +193,26 @@ export function avisoCambioTipo(i: Pick<Integrante, 'nombre'> & { tipo?: string 
   return tipoNuevo === 'pagador_externo'
     ? `${i.nombre} pasa a ser pagador externo: deja de participar del reparto de los meses que no están cerrados y se le devuelve lo que pagó. Los meses cerrados no cambian.`
     : `${i.nombre} pasa a participar del reparto de los meses que no están cerrados, según su sueldo. Los meses cerrados no cambian.`;
+}
+
+export type DatosCategoria = { nombre: string; tipo: string; dias: string };
+export type ErroresCategoria = Partial<Record<'nombre' | 'dias', string>>;
+export type ResultadoCategoria = {
+  ok: boolean;
+  errores: ErroresCategoria;
+  valor: { nombre: string; tipo: TipoCategoria; dias_sin_movimiento: number };
+};
+
+/** Nombre, tipo (un tipo desconocido es «producto») y los días de «¿todavía hay?»: entero de 1 a 365, como pide la base. */
+export function validarCategoria({ nombre, tipo, dias }: DatosCategoria): ResultadoCategoria {
+  const errores: ErroresCategoria = {};
+  const n = /^\d+$/.test(dias.trim()) ? Number(dias.trim()) : NaN;
+  const valor: ResultadoCategoria['valor'] = {
+    nombre: nombre.trim(),
+    tipo: tipo === 'servicio' ? 'servicio' : 'producto',
+    dias_sin_movimiento: n,
+  };
+  if (!valor.nombre) errores.nombre = 'Escribí un nombre.';
+  if (!(n >= 1 && n <= 365)) errores.dias = 'Poné un número de días entre 1 y 365.';
+  return { ok: Object.keys(errores).length === 0, errores, valor };
 }

@@ -22,9 +22,11 @@ type Props = {
   placeholder?: string;
   /** El monto de Cargar: cifras tabulares grandes, centradas. */
   grande?: boolean;
+  /** Emails y códigos: sin mayúscula automática ni corrector. */
+  sinCorrector?: boolean;
 };
 
-export function Campo({ etiqueta, valor, alCambiar, ayuda, error, bloqueado = false, teclado, placeholder, grande = false }: Props) {
+export function Campo({ etiqueta, valor, alCambiar, ayuda, error, bloqueado = false, teclado, placeholder, grande = false, sinCorrector = false }: Props) {
   const tema = useTema();
   const { conFoco, alFoco } = useFoco();
   const id = useId();
@@ -44,6 +46,8 @@ export function Campo({ etiqueta, valor, alCambiar, ayuda, error, bloqueado = fa
         value={valor}
         onChangeText={alCambiar}
         keyboardType={teclado}
+        autoCapitalize={sinCorrector ? 'none' : undefined}
+        autoCorrect={sinCorrector ? false : undefined}
         placeholder={placeholder}
         placeholderTextColor={tema.color.textoSuave}
         {...alFoco}

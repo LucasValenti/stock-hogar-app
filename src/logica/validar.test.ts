@@ -1,4 +1,4 @@
-import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo, admiteDecimales, validarCantidad, validarProducto, validarAnotacion } from './validar';
+import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo, admiteDecimales, validarCantidad, validarProducto, validarAnotacion, validarCategoria } from './validar';
 import type { GastoFormulario } from './validar';
 
 const base: GastoFormulario = { fecha: '2026-10-07', pagado_por: 'a', modo: 'total', total: 850000, categoria_id: 'cat', items: [] };
@@ -221,5 +221,28 @@ describe('validarAnotacion', () => {
   test('vacía o de más de 120, con mensaje', () => {
     expect(validarAnotacion('   ')).toEqual({ ok: false, error: 'Escribí qué falta.' });
     expect(validarAnotacion('a'.repeat(121))).toEqual({ ok: false, error: 'Usá hasta 120 caracteres.' });
+  });
+});
+
+describe('validarCategoria', () => {
+  test('una categoría válida sale recortada, con su tipo y los días como número', () => {
+    expect(validarCategoria({ nombre: '  Limpieza ', tipo: 'producto', dias: '30' })).toStrictEqual({
+      ok: true,
+      errores: {},
+      valor: { nombre: 'Limpieza', tipo: 'producto', dias_sin_movimiento: 30 },
+    });
+    expect(validarCategoria({ nombre: 'Luz', tipo: 'servicio', dias: '1' }).valor.tipo).toBe('servicio');
+    expect(validarCategoria({ nombre: 'Luz', tipo: 'servicio', dias: '365' }).ok).toBe(true);
+  });
+
+  test('pide nombre y días enteros de 1 a 365', () => {
+    expect(validarCategoria({ nombre: ' ', tipo: 'producto', dias: '20' }).errores).toStrictEqual({ nombre: 'Escribí un nombre.' });
+    for (const dias of ['0', '366', '1,5', '-3', '', 'veinte']) {
+      expect(validarCategoria({ nombre: 'Súper', tipo: 'producto', dias }).errores).toStrictEqual({ dias: 'Poné un número de días entre 1 y 365.' });
+    }
+  });
+
+  test('un tipo desconocido cuenta como productos del súper', () => {
+    expect(validarCategoria({ nombre: 'Súper', tipo: 'otra', dias: '20' }).valor.tipo).toBe('producto');
   });
 });
