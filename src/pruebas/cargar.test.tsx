@@ -321,3 +321,26 @@ test('muestra lo que espera en la cola del integrante con sesión', async () => 
   await abrir();
   expect(await screen.findByText('1 gasto guardado en el celu: se manda cuando vuelva la conexión.')).toBeTruthy();
 });
+
+test('con el gasto en cola, sigue mostrando los que la base rechazó (sin repetir cuántos esperan)', async () => {
+  mockDatos.guardarGasto.mockResolvedValue({ estado: 'en-cola', id: 'x' });
+  mockCola.pendientes.mockResolvedValue([{ id: 'o0', tipo: 'guardarGasto', duenio: 'ana', datos: {} }]);
+  mockCola.rechazadas.mockResolvedValue([
+    {
+      op: { id: 'o9', tipo: 'guardarGasto', duenio: 'ana', datos: { gasto: { fecha: `${MES}-03`, total: 300_00 } } },
+      code: 'P0001',
+      message: 'MES_CERRADO',
+      cuando: '2026-10-03T12:00:00.000Z',
+    },
+  ]);
+  await abrir();
+  expect(await screen.findByText(/^No se pudo guardar el gasto del /)).toBeTruthy();
+  await escribir('Monto', '500');
+  await elegirCategoria('Luz');
+  await tocar('button', 'Guardar gasto');
+  expect(await screen.findByText(/^Guardado en el celu: se manda cuando vuelva la conexión/)).toBeTruthy();
+  await act(async () => undefined);
+  expect(screen.getByText(/^No se pudo guardar el gasto del /)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Descartar' })).toBeTruthy();
+  expect(screen.queryByText(/gastos? guardados? en el celu: se mand/)).toBeNull();
+});

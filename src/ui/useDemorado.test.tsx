@@ -27,3 +27,15 @@ test('si todavía no había valor (null), el primero que llega va sin esperar', 
   await rerender({ v: '1 gasto' });
   expect(result.current).toBe('3 gastos');
 });
+
+test('si el valor vuelve a null, se va ya; el que llega después va sin esperar', async () => {
+  const { result, rerender } = await renderHook(({ v }: { v: string | null }) => useDemorado(v, 600), {
+    initialProps: { v: '3 gastos' as string | null },
+  });
+  await rerender({ v: null });
+  expect(result.current).toBeNull();
+  await rerender({ v: '7 gastos' });
+  expect(result.current).toBe('7 gastos');
+  await act(async () => jest.advanceTimersByTime(600));
+  expect(result.current).toBe('7 gastos');
+});

@@ -8,6 +8,7 @@ import Analisis from '@/app/(pestanas)/analisis';
 import type { GastoConItems } from '@/datos/tipos';
 import { formatear, formatearPorcentaje } from '@/logica/dinero';
 import { fechaLarga, mesActual, mesAnterior, mesSiguiente, nombreMes, rangoMes, ultimoDia } from '@/logica/meses';
+import { enMayuscula } from '@/logica/texto';
 import type { Categoria, Cierre, Integrante } from '@/logica/tipos';
 
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
@@ -55,7 +56,6 @@ const categorias: Categoria[] = [
 
 const MES = mesActual();
 const ANTERIOR = mesAnterior(MES);
-const enMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 let n = 0;
 function gasto(fecha: string, pagado_por: string, total: number, extra: Partial<GastoConItems> = {}): GastoConItems {
@@ -352,19 +352,27 @@ test('Detalle muestra de a 20 y «Ver más» trae los siguientes; cada gasto abr
 });
 
 test('Detalle anuncia cuántos hay cuando se deja de tipear (600 ms), en una región que no se desmonta', async () => {
-  mockParams = { vista: 'detalle' };
-  await render(<Analisis />);
-  await screen.findByLabelText('Buscar');
-  const region = screen.getByTestId('conteo-detalle');
-  expect(region.props.accessibilityLiveRegion).toBe('polite');
-  expect(within(region).getByText('2 gastos')).toBeTruthy();
-  await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'yerba'));
-  expect(filasDeGasto()).toHaveLength(1);
-  expect(within(region).getByText('2 gastos')).toBeTruthy();
-  expect(await within(region).findByText('1 gasto')).toBeTruthy();
-  await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'nada que ver'));
-  expect(await within(screen.getByTestId('conteo-detalle')).findByText('No hay gastos con esos filtros.')).toBeTruthy();
-  expect(screen.getByTestId('conteo-detalle')).toBe(region);
+  jest.useFakeTimers();
+  try {
+    mockParams = { vista: 'detalle' };
+    await render(<Analisis />);
+    await screen.findByLabelText('Buscar');
+    const region = screen.getByTestId('conteo-detalle');
+    expect(region.props.accessibilityLiveRegion).toBe('polite');
+    expect(within(region).getByText('2 gastos')).toBeTruthy();
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'yerba'));
+    expect(filasDeGasto()).toHaveLength(1);
+    await act(async () => jest.advanceTimersByTime(599));
+    expect(within(region).getByText('2 gastos')).toBeTruthy();
+    await act(async () => jest.advanceTimersByTime(1));
+    expect(within(region).getByText('1 gasto')).toBeTruthy();
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Buscar'), 'nada que ver'));
+    await act(async () => jest.advanceTimersByTime(600));
+    expect(within(screen.getByTestId('conteo-detalle')).getByText('No hay gastos con esos filtros.')).toBeTruthy();
+    expect(screen.getByTestId('conteo-detalle')).toBe(region);
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test('Detalle marca con candado los gastos de todos los meses cerrados del rango', async () => {

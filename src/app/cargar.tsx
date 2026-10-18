@@ -231,8 +231,9 @@ function Formulario({ base }: { base: Base }) {
   return (
     <Pantalla>
       <Encabezado titulo={g ? 'Editar gasto' : 'Cargar gasto'} alVolver={volver} />
-      {/* En cola, la tarjeta de abajo ya lo dice: el aviso de la cola no lo repite. */}
-      {enCola ? null : <AvisoCola />}
+      {/* En cola, la tarjeta de abajo ya dice que espera: el aviso de la cola no lo repite, pero sigue
+          mostrando los gastos que la base rechazó. */}
+      <AvisoCola soloRechazadas={enCola} />
       {cerrado ? <AvisoCerrado /> : null}
 
       <Campo

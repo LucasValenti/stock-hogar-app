@@ -59,9 +59,20 @@ export default function Ajustes() {
   const { carga, reintentar } = useEnVivo(pedirCasa, 'ajustes');
   const [integrante, setIntegrante] = useState<Integrante | 'nuevo' | null>(null);
   const [categoria, setCategoria] = useState<Categoria | 'nueva' | null>(null);
-  const [aviso, setAviso] = useState<{ seccion: Seccion; texto: string } | null>(null);
+  // `vez` cambia con cada guardado: el aviso se vuelve a montar y se anuncia aunque el texto sea el mismo.
+  const [aviso, setAviso] = useState<{ seccion: Seccion; texto: string; vez: number } | null>(null);
+  const avisar = (seccion: Seccion, texto: string) => setAviso((a) => ({ seccion, texto, vez: (a?.vez ?? 0) + 1 }));
+  // Al abrir una hoja, el aviso del guardado anterior ya no corresponde.
+  const abrirIntegrante = (i: Integrante | 'nuevo') => {
+    setAviso(null);
+    setIntegrante(i);
+  };
+  const abrirCategoria = (c: Categoria | 'nueva') => {
+    setAviso(null);
+    setCategoria(c);
+  };
 
-  const avisoDe = (seccion: Seccion) => (aviso?.seccion === seccion ? aviso.texto : null);
+  const avisoDe = (seccion: Seccion) => (aviso?.seccion === seccion ? aviso : null);
 
   return (
     <Pantalla titulo="Ajustes" ocupado={carga.estado === 'cargando'}>
@@ -95,13 +106,13 @@ export default function Ajustes() {
             <Tarjeta style={{ paddingVertical: 0, gap: 0 }}>
               {carga.valor.integrantes.length ? (
                 carga.valor.integrantes.map((i, n) => (
-                  <FilaIntegrante key={i.id} integrante={i} separador={n > 0} alTocar={() => setIntegrante(i)} />
+                  <FilaIntegrante key={i.id} integrante={i} separador={n > 0} alTocar={() => abrirIntegrante(i)} />
                 ))
               ) : (
                 <EstadoVacio icono="casa" titulo="Todavía no hay nadie en la casa." />
               )}
             </Tarjeta>
-            <Boton texto="Agregar integrante" variante="borde" icono="mas" onPress={() => setIntegrante('nuevo')} />
+            <Boton texto="Agregar integrante" variante="borde" icono="mas" onPress={() => abrirIntegrante('nuevo')} />
           </Apartado>
 
           <Apartado titulo="Categorías" aviso={avisoDe('categorias')}>
@@ -116,7 +127,7 @@ export default function Ajustes() {
                       nombre={c.nombre}
                       descripcion={linea}
                       detalle={<Texto variante="sub">{linea}</Texto>}
-                      alTocar={() => setCategoria(c)}
+                      alTocar={() => abrirCategoria(c)}
                       separador={n > 0}
                     />
                   );
@@ -125,7 +136,7 @@ export default function Ajustes() {
                 <EstadoVacio icono="caja" titulo="Todavía no hay categorías." />
               )}
             </Tarjeta>
-            <Boton texto="Agregar categoría" variante="borde" icono="mas" onPress={() => setCategoria('nueva')} />
+            <Boton texto="Agregar categoría" variante="borde" icono="mas" onPress={() => abrirCategoria('nueva')} />
           </Apartado>
         </>
       )}
@@ -137,7 +148,7 @@ export default function Ajustes() {
         alCerrar={() => setIntegrante(null)}
         alGuardar={(texto) => {
           setIntegrante(null);
-          setAviso({ seccion: 'integrantes', texto });
+          avisar('integrantes', texto);
         }}
       />
       <HojaCategoria
@@ -145,14 +156,14 @@ export default function Ajustes() {
         alCerrar={() => setCategoria(null)}
         alGuardar={(texto) => {
           setCategoria(null);
-          setAviso({ seccion: 'categorias', texto });
+          avisar('categorias', texto);
         }}
       />
     </Pantalla>
   );
 }
 
-function Apartado({ titulo, aviso, children }: { titulo: string; aviso?: string | null; children: ReactNode }) {
+function Apartado({ titulo, aviso, children }: { titulo: string; aviso?: { texto: string; vez: number } | null; children: ReactNode }) {
   const tema = useTema();
   return (
     <View style={{ gap: tema.espacio.s }}>
@@ -160,7 +171,7 @@ function Apartado({ titulo, aviso, children }: { titulo: string; aviso?: string 
         {titulo}
       </Texto>
       {/* Siempre montada: lo que se guardó se anuncia al aparecer. */}
-      <View accessibilityLiveRegion="polite">{aviso ? <Estado tipo="hay" texto={aviso} /> : null}</View>
+      <View accessibilityLiveRegion="polite">{aviso ? <Estado key={aviso.vez} tipo="hay" texto={aviso.texto} /> : null}</View>
       {children}
     </View>
   );

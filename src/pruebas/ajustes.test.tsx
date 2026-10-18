@@ -150,6 +150,32 @@ test('editar trae los datos de la persona y guarda con su id', async () => {
   expect(await screen.findByText('Cambios guardados.')).toBeTruthy();
 });
 
+test('«Cambios guardados.» se va al abrir otra hoja y vuelve a aparecer (y anunciarse) con cada guardado', async () => {
+  await abrir();
+  await tocar('button', /^Ana, /);
+  await enHoja('button', 'Guardar');
+  const primero = await screen.findByText('Cambios guardados.');
+  await tocar('button', /^Bruno, /);
+  expect(screen.queryByText('Cambios guardados.')).toBeNull();
+  await enHoja('button', 'Guardar');
+  const segundo = await screen.findByText('Cambios guardados.');
+  expect(segundo).not.toBe(primero);
+  await tocar('button', 'Agregar categoría');
+  expect(screen.queryByText('Cambios guardados.')).toBeNull();
+});
+
+test('quien tiene la baja más adelante «Sale desde» ese mes; sin mes de baja, «Inactivo»', async () => {
+  mockDatos.integrantes.mockResolvedValue([
+    persona('e', 'Eva', { activo: false, baja_desde: PROXIMO }),
+    persona('f', 'Fede', { activo: false, baja_desde: null }),
+    persona('g', 'Gabi', { tipo: 'pagador_externo', sueldo: null, activo: false, baja_desde: null }),
+  ]);
+  await abrir();
+  expect(screen.getByRole('button', { name: `Eva, Integrante · Sale desde ${nombreMes(PROXIMO)}, ${formatear(600_000_00)}` })).toBeTruthy();
+  expect(screen.getByRole('button', { name: `Fede, Integrante · Inactivo, ${formatear(600_000_00)}` })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Gabi, Pagador externo · Inactivo, No participa' })).toBeTruthy();
+});
+
 test('un pagador externo no lleva sueldo: el campo se va y no se envía', async () => {
   await abrir();
   await tocar('button', 'Agregar integrante');

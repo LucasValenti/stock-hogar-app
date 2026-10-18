@@ -29,7 +29,8 @@ function queEra(r: Rechazada): string {
   return 'un gasto';
 }
 
-export function AvisoCola({ refresco = 0 }: { refresco?: number }) {
+/** `soloRechazadas`: la pantalla ya dice que hay algo esperando (Cargar en cola); los rechazos se muestran igual. */
+export function AvisoCola({ refresco = 0, soloRechazadas = false }: { refresco?: number; soloRechazadas?: boolean }) {
   const tema = useTema();
   const { yo } = useSesion();
   const yoId = yo?.id ?? null;
@@ -75,7 +76,8 @@ export function AvisoCola({ refresco = 0 }: { refresco?: number }) {
     }
   }
 
-  const { pendientes, rechazadas } = estado;
+  const { rechazadas } = estado;
+  const pendientes = soloRechazadas ? 0 : estado.pendientes;
   if (!pendientes && !rechazadas.length) return null;
   return (
     <Tarjeta accessibilityLiveRegion="polite">
