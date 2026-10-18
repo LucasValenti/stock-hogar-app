@@ -1,0 +1,3 @@
+Tesseract.js 6.0.1 y tesseract.js-core 6.1.2: Apache License 2.0 (https://github.com/naptha/tesseract.js).
+Datos de idioma spa (tessdata best_int 4.0.0, vía @tesseract.js-data/spa): Apache License 2.0 (https://github.com/tesseract-ocr/tessdata_best).
+Copiados sin cambios (salvo los comentarios sourceMappingURL) para servirlos desde el mismo origen.
