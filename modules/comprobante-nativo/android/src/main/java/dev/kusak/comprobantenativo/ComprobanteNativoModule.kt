@@ -18,6 +18,7 @@ class ComprobanteNativoModule : Module() {
   private var pdfListo = false
 
   // El intent que llegó con la app abierta (onNewIntent), a la espera de que JS lo tome.
+  // Lo escribe el hilo principal y lo lee el de JS: se toca solo dentro de synchronized(this).
   private var intentNuevo: Intent? = null
 
   // El intent de arranque se mira una sola vez: el que estaba al abrir la app.
@@ -53,6 +54,8 @@ class ComprobanteNativoModule : Module() {
       val origen = uriCompartida(intent) ?: return@Function null
       val tipo = intent.type ?: contexto.contentResolver.getType(origen) ?: ""
       if (!tipo.startsWith("image/") && tipo != "application/pdf") return@Function null
+      // Las copias de comprobantes anteriores ya se leyeron: se borran para no llenar la caché.
+      contexto.cacheDir.listFiles { archivo -> archivo.name.startsWith("compartido-") }?.forEach { it.delete() }
       val copia = File(contexto.cacheDir, "compartido-${System.currentTimeMillis()}.${extensionDe(tipo)}")
       val flujoOrigen = contexto.contentResolver.openInputStream(origen) ?: return@Function null
       flujoOrigen.use { entrada ->
@@ -66,11 +69,12 @@ class ComprobanteNativoModule : Module() {
     }
 
     OnNewIntent { intent ->
-      intentNuevo = intent
+      synchronized(this@ComprobanteNativoModule) { intentNuevo = intent }
       sendEvent("onCompartido", mapOf<String, Any>())
     }
   }
 
+  @Synchronized
   private fun intentParaTomar(): Intent? {
     intentNuevo?.let { pendiente ->
       intentNuevo = null
