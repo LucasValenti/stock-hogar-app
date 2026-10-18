@@ -77,9 +77,9 @@ Los valores visuales (colores, tamaños, espacios, movimiento) salen solo de `sr
 
 ## Estado del proyecto
 
-Fase 3, la base de la app: tema, lógica del reparto y del stock, capa de datos con cola sin conexión, ingreso por código, pestañas, Inicio y Ajustes. Las pantallas de Stock, Análisis y Cargar gasto llegan en las próximas fases.
+Fase 5: tema, lógica del reparto y del stock, capa de datos con cola sin conexión, ingreso por código, pestañas, Inicio, Stock, Análisis, Ajustes, Cargar gasto (con «Subir comprobante» leído en el dispositivo) y ficha de producto.
 
-El ícono y la pantalla de arranque (`assets/` y `app.json`) todavía son los de la plantilla de Expo; la identidad visual propia viene más adelante.
+El fondo del ícono y de la pantalla de arranque (`app.json`) ya usa el color `fondo` de los tokens; las imágenes de `assets/` todavía son las de la plantilla de Expo.
 
 ## Licencia
 
