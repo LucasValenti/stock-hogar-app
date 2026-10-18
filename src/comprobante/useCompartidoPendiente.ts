@@ -51,8 +51,9 @@ export function useCompartidoPendiente(): void {
 
   // Lo que llega con la app abierta.
   useEffect(() => {
-    const desuscribir = alCompartir((a) => {
-      if (listo) llevarACargar(a);
+    // Sin sesión no se toma: el módulo lo guarda y el efecto de arriba lo lleva cuando la sesión esté lista.
+    const desuscribir = alCompartir(() => {
+      if (listo) void tomarCompartido().then(llevarACargar);
     });
     return desuscribir;
   }, [listo, llevarACargar]);

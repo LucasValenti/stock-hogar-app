@@ -7,6 +7,6 @@ export async function tomarCompartido(): Promise<ArchivoCompartido | null> {
   return null;
 }
 
-export function alCompartir(_escuchar: (a: ArchivoCompartido) => void): () => void {
+export function alCompartir(_avisar: () => void): () => void {
   return () => undefined;
 }

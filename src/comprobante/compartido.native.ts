@@ -9,12 +9,10 @@ export async function tomarCompartido(): Promise<ArchivoCompartido | null> {
   return ComprobanteNativo ? ComprobanteNativo.tomarCompartido() : null;
 }
 
-export function alCompartir(escuchar: (a: ArchivoCompartido) => void): () => void {
+// Solo avisa que llegó uno: lo toma quien escucha, cuando puede (sin sesión queda esperando en el módulo).
+export function alCompartir(avisar: () => void): () => void {
   const modulo = ComprobanteNativo;
   if (!modulo) return () => undefined;
-  const suscripcion = modulo.addListener('onCompartido', () => {
-    const a = modulo.tomarCompartido();
-    if (a) escuchar(a);
-  });
+  const suscripcion = modulo.addListener('onCompartido', avisar);
   return () => suscripcion.remove();
 }

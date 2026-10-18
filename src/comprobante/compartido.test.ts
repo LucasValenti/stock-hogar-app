@@ -27,13 +27,13 @@ jest.mock('expo-router', () => ({
 }));
 
 const mockTomarCompartido = jest.fn();
-let mockEscucharCompartido: ((a: Archivo) => void) | null = null;
+let mockAvisoCompartido: (() => void) | null = null;
 jest.mock('./compartido', () => ({
   tomarCompartido: (...args: unknown[]) => mockTomarCompartido(...args),
-  alCompartir: (escuchar: (a: Archivo) => void) => {
-    mockEscucharCompartido = escuchar;
+  alCompartir: (avisar: () => void) => {
+    mockAvisoCompartido = avisar;
     return () => {
-      mockEscucharCompartido = null;
+      mockAvisoCompartido = null;
     };
   },
 }));
@@ -87,7 +87,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockEstado = 'lista';
   mockParams = {};
-  mockEscucharCompartido = null;
+  mockAvisoCompartido = null;
   mockTomarCompartido.mockResolvedValue(null);
   tomarPendiente();
   mockDatos.integrantes.mockResolvedValue([persona('ana', 'Ana')]);
@@ -133,12 +133,30 @@ test('un comprobante que llega con la app abierta abre Cargar, salvo si ya hay u
   await act(async () => undefined);
   expect(mockRouter.push).not.toHaveBeenCalled();
 
-  await act(async () => mockEscucharCompartido?.({ uri: 'file://c.pdf', tipo: 'application/pdf', bytes: 10 }));
+  mockTomarCompartido.mockResolvedValueOnce({ uri: 'file://c.pdf', tipo: 'application/pdf', bytes: 10 });
+  await act(async () => mockAvisoCompartido?.());
   expect(mockRouter.push).toHaveBeenCalledTimes(1);
   expect(mockRouter.push).toHaveBeenCalledWith('/cargar?compartido=1');
 
-  await act(async () => mockEscucharCompartido?.({ uri: 'file://otro.pdf', tipo: 'application/pdf', bytes: 20 }));
+  mockTomarCompartido.mockResolvedValueOnce({ uri: 'file://otro.pdf', tipo: 'application/pdf', bytes: 20 });
+  await act(async () => mockAvisoCompartido?.());
   expect(mockRouter.push).toHaveBeenCalledTimes(1);
+});
+
+test('compartido en la pantalla de ingreso: no se toma hasta que la sesión está lista, y no se pierde', async () => {
+  mockEstado = 'sin-sesion';
+  const { rerender } = await renderHook(() => useCompartidoPendiente());
+  await act(async () => undefined);
+  mockTomarCompartido.mockClear();
+
+  await act(async () => mockAvisoCompartido?.());
+  expect(mockTomarCompartido).not.toHaveBeenCalled();
+
+  mockTomarCompartido.mockResolvedValue({ uri: 'file://c.pdf', tipo: 'application/pdf', bytes: 10 });
+  mockEstado = 'lista';
+  await act(async () => rerender(undefined));
+  expect(mockRouter.push).toHaveBeenCalledWith('/cargar?compartido=1');
+  expect(tomarPendiente()).toEqual({ uri: 'file://c.pdf', tipo: 'application/pdf', bytes: 10 });
 });
 
 // ——— Cargar toma el archivo compartido ———
