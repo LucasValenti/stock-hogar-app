@@ -2,6 +2,7 @@
 // para las pruebas y para ver la app sin cuenta (VITE_DATOS=memoria). No guarda nada.
 
 import { mesActual, mesAnterior, mesDe } from '@/logica/meses';
+import { COLORES_PERFIL } from '@/logica/perfil';
 import { participantesDelMes, repartoDelMes } from '@/logica/reparto';
 import { aplicarDelta } from '@/logica/stock';
 import type {
@@ -60,7 +61,6 @@ const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.loc
 const ahora = () => new Date().toISOString();
 
 const UNIDADES: readonly string[] = ['unidad', 'paquete', 'kg', 'litro'];
-const COLORES: readonly string[] = ['naranja', 'verde', 'azul', 'rosa', 'violeta', 'amarillo'];
 const PERMISOS: readonly Permiso[] = ['sueldos', 'altas_bajas'];
 const ESCALA_DE_PESOS = 1_000_000_000_000n;
 // Lo que lanzan las funciones, las políticas y los disparadores de la base cuando falta el permiso.
@@ -453,7 +453,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
       if (cambios.email) cambios.email = cambios.email.toLowerCase();
       const antes = i.id ? integrantes.find((x) => x.id === i.id) : undefined;
       if (antes) protegerCambio(antes, { ...antes, ...cambios });
-      if (cambios.color != null && !COLORES.includes(cambios.color)) throw violaCheck('integrantes', 'color');
+      if (cambios.color != null && !COLORES_PERFIL.includes(cambios.color)) throw violaCheck('integrantes', 'color');
       if (cambios.email && integrantes.some((x) => x.email === cambios.email && x.id !== i.id)) {
         throw errorDeBase('duplicate key value violates unique constraint "integrantes_email_key"', '23505');
       }
@@ -621,7 +621,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
       const f = filaYo();
       if (!f) throw sinPermiso();
       if (!nombre.trim()) throw violaCheck('integrantes', 'nombre');
-      if (color !== null && !COLORES.includes(color)) throw violaCheck('integrantes', 'color');
+      if (color !== null && !COLORES_PERFIL.includes(color)) throw violaCheck('integrantes', 'color');
       f.nombre = nombre;
       f.color = color;
       avisar();
