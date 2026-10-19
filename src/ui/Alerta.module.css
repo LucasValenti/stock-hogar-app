@@ -1,0 +1,6 @@
+.alerta {
+  margin: 0;
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  color: var(--color-falta);
+}

@@ -1,13 +1,10 @@
 // Pestañas internas (DESIGN.md, Pestañas internas): contenedor píldora con borde, ítems de alto
 // ≥ `medida.tactil` en `tamano.s` y `peso.fuerte`; la activa, `acento` lleno con `sobreAcento`
 // (el relleno es la pista de forma). Si no entran, pasan a otro renglón.
+// En la web, `tablist` con `tab` y `aria-selected`; las flechas izquierda/derecha mueven foco y activa.
+import { useRef, type KeyboardEvent } from 'react';
 
-import { Pressable, View } from 'react-native';
-
-import { useTema } from '@/tema/tema';
-
-import { anilloDeFoco, useFoco } from './estilos';
-import { Texto } from './Texto';
+import estilos from './PestanasInternas.module.css';
 
 type Opcion<C extends string> = { clave: C; texto: string };
 
@@ -20,55 +17,40 @@ type Props<C extends string> = {
 };
 
 export function PestanasInternas<C extends string>({ etiqueta, opciones, activa, alCambiar }: Props<C>) {
-  const tema = useTema();
-  return (
-    <View
-      accessibilityRole="tablist"
-      accessibilityLabel={etiqueta}
-      style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        padding: tema.espacio.xs,
-        gap: tema.espacio.xs,
-        borderWidth: tema.medida.borde,
-        borderColor: tema.color.borde,
-        borderRadius: tema.radio.tarjeta,
-        backgroundColor: tema.color.superficie,
-      }}
-    >
-      {opciones.map((o) => (
-        <Pestana key={o.clave} texto={o.texto} activa={o.clave === activa} onPress={() => alCambiar(o.clave)} />
-      ))}
-    </View>
-  );
-}
+  const pestanas = useRef<Array<HTMLButtonElement | null>>([]);
 
-function Pestana({ texto, activa, onPress }: { texto: string; activa: boolean; onPress(): void }) {
-  const tema = useTema();
-  const { conFoco, alFoco } = useFoco();
+  function alTeclear(evento: KeyboardEvent<HTMLButtonElement>, i: number) {
+    if (!opciones.length) return;
+    const paso = evento.key === 'ArrowRight' ? 1 : evento.key === 'ArrowLeft' ? -1 : 0;
+    if (!paso) return;
+    evento.preventDefault();
+    const destino = (i + paso + opciones.length) % opciones.length;
+    alCambiar(opciones[destino].clave);
+    pestanas.current[destino]?.focus();
+  }
+
   return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityLabel={texto}
-      accessibilityState={{ selected: activa }}
-      onPress={onPress}
-      {...alFoco}
-      style={[
-        {
-          flexGrow: 1,
-          minHeight: tema.medida.tactil,
-          paddingHorizontal: tema.espacio.m,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: tema.radio.chip,
-          backgroundColor: activa ? tema.color.acento : 'transparent',
-        },
-        conFoco && anilloDeFoco(tema),
-      ]}
-    >
-      <Texto variante="seccion" centrado color={activa ? 'sobreAcento' : 'textoSuave'}>
-        {texto}
-      </Texto>
-    </Pressable>
+    <div className={estilos.pestanas} role="tablist" aria-label={etiqueta}>
+      {opciones.map((o, i) => {
+        const elegida = o.clave === activa;
+        return (
+          <button
+            key={o.clave}
+            type="button"
+            role="tab"
+            aria-selected={elegida}
+            tabIndex={elegida ? 0 : -1}
+            ref={(elemento) => {
+              pestanas.current[i] = elemento;
+            }}
+            className={estilos.pestana}
+            onClick={() => alCambiar(o.clave)}
+            onKeyDown={(evento) => alTeclear(evento, i)}
+          >
+            {o.texto}
+          </button>
+        );
+      })}
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 // La sesión de la app: quién entró y si esa cuenta es de la casa.
-// Supabase guarda la sesión en el dispositivo (AsyncStorage): al abrir la app no hay que volver a ingresar.
-// Con EXPO_PUBLIC_DATOS=memoria no hay cuentas: se entra directo como Ana, de la casa de ejemplo.
+// Supabase guarda la sesión en el dispositivo (localStorage): al abrir la app no hay que volver a ingresar.
+// Con VITE_DATOS=memoria no hay cuentas: se entra directo como Ana, de la casa de ejemplo.
 // La demo de tiempo de ejecución (entrarDemo) hace lo mismo en el build normal, sin crear el cliente.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';

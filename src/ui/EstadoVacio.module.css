@@ -1,0 +1,37 @@
+.estado {
+  display: grid;
+  justify-items: center;
+  gap: var(--espacio-s);
+  padding-block: var(--espacio-l);
+  text-align: center;
+}
+
+.marca {
+  display: grid;
+  place-items: center;
+  width: var(--medida-tactil);
+  height: var(--medida-tactil);
+  border: var(--medida-borde-fuerte) solid var(--color-borde);
+  border-radius: var(--radio-chip);
+  color: var(--color-texto-suave);
+}
+
+.bueno {
+  border-color: var(--color-hay);
+  color: var(--color-hay);
+}
+
+.titulo {
+  margin: 0;
+  font-family: var(--fuente-texto);
+  font-size: var(--tamano-m);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+}
+
+.texto {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}

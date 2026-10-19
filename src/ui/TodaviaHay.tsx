@@ -3,9 +3,7 @@
 // Falta (stock en 0: pasa a pendientes) y Ajustar (la cantidad exacta, según la unidad).
 // La respuesta saca la tarjeta al instante y deja ver el siguiente; si la base no la toma (sin conexión),
 // el producto vuelve con el aviso.
-
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
 
 import { datos } from '@/datos';
 import { mensajeError } from '@/logica/errores';
@@ -13,14 +11,13 @@ import { paraRevisar } from '@/logica/revisar';
 import { cantidadConUnidad, formatearCantidad } from '@/logica/stock';
 import type { Categoria, Producto } from '@/logica/tipos';
 import { admiteDecimales, validarCantidad } from '@/logica/validar';
-import { useTema } from '@/tema/tema';
 
 import { Boton } from './Boton';
 import { Campo } from './Campo';
-import { MensajeError } from './FormularioProducto';
+import estilos from './TodaviaHay.module.css';
 import { Hoja } from './Hoja';
+import { MensajeError } from './MensajeError';
 import { Tarjeta } from './Tarjeta';
-import { Texto } from './Texto';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 const redondear = (n: number) => Math.round(n * 1000) / 1000;
@@ -56,7 +53,6 @@ type Props = {
 };
 
 export function TodaviaHay({ productos, categorias, sinLleno = false }: Props) {
-  const tema = useTema();
   // Respondidos en esta visita: no vuelven aunque la recarga tarde.
   const [respondidos, setRespondidos] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<{ id: string; texto: string } | null>(null);
@@ -85,23 +81,21 @@ export function TodaviaHay({ productos, categorias, sinLleno = false }: Props) {
 
   return (
     <>
-      <Tarjeta iman testID="todavia-hay">
-        <Texto variante="tituloTarjeta" accessibilityRole="header" aria-level={2}>
-          {`¿Todavía hay ${p.nombre}?`}
-        </Texto>
-        <Texto variante="sub">{`Hace ${dias} días que no cambia. En Stock: ${cantidadConUnidad(p.stock, p.unidad)}.`}</Texto>
+      <Tarjeta iman data-testid="todavia-hay" className={estilos.tarjeta}>
+        <h2 className={estilos.titulo}>{`¿Todavía hay ${p.nombre}?`}</h2>
+        <p className={estilos.texto}>{`Hace ${dias} días que no cambia. En Stock: ${cantidadConUnidad(p.stock, p.unidad)}.`}</p>
         <MensajeError texto={error?.id === p.id ? error.texto : null} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tema.espacio.s }}>
-          <View style={{ flexGrow: 1, flexBasis: tema.medida.fila * 1.5 }}>
-            <Boton texto="Hay" icono="ok" variante={sinLleno ? 'borde' : 'lleno'} onPress={() => responder(p, () => datos.confirmarHay(p.id))} />
-          </View>
-          <View style={{ flexGrow: 1, flexBasis: tema.medida.fila * 1.5 }}>
-            <Boton texto="Falta" variante="borde" onPress={() => responder(p, () => vaciar(p.id, Number(actualDe(p).stock)))} />
-          </View>
-          <View style={{ flexGrow: 1, flexBasis: tema.medida.fila * 1.5 }}>
-            <Boton texto="Ajustar" variante="borde" onPress={() => setAjustando(p)} />
-          </View>
-        </View>
+        <div className={estilos.acciones}>
+          <div className={estilos.accion}>
+            <Boton texto="Hay" icono="ok" variante={sinLleno ? 'borde' : 'lleno'} onClick={() => responder(p, () => datos.confirmarHay(p.id))} />
+          </div>
+          <div className={estilos.accion}>
+            <Boton texto="Falta" variante="borde" onClick={() => responder(p, () => vaciar(p.id, Number(actualDe(p).stock)))} />
+          </div>
+          <div className={estilos.accion}>
+            <Boton texto="Ajustar" variante="borde" onClick={() => setAjustando(p)} />
+          </div>
+        </div>
       </Tarjeta>
       <HojaAjuste
         producto={ajustando}
@@ -145,16 +139,16 @@ function HojaAjuste({ producto: p, alCerrar, alGuardar }: PropsHoja) {
       titulo={p ? `¿Cuánto hay de ${p.nombre}?` : ''}
       subtitulo={decimales ? 'Podés usar decimales, por ejemplo 1,5. Si se terminó, tocá Falta.' : 'Si se terminó, tocá Falta.'}
       alCerrar={alCerrar}
-      pie={<Boton texto="Guardar cantidad" onPress={guardar} />}
+      pie={<Boton texto="Guardar cantidad" onClick={guardar} />}
     >
       <Campo
         etiqueta={etiqueta}
-        valor={texto}
-        alCambiar={(t) => {
-          setTexto(t);
+        value={texto}
+        onChange={(e) => {
+          setTexto(e.target.value);
           setError(null);
         }}
-        teclado={decimales ? 'decimal-pad' : 'number-pad'}
+        inputMode={decimales ? 'decimal' : 'numeric'}
         error={error}
       />
     </Hoja>

@@ -1,5 +1,5 @@
 // Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 007:
-// para las pruebas y para ver la app sin cuenta (EXPO_PUBLIC_DATOS=memoria). No guarda nada.
+// para las pruebas y para ver la app sin cuenta (VITE_DATOS=memoria). No guarda nada.
 
 import { mesActual, mesAnterior, mesDe } from '@/logica/meses';
 import { repartoDelMes } from '@/logica/reparto';

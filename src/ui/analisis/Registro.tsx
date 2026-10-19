@@ -2,20 +2,17 @@
 // `radio.registro`, sin imán. Cabecera con candado, «Cierre de septiembre» y quién y cuándo cerró, con
 // una línea discontinua debajo; renglones con separador punteado: total, por persona (puso · le tocaba)
 // y transferencias. Cada renglón se lee como un solo dato.
-
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
 
 import { normalizarTimestamp } from '@/datos/fechas';
 import { formatear, formatearPorcentaje } from '@/logica/dinero';
 import { fechaLarga, hoy, nombreMes } from '@/logica/meses';
 import type { Cierre, Integrante } from '@/logica/tipos';
-import { useTema } from '@/tema/tema';
 
+import estilos from './Registro.module.css';
+import { textoTransferencia } from './Reparto';
 import { Icono } from '../Icono';
 import { Monto } from '../Monto';
-import { Texto } from '../Texto';
-import { textoTransferencia } from './Reparto';
 
 const dos = (n: number) => String(n).padStart(2, '0');
 
@@ -30,129 +27,80 @@ export function textoCierre(cierre: Pick<Cierre, 'fecha' | 'cerrado_por'>, integ
 }
 
 export function Registro({ cierre, integrantes }: { cierre: Cierre; integrantes: Integrante[] }) {
-  const tema = useTema();
   const { filas, transferencias } = cierre.detalle;
   const nombres = new Map(filas.map((f) => [f.id, f.nombre]));
   return (
-    <View
-      style={{
-        backgroundColor: tema.color.superficie,
-        borderWidth: tema.medida.bordeFuerte,
-        borderColor: tema.color.cerrado,
-        borderRadius: tema.radio.registro,
-      }}
-    >
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'flex-start',
-          gap: tema.espacio.m,
-          paddingVertical: tema.espacio.m,
-          paddingHorizontal: tema.espacio.l,
-          borderBottomWidth: tema.medida.bordeFuerte,
-          borderBottomColor: tema.color.cerrado,
-          borderStyle: 'dashed',
-        }}
-      >
-        <Icono nombre="candado" tamano={tema.medida.icono} color={tema.color.cerrado} />
-        <View style={{ flex: 1 }}>
-          <Texto
-            variante="tituloTarjeta"
-            aria-level={2}
-            style={{ fontSize: tema.tamano.l, lineHeight: tema.tamano.l * tema.letra.interlineadoTitulo }}
-          >
-            {`Cierre de ${nombreMes(cierre.mes).split(' ')[0]}`}
-          </Texto>
-          <Texto variante="sub">{textoCierre(cierre, integrantes)}</Texto>
-        </View>
-      </View>
-      <View style={{ paddingTop: tema.espacio.s, paddingBottom: tema.espacio.m, paddingHorizontal: tema.espacio.l }}>
-        <Renglon etiqueta={`Total del mes: ${formatear(cierre.total)}`} primero>
-          <Texto variante="fuerte" style={{ flexShrink: 1 }}>
-            Total del mes
-          </Texto>
-          <Monto centavos={cierre.total} tamano="fila" style={{ marginLeft: 'auto' }} />
-        </Renglon>
-
-        {filas.length ? <Rotulo texto="Por persona" /> : null}
-        {filas.map((f, i) => {
-          const quien = `${f.nombre} (${f.participa ? formatearPorcentaje(f.peso) : 'no participa'})`;
-          const tocaba = f.participa ? `, le tocaba ${formatear(f.leCorresponde)}` : '';
-          return (
-            <Renglon key={f.id} etiqueta={`${quien}: puso ${formatear(f.pago)}${tocaba}`} primero={i === 0}>
-              <Texto style={{ flexShrink: 1 }}>{quien}</Texto>
-              <View style={{ marginLeft: 'auto', alignItems: 'flex-end' }}>
-                <Par texto="puso" centavos={f.pago} />
-                {f.participa ? <Par texto="le tocaba" centavos={f.leCorresponde} /> : null}
-              </View>
-            </Renglon>
-          );
-        })}
-
-        <Rotulo texto="Transferencias" />
-        {transferencias.length ? (
-          transferencias.map((t, i) => (
-            <Renglon key={`${t.de}-${t.a}`} etiqueta={`${textoTransferencia(t, nombres)}: ${formatear(t.monto)}`} primero={i === 0}>
-              <Texto style={{ flexShrink: 1 }}>{textoTransferencia(t, nombres)}</Texto>
-              <Monto centavos={t.monto} tamano="fila" style={{ marginLeft: 'auto' }} />
-            </Renglon>
-          ))
-        ) : (
-          <Renglon etiqueta="Quedaron todos al día." primero>
-            <Texto>Quedaron todos al día.</Texto>
+    <section className={estilos.registro}>
+      <div className={estilos.cabecera}>
+        <span className={estilos.candado}>
+          <Icono nombre="candado" tamano={20} />
+        </span>
+        <div className={estilos.cabeceraTexto}>
+          <h2 className={estilos.titulo}>{`Cierre de ${nombreMes(cierre.mes).split(' ')[0]}`}</h2>
+          <p className={estilos.sub}>{textoCierre(cierre, integrantes)}</p>
+        </div>
+      </div>
+      <div className={estilos.cuerpo}>
+        <div role="list" className={estilos.renglones}>
+          <Renglon etiqueta={`Total del mes: ${formatear(cierre.total)}`} primero>
+            <span className={estilos.fuerte}>Total del mes</span>
+            <Monto centavos={cierre.total} tamano="fila" className={estilos.monto} />
           </Renglon>
-        )}
-      </View>
-    </View>
+
+          {filas.length ? <Rotulo texto="Por persona" /> : null}
+          {filas.map((f, i) => {
+            const quien = `${f.nombre} (${f.participa ? formatearPorcentaje(f.peso) : 'no participa'})`;
+            const tocaba = f.participa ? `, le tocaba ${formatear(f.leCorresponde)}` : '';
+            return (
+              <Renglon key={f.id} etiqueta={`${quien}: puso ${formatear(f.pago)}${tocaba}`} primero={i === 0}>
+                <span className={estilos.nombre}>{quien}</span>
+                <span className={estilos.pares}>
+                  <Par texto="puso" centavos={f.pago} />
+                  {f.participa ? <Par texto="le tocaba" centavos={f.leCorresponde} /> : null}
+                </span>
+              </Renglon>
+            );
+          })}
+
+          <Rotulo texto="Transferencias" />
+          {transferencias.length ? (
+            transferencias.map((t, i) => (
+              <Renglon key={`${t.de}-${t.a}`} etiqueta={`${textoTransferencia(t, nombres)}: ${formatear(t.monto)}`} primero={i === 0}>
+                <span className={estilos.nombre}>{textoTransferencia(t, nombres)}</span>
+                <Monto centavos={t.monto} tamano="fila" className={estilos.monto} />
+              </Renglon>
+            ))
+          ) : (
+            <Renglon etiqueta="Quedaron todos al día." primero>
+              <span>Quedaron todos al día.</span>
+            </Renglon>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
-function Renglon({ etiqueta, primero = false, children }: { etiqueta: string; primero?: boolean; children: ReactNode }) {
-  const tema = useTema();
+type PropsRenglon = { etiqueta: string; primero?: boolean; children: ReactNode };
+
+function Renglon({ etiqueta, primero = false, children }: PropsRenglon) {
   return (
-    <View
-      accessible
-      accessibilityLabel={etiqueta}
-      style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        columnGap: tema.espacio.m,
-        minHeight: tema.medida.tactil,
-        paddingVertical: tema.espacio.xs,
-        borderTopWidth: primero ? 0 : tema.medida.borde,
-        borderTopColor: tema.color.borde,
-        borderStyle: 'dotted',
-      }}
-    >
+    <div role="listitem" aria-label={etiqueta} className={[estilos.renglon, !primero && estilos.separador].filter(Boolean).join(' ')}>
       {children}
-    </View>
+    </div>
   );
 }
 
 function Par({ texto, centavos }: { texto: string; centavos: number }) {
   return (
-    <Texto variante="sub">
+    <span className={estilos.par}>
       {`${texto} `}
-      <Texto variante="subMedio" color="texto" style={{ fontVariant: ['tabular-nums'] }}>
-        {formatear(centavos)}
-      </Texto>
-    </Texto>
+      <span className={['tabular', estilos.montoPar].join(' ')}>{formatear(centavos)}</span>
+    </span>
   );
 }
 
 /** Rótulo del registro: mayúsculas con `letra.rastroRotulo`, solo acá (DESIGN.md, Tipografía). */
 function Rotulo({ texto }: { texto: string }) {
-  const tema = useTema();
-  return (
-    <Texto
-      variante="rotulo"
-      color="cerrado"
-      accessibilityRole="header"
-      aria-level={3}
-      style={{ textTransform: 'uppercase', letterSpacing: tema.letra.rastroRotulo * tema.tamano.xs, paddingTop: tema.espacio.m }}
-    >
-      {texto}
-    </Texto>
-  );
+  return <h3 className={estilos.rotulo}>{texto}</h3>;
 }

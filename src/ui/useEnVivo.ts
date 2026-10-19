@@ -1,6 +1,5 @@
 // Datos que se piden al entrar y otra vez cuando alguien cambia algo en la casa: una sola vez por tanda
 // de avisos, y sin que una respuesta vieja pise a una nueva (ver datos/recarga.ts). Lo usan Inicio y Análisis.
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { datos } from '@/datos';

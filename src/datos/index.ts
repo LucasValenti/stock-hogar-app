@@ -1,13 +1,10 @@
-// La capa de datos de la app: memoria o Supabase según EXPO_PUBLIC_DATOS, con la cola de escritura.
+// La capa de datos de la app: memoria o Supabase según VITE_DATOS, con la cola de escritura.
 // guardarGasto pasa por la cola: sin red queda pendiente y sale al volver la conexión.
 // Todo se arma en el primer uso, no al importar: si falta .env, el error (SIN_CONFIG) llega
 // a quien llamó y la UI lo puede mostrar, en vez de romper la app al arrancar.
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo';
-import { AppState, Platform } from 'react-native';
-
 import { almacenEnMemoria } from './almacenEnMemoria';
+import { almacenLocal } from './almacenLocal';
 import { obtenerCliente } from './cliente';
 import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Cola, type DatosConCola, type Op } from './cola';
 import { crearDatosEnMemoria, semillaDeEjemplo } from './memoria';
@@ -29,8 +26,8 @@ export function escucharDescartes(fn: AlDescartar): () => void {
   };
 }
 
-/** Con EXPO_PUBLIC_DATOS=memoria la app corre con la casa de ejemplo y sin cuenta ni red. */
-export const esModoMemoria = (): boolean => process.env.EXPO_PUBLIC_DATOS === 'memoria';
+/** Con VITE_DATOS=memoria la app corre con la casa de ejemplo y sin cuenta ni red. */
+export const esModoMemoria = (): boolean => import.meta.env.VITE_DATOS === 'memoria';
 
 let capa: { datos: DatosConCola; cola: Cola } | null = null;
 
@@ -56,7 +53,7 @@ export function salirDemo(): void {
   olvidarCapa();
 }
 
-// La capa se rearma en el próximo uso; lo que haya en la cola real (AsyncStorage) no se toca.
+// La capa se rearma en el próximo uso; lo que haya en la cola real (localStorage) no se toca.
 function olvidarCapa(): void {
   capa = null;
   integranteActual = null;
@@ -78,22 +75,15 @@ function iniciar(): { datos: DatosConCola; cola: Cola } {
   const enMemoria = esModoMemoria() || demo;
   const base: Datos = enMemoria ? crearDatosEnMemoria(semillaDeEjemplo()) : crearDatosSupabase(obtenerCliente());
   const cola = crearCola({
-    almacen: enMemoria ? almacenEnMemoria() : AsyncStorage,
+    almacen: enMemoria ? almacenEnMemoria() : almacenLocal(),
     ejecutar: ejecutorDe(base),
     esErrorDeRed,
     integranteActual: () => integranteActual,
     alDescartar: (op, error) => oyentesDeDescarte.forEach((f) => f(op, error)),
   });
   capa = { datos: conCola(base, cola), cola };
-  // Reintenta al volver la red, al volver la app al frente y (web) con online/visibilitychange.
-  const enLaWeb = Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined';
-  vaciarAlVolver(() => void cola.vaciar().catch(() => undefined), {
-    web: Platform.OS === 'web',
-    netInfo: NetInfo,
-    appState: AppState,
-    ventana: enLaWeb ? window : undefined,
-    documento: enLaWeb ? document : undefined,
-  });
+  // Reintenta al volver la red (online) y cuando la pestaña vuelve a verse.
+  vaciarAlVolver(() => void cola.vaciar().catch(() => undefined), { ventana: window, documento: document });
   return capa;
 }
 

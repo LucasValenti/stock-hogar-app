@@ -24,7 +24,7 @@ const comoAna = () => 'ana';
 // `ejecutar` de prueba: con red responde el id de la op; sin red, falla como fetch.
 function servidor() {
   const estado = { hayRed: true, ejecutadas: [] as string[] };
-  const ejecutar = jest.fn(async (o: Op) => {
+  const ejecutar = vi.fn(async (o: Op) => {
     if (!estado.hayRed) throw sinRed();
     estado.ejecutadas.push(o.id);
     return `ok-${o.id}`;
@@ -104,12 +104,12 @@ describe('crearCola', () => {
   test('un rechazo definitivo de la base (P0001) pasa a rechazadas, se informa y sigue con la próxima', async () => {
     const cerrado = { message: 'MES_CERRADO', code: 'P0001' };
     let red = false;
-    const ejecutar = jest.fn(async (o: Op) => {
+    const ejecutar = vi.fn(async (o: Op) => {
       if (!red) throw sinRed();
       if (o.id === 'b') throw cerrado;
       return o.id;
     });
-    const alDescartar = jest.fn();
+    const alDescartar = vi.fn();
     const almacen = almacenEnMemoria();
     const ahora = () => new Date('2026-10-17T12:00:00.000Z');
     const cola = crearCola({ almacen, ejecutar, esErrorDeRed, alDescartar, integranteActual: comoAna, ahora });
@@ -136,7 +136,7 @@ describe('crearCola', () => {
     ['22P02', 'invalid input syntax for type uuid'],
   ])('un error %s de la base también es definitivo: pasa a rechazadas', async (code, message) => {
     let red = false;
-    const ejecutar = jest.fn(async (o: Op) => {
+    const ejecutar = vi.fn(async (o: Op) => {
       if (!red) throw sinRed();
       if (o.id === 'a') throw { code, message };
       return o.id;
@@ -160,13 +160,13 @@ describe('crearCola', () => {
     let red = false;
     let falla = true;
     const ejecutadas: string[] = [];
-    const ejecutar = jest.fn(async (o: Op) => {
+    const ejecutar = vi.fn(async (o: Op) => {
       if (!red) throw sinRed();
       if (o.id === 'b' && falla) throw error;
       ejecutadas.push(o.id);
       return o.id;
     });
-    const alDescartar = jest.fn();
+    const alDescartar = vi.fn();
     const cola = crearCola({ almacen: almacenEnMemoria(), ejecutar, esErrorDeRed, alDescartar, integranteActual: comoAna });
     await cola.encolar(op('a'));
     await cola.encolar(op('b'));
@@ -189,7 +189,7 @@ describe('crearCola', () => {
 
   test('olvidarRechazada saca solo esa de la lista', async () => {
     let red = false;
-    const ejecutar = jest.fn(async (o: Op) => {
+    const ejecutar = vi.fn(async (o: Op) => {
       if (!red) throw sinRed();
       throw { code: 'P0001', message: `MES_CERRADO ${o.id}` };
     });
@@ -546,7 +546,7 @@ describe('conCola', () => {
     const cambiado = { ...alta, total: 700_00 };
     const pendiente: Op = { id: 'op-1', tipo: 'guardarGasto', datos: { gasto: cambiado, items: [] }, duenio: 'ana' };
     await almacen.setItem('cola-escritura', JSON.stringify([pendiente]));
-    const alDescartar = jest.fn();
+    const alDescartar = vi.fn();
     const cola = crearCola({ almacen, ejecutar: ejecutorDe(base), esErrorDeRed, integranteActual: comoAna, alDescartar });
     await cola.vaciar();
     expect(await cola.pendientes()).toEqual([]);

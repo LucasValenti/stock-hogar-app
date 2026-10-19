@@ -1,58 +1,40 @@
 // Chip (DESIGN.md, Chip): píldora con borde, alto ≥ `medida.tactil`, `peso.fuerte`; activo = `acento` lleno.
-// Con `activo` es una opción (radio: «Pagó»); sin `activo` es un botón (con `flecha`, abre una hoja).
+// Con `activo` es una opción (aria-pressed); sin `activo` es un botón (con `flecha`, abre una hoja).
+// Con `rol="radio"` es una de las opciones de un grupo de elección única (aria-checked).
+import type { ButtonHTMLAttributes } from 'react';
 
-import { Pressable } from 'react-native';
-
-import { useTema } from '@/tema/tema';
-
-import { anilloDeFoco, useFoco } from './estilos';
+import estilos from './Chip.module.css';
 import { Icono } from './Icono';
-import { Texto } from './Texto';
 
-type Props = {
+type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & {
   texto: string;
-  onPress(): void;
+  /** Presente en las opciones: dice si está elegida. */
   activo?: boolean;
+  /** `radio`: una opción de un grupo de elección única (va dentro de un `radiogroup`). */
+  rol?: 'radio';
   flecha?: boolean;
   bloqueado?: boolean;
-  /** Nombre para el lector cuando el texto solo no alcanza («Categoría: Súper»). */
-  accessibilityLabel?: string;
 };
 
-export function Chip({ texto, onPress, activo, flecha = false, bloqueado = false, accessibilityLabel }: Props) {
-  const tema = useTema();
-  const { conFoco, alFoco } = useFoco();
+export function Chip({ texto, activo, rol, flecha = false, bloqueado = false, className, ...resto }: Props) {
   const esOpcion = activo !== undefined;
-  const lleno = activo === true;
-  const colorTexto = lleno ? 'sobreAcento' : bloqueado ? 'textoSuave' : 'texto';
+  const esRadio = rol === 'radio';
   return (
-    <Pressable
-      accessibilityRole={esOpcion ? 'radio' : 'button'}
-      accessibilityLabel={accessibilityLabel ?? texto}
-      accessibilityState={esOpcion ? { checked: lleno, disabled: bloqueado } : { disabled: bloqueado }}
-      disabled={bloqueado}
-      onPress={onPress}
-      {...alFoco}
-      style={({ pressed }) => [
-        {
-          minHeight: tema.medida.tactil,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: tema.espacio.xs,
-          paddingHorizontal: tema.espacio.l,
-          paddingVertical: tema.espacio.xs,
-          borderRadius: tema.radio.chip,
-          borderWidth: tema.medida.borde,
-          borderColor: pressed ? tema.color.texto : lleno ? tema.color.acento : tema.color.borde,
-          backgroundColor: lleno ? tema.color.acento : tema.color.superficie,
-        },
-        conFoco && anilloDeFoco(tema),
-      ]}
+    <button
+      type="button"
+      role={esRadio ? 'radio' : undefined}
+      className={[estilos.chip, bloqueado && estilos.bloqueado, className].filter(Boolean).join(' ')}
+      aria-pressed={esRadio ? undefined : esOpcion ? activo : undefined}
+      aria-checked={esRadio ? activo === true : undefined}
+      disabled={bloqueado || resto.disabled}
+      {...resto}
     >
-      <Texto variante="fuerte" color={colorTexto} style={{ flexShrink: 1 }}>
-        {texto}
-      </Texto>
-      {flecha ? <Icono nombre="abajo" tamano={tema.medida.icono} color={tema.color[colorTexto]} /> : null}
-    </Pressable>
+      <span className={estilos.texto}>{texto}</span>
+      {flecha ? (
+        <span className={estilos.icono}>
+          <Icono nombre="abajo" tamano={20} />
+        </span>
+      ) : null}
+    </button>
   );
 }

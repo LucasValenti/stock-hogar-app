@@ -1,7 +1,6 @@
 // Compartir un comprobante a la app desde otra app (Android): el que llega se guarda acá y, con la
 // sesión lista, se manda a Cargar una sola vez. Cargar lo toma con `tomarPendiente`.
 
-import { router } from 'expo-router';
 import { useCallback, useEffect } from 'react';
 
 import { useSesion } from '@/sesion/sesion';
@@ -26,16 +25,19 @@ export function tomarPendiente(): ArchivoCompartido | null {
 }
 
 /** Lleva a Cargar el comprobante compartido cuando la sesión está lista, una sola vez. */
-export function useCompartidoPendiente(): void {
+export function useCompartidoPendiente(irACargar: () => void): void {
   const { estado } = useSesion();
   const listo = estado === 'lista';
 
-  const llevarACargar = useCallback((a: ArchivoCompartido | null) => {
-    // Si ya hay uno esperando a Cargar, no navega de nuevo.
-    if (!a || pendiente !== null) return;
-    guardarPendiente(a);
-    router.push('/cargar?compartido=1');
-  }, []);
+  const llevarACargar = useCallback(
+    (a: ArchivoCompartido | null) => {
+      // Si ya hay uno esperando a Cargar, no navega de nuevo.
+      if (!a || pendiente !== null) return;
+      guardarPendiente(a);
+      irACargar();
+    },
+    [irACargar],
+  );
 
   // Lo que había al abrir la app (o al quedar la sesión lista).
   useEffect(() => {

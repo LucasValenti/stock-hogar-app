@@ -1,7 +1,7 @@
 // «Subir comprobante» en Cargar: elige una imagen o un PDF, lo lee en el dispositivo y pasa lo leído
-// al formulario. El OCR y el lector de PDF no están en Expo Go: ahí solo avisa. Si la pantalla se va mientras lee, no toca nada.
+// al formulario. El archivo lo elige la pantalla con un input tipo file y acá se le da una URL local.
+// Si la pantalla se va mientras lee, no toca nada.
 
-import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { datos } from '@/datos';
@@ -31,11 +31,20 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
   // Cada lectura lleva un número: la última gana; una vieja (o una pantalla que se fue) no toca nada.
   const intento = useRef(0);
   const vigente = useRef(true);
+  // La URL local del archivo elegido: se libera al terminar de leer o al salir de la pantalla.
+  const url = useRef<string | null>(null);
+  const liberar = useCallback((actual: string) => {
+    if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(actual);
+  }, []);
   useEffect(
     () => () => {
       vigente.current = false;
+      if (url.current) {
+        liberar(url.current);
+        url.current = null;
+      }
     },
-    [],
+    [liberar],
   );
 
   const usar = useCallback(
@@ -95,12 +104,22 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
     [integrantes, notaActual, aplicar],
   );
 
-  const elegir = useCallback(async () => {
-    const res = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true });
-    if (res.canceled || !res.assets?.length) return;
-    const a = res.assets[0];
-    await usar(a.uri, a.size, a.mimeType);
-  }, [usar]);
+  const elegir = useCallback(
+    async (archivo: File) => {
+      if (url.current) liberar(url.current);
+      const actual = URL.createObjectURL(archivo);
+      url.current = actual;
+      try {
+        await usar(actual, archivo.size, archivo.type);
+      } finally {
+        if (url.current === actual) {
+          liberar(actual);
+          url.current = null;
+        }
+      }
+    },
+    [usar, liberar],
+  );
 
   return { elegir, usar, leyendo, aviso };
 }

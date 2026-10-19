@@ -1,0 +1,112 @@
+.anotar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--espacio-s);
+}
+
+.anotarCampo {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: calc(var(--medida-fila) * 3);
+  min-width: 0;
+}
+
+.seccion {
+  margin: 0;
+  padding-top: var(--espacio-s);
+  font-family: var(--fuente-texto);
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.sub {
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.paso {
+  display: flex;
+  align-items: center;
+  border: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-boton);
+  background: var(--color-superficie);
+}
+
+.paso:focus-within {
+  outline: var(--medida-foco-grosor) solid var(--color-foco);
+  outline-offset: var(--medida-foco-separacion);
+}
+
+.botonSigno {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: var(--medida-tactil);
+  min-height: var(--medida-tactil);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radio-boton);
+  background: none;
+  color: var(--color-texto);
+  font: inherit;
+  cursor: pointer;
+}
+
+.botonSigno:focus-visible,
+.botonCifra:focus-visible {
+  outline: none;
+}
+
+.apagado {
+  color: var(--color-texto-suave);
+  cursor: default;
+}
+
+.signo {
+  font-size: var(--tamano-xl);
+  font-weight: var(--peso-fuerte);
+  line-height: 1;
+}
+
+.botonCifra {
+  display: grid;
+  place-items: center;
+  min-height: var(--medida-tactil);
+  padding: 0 var(--espacio-xs);
+  border: 0;
+  border-radius: var(--radio-boton);
+  background: none;
+  color: var(--color-texto);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fuerte {
+  font-weight: var(--peso-fuerte);
+}
+
+.notitaBoton {
+  display: block;
+  width: 100%;
+  min-height: var(--medida-tactil);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radio-boton);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.centrado {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+  text-align: center;
+}

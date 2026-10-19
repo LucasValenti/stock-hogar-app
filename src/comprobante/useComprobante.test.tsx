@@ -1,26 +1,23 @@
 // useComprobante: elegir y leer un comprobante, y no tocar el formulario si la pantalla se fue o llegó tarde.
 
-import { act, renderHook } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react';
 
 import { centavosATexto } from '@/logica/dinero';
 
-const mockLeerTexto = jest.fn();
-const mockLeerTextoPdf = jest.fn();
-jest.mock('./ocr', () => {
-  const real = jest.requireActual('./ocr.comun');
+const mockLeerTexto = vi.fn();
+const mockLeerTextoPdf = vi.fn();
+vi.mock('./ocr', async () => {
+  const real = await vi.importActual<typeof import('./ocr.comun')>('./ocr.comun');
   return {
     leerTexto: (...args: unknown[]) => mockLeerTexto(...args),
     MAX_BYTES: real.MAX_BYTES,
     OcrNoDisponible: real.OcrNoDisponible,
   };
 });
-jest.mock('./pdf', () => ({ leerTextoPdf: (...args: unknown[]) => mockLeerTextoPdf(...args) }));
+vi.mock('./pdf', () => ({ leerTextoPdf: (...args: unknown[]) => mockLeerTextoPdf(...args) }));
 
-const mockPicker = jest.fn();
-jest.mock('expo-document-picker', () => ({ getDocumentAsync: (...args: unknown[]) => mockPicker(...args) }));
-
-const mockDatos = { gastoPorOperacion: jest.fn(), categoriaDeDestino: jest.fn() };
-jest.mock('@/datos', () => ({
+const mockDatos = { gastoPorOperacion: vi.fn(), categoriaDeDestino: vi.fn() };
+vi.mock('@/datos', () => ({
   get datos() {
     return mockDatos;
   },
@@ -46,21 +43,21 @@ N.* de operación de Mercado Pago
 
 const CASA = [{ id: 'ana', nombre: 'Ana' }, { id: 'beto', nombre: 'Beto' }];
 
-async function montar(extra: Partial<Parameters<typeof useComprobante>[0]> = {}) {
-  const aplicar = jest.fn();
-  const util = await renderHook(() => useComprobante({ integrantes: CASA, notaActual: () => '', aplicar, ...extra }));
+function montar(extra: Partial<Parameters<typeof useComprobante>[0]> = {}) {
+  const aplicar = vi.fn();
+  const util = renderHook(() => useComprobante({ integrantes: CASA, notaActual: () => '', aplicar, ...extra }));
   return { ...util, aplicar };
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 test('una lectura completa aplica los cambios y la categoría del destino', async () => {
   mockLeerTexto.mockResolvedValue(COMPROBANTE);
   mockDatos.gastoPorOperacion.mockResolvedValue(null);
   mockDatos.categoriaDeDestino.mockResolvedValue('super');
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
     await result.current.usar('file://c.png', 1000, 'image/png');
@@ -85,7 +82,7 @@ test('si el comprobante ya se cargó, vacía el borrador y avisa con la fecha de
   mockLeerTexto.mockResolvedValue(COMPROBANTE);
   mockDatos.gastoPorOperacion.mockResolvedValue({ id: 'g9', fecha: '2026-10-02', pagado_por: 'beto' });
   mockDatos.categoriaDeDestino.mockResolvedValue('super');
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
     await result.current.usar('file://c.png', 1000, 'image/png');
@@ -96,7 +93,7 @@ test('si el comprobante ya se cargó, vacía el borrador y avisa con la fecha de
 });
 
 test('una imagen de más de 15 MB no se lee ni se aplica', async () => {
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
     await result.current.usar('file://c.png', MAX_BYTES + 1, 'image/png');
@@ -108,7 +105,7 @@ test('una imagen de más de 15 MB no se lee ni se aplica', async () => {
 });
 
 test('un archivo que no es imagen ni PDF no se lee ni se aplica', async () => {
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
     await result.current.usar('file://c.txt', 1000, 'text/plain');
@@ -124,7 +121,7 @@ test('un PDF lo lee el lector de PDF', async () => {
   mockLeerTextoPdf.mockResolvedValue(COMPROBANTE);
   mockDatos.gastoPorOperacion.mockResolvedValue(null);
   mockDatos.categoriaDeDestino.mockResolvedValue('super');
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
     await result.current.usar('file://c.pdf', 1000, 'application/pdf');
@@ -137,7 +134,7 @@ test('un PDF lo lee el lector de PDF', async () => {
 
 test('sin lector de PDF (Expo Go) avisa lo mismo que para las imágenes', async () => {
   mockLeerTextoPdf.mockRejectedValue(new OcrNoDisponible());
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
     await result.current.usar('file://c.pdf', 1000, 'application/pdf');
@@ -149,7 +146,7 @@ test('sin lector de PDF (Expo Go) avisa lo mismo que para las imágenes', async 
 
 test('sin la app instalada (Expo Go) avisa que el OCR no está y no aplica nada', async () => {
   mockLeerTexto.mockRejectedValue(new OcrNoDisponible());
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
     await result.current.usar('file://c.png', 1000, 'image/png');
@@ -162,14 +159,14 @@ test('sin la app instalada (Expo Go) avisa que el OCR no está y no aplica nada'
 test('si la pantalla se va mientras lee, no aplica nada', async () => {
   let resolver: (texto: string) => void = () => undefined;
   mockLeerTexto.mockReturnValue(new Promise<string>((r) => { resolver = r; }));
-  const { result, aplicar, unmount } = await montar();
+  const { result, aplicar, unmount } = montar();
 
   let pendiente: Promise<void> = Promise.resolve();
   await act(async () => {
     pendiente = result.current.usar('file://c.png', 1000, 'image/png');
     await Promise.resolve();
   });
-  await unmount();
+  unmount();
   resolver(COMPROBANTE);
   await act(async () => {
     await pendiente;
@@ -178,17 +175,19 @@ test('si la pantalla se va mientras lee, no aplica nada', async () => {
   expect(aplicar).not.toHaveBeenCalled();
 });
 
-test('elegir abre el selector de imágenes y PDF, y lee lo elegido', async () => {
-  mockPicker.mockResolvedValue({ canceled: false, assets: [{ uri: 'file://c.png', size: 1000, mimeType: 'image/png' }] });
+test('elegir le da una URL local al archivo elegido y lee lo elegido', async () => {
+  const archivo = new File([new Uint8Array(10)], 'c.png', { type: 'image/png' });
+  const crearUrl = vi.fn(() => 'blob:c');
+  (URL as unknown as { createObjectURL: unknown }).createObjectURL = crearUrl;
   mockLeerTexto.mockResolvedValue(COMPROBANTE);
   mockDatos.gastoPorOperacion.mockResolvedValue(null);
   mockDatos.categoriaDeDestino.mockResolvedValue(null);
-  const { result, aplicar } = await montar();
+  const { result, aplicar } = montar();
 
   await act(async () => {
-    await result.current.elegir();
+    await result.current.elegir(archivo);
   });
 
-  expect(mockPicker).toHaveBeenCalledWith({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true });
+  expect(crearUrl).toHaveBeenCalledWith(archivo);
   expect(aplicar).toHaveBeenCalled();
 });

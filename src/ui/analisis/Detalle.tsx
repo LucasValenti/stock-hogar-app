@@ -4,17 +4,17 @@
 // categoría, solo esa parte, como en Categorías). Cada gasto abre Cargar. Se actualiza en vivo.
 // Los filtros los guarda Análisis por mes: se conservan al ir a otra pestaña y volver (como la web vieja).
 // El conteo se anuncia cuando se deja de tipear (ESPERA_CONTEO_MS) en una región que no se desmonta.
-
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
 
 import { datos } from '@/datos';
 import { filtrarGastos, totalDe } from '@/logica/analisis';
 import { mensajeError } from '@/logica/errores';
 import { diaSiguiente, fechaDesdeTexto, fechaLarga, mesDe, ultimoDia } from '@/logica/meses';
 import type { Categoria, Integrante } from '@/logica/tipos';
-import { useTema } from '@/tema/tema';
 
+import estilos from './Detalle.module.css';
+import { FilaTotal } from './Barras';
+import { FilaGasto, mapaDeNombres } from './FilaGasto';
 import { Aviso } from '../Aviso';
 import { Boton } from '../Boton';
 import { Campo } from '../Campo';
@@ -23,11 +23,8 @@ import { Esqueleto } from '../Esqueleto';
 import { EstadoVacio } from '../EstadoVacio';
 import { Hoja } from '../Hoja';
 import { Tarjeta } from '../Tarjeta';
-import { Texto } from '../Texto';
 import { useDemorado } from '../useDemorado';
 import { useEnVivo } from '../useEnVivo';
-import { FilaTotal } from './Barras';
-import { FilaGasto, mapaDeNombres } from './FilaGasto';
 
 export const PAGINA = 20;
 export const ESPERA_CONTEO_MS = 600;
@@ -62,7 +59,6 @@ function leerFecha(texto: string): string | null | 'mal' {
 }
 
 export function Detalle({ filtros: f, alCambiarFiltros: cambiar, integrantes, categorias, cerrados }: Props) {
-  const tema = useTema();
   const { texto, persona, categoria, desde: desdeTexto, hasta: hastaTexto } = f;
   const [eligiendo, setEligiendo] = useState(false);
 
@@ -78,54 +74,50 @@ export function Detalle({ filtros: f, alCambiarFiltros: cambiar, integrantes, ca
 
   return (
     <>
-      <View accessibilityRole="search" style={{ gap: tema.espacio.m }}>
-        <Campo etiqueta="Buscar" valor={texto} alCambiar={(t) => cambiar({ texto: t })} placeholder="Nota o producto" />
+      <div role="search" className={estilos.filtros}>
+        <Campo etiqueta="Buscar" value={texto} onChange={(e) => cambiar({ texto: e.target.value })} placeholder="Nota o producto" />
 
-        <View style={{ gap: tema.espacio.xs }}>
-          <Texto variante="rotulo">Pagó</Texto>
-          <View accessibilityRole="radiogroup" accessibilityLabel="Pagó" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tema.espacio.s }}>
-            <Chip texto="Todos" activo={personaVigente === ''} onPress={() => cambiar({ persona: '' })} />
+        <div className={estilos.grupo}>
+          <p className={estilos.rotulo}>Pagó</p>
+          <div role="radiogroup" aria-label="Pagó" className={estilos.chips}>
+            <Chip texto="Todos" activo={personaVigente === ''} onClick={() => cambiar({ persona: '' })} />
             {integrantes.map((i) => (
-              <Chip key={i.id} texto={i.nombre} activo={personaVigente === i.id} onPress={() => cambiar({ persona: i.id })} />
+              <Chip key={i.id} texto={i.nombre} activo={personaVigente === i.id} onClick={() => cambiar({ persona: i.id })} />
             ))}
-          </View>
-        </View>
+          </div>
+        </div>
 
-        <View style={{ gap: tema.espacio.xs, alignItems: 'flex-start' }}>
-          <Texto variante="rotulo">Categoría</Texto>
+        <div className={[estilos.grupo, estilos.grupoInicio].join(' ')}>
+          <p className={estilos.rotulo}>Categoría</p>
           <Chip
             texto={nombreCategoria ?? 'Todas'}
-            accessibilityLabel={`Categoría: ${nombreCategoria ?? 'Todas'}`}
+            aria-label={`Categoría: ${nombreCategoria ?? 'Todas'}`}
             flecha
-            onPress={() => setEligiendo(true)}
+            onClick={() => setEligiendo(true)}
           />
-        </View>
+        </div>
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tema.espacio.m }}>
-          <View style={{ flexGrow: 1, flexBasis: tema.medida.fila * 2 }}>
-            <Campo
-              etiqueta="Desde"
-              valor={desdeTexto}
-              alCambiar={(t) => cambiar({ desde: t })}
-              placeholder="dd/mm/aaaa"
-              ayuda="Vacía: sin límite."
-              error={desde === 'mal' ? MAL_ESCRITA : errorRango}
-              teclado="numbers-and-punctuation"
-            />
-          </View>
-          <View style={{ flexGrow: 1, flexBasis: tema.medida.fila * 2 }}>
-            <Campo
-              etiqueta="Hasta"
-              valor={hastaTexto}
-              alCambiar={(t) => cambiar({ hasta: t })}
-              placeholder="dd/mm/aaaa"
-              ayuda="Vacía: sin límite."
-              error={hasta === 'mal' ? MAL_ESCRITA : null}
-              teclado="numbers-and-punctuation"
-            />
-          </View>
-        </View>
-      </View>
+        <div className={estilos.fechas}>
+          <Campo
+            className={estilos.campoFecha}
+            etiqueta="Desde"
+            value={desdeTexto}
+            onChange={(e) => cambiar({ desde: e.target.value })}
+            placeholder="dd/mm/aaaa"
+            ayuda="Vacía: sin límite."
+            error={desde === 'mal' ? MAL_ESCRITA : errorRango}
+          />
+          <Campo
+            className={estilos.campoFecha}
+            etiqueta="Hasta"
+            value={hastaTexto}
+            onChange={(e) => cambiar({ hasta: e.target.value })}
+            placeholder="dd/mm/aaaa"
+            ayuda="Vacía: sin límite."
+            error={hasta === 'mal' ? MAL_ESCRITA : null}
+          />
+        </div>
+      </div>
 
       {rangoListo ? (
         <Lista
@@ -140,19 +132,19 @@ export function Detalle({ filtros: f, alCambiarFiltros: cambiar, integrantes, ca
       ) : null}
 
       <Hoja visible={eligiendo} titulo="Categoría" alCerrar={() => setEligiendo(false)}>
-        <View accessibilityRole="radiogroup" accessibilityLabel="Categoría" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tema.espacio.s }}>
+        <div role="radiogroup" aria-label="Categoría" className={estilos.chips}>
           {[{ id: '', nombre: 'Todas' }, ...categorias].map((c) => (
             <Chip
               key={c.id || 'todas'}
               texto={c.nombre}
               activo={categoriaVigente === c.id}
-              onPress={() => {
+              onClick={() => {
                 cambiar({ categoria: c.id });
                 setEligiendo(false);
               }}
             />
           ))}
-        </View>
+        </div>
       </Hoja>
     </>
   );
@@ -169,7 +161,6 @@ type PropsLista = {
 };
 
 function Lista({ desde, hasta, filtros, nombreCategoria, integrantes, categorias, cerrados }: PropsLista) {
-  const tema = useTema();
   const { carga, reintentar } = useEnVivo(() => datos.gastosEntre(desde, hasta ? diaSiguiente(hasta) : null), `${desde}|${hasta}`);
   const [cuantos, setCuantos] = useState(PAGINA);
 
@@ -182,18 +173,24 @@ function Lista({ desde, hasta, filtros, nombreCategoria, integrantes, categorias
 
   if (carga.estado === 'cargando') {
     return (
-      <View aria-busy accessibilityState={{ busy: true }} style={{ gap: tema.espacio.s }}>
-        <Esqueleto alto={tema.medida.fila} />
-        <Esqueleto alto={tema.medida.fila} />
-        <Texto variante="sub" centrado accessibilityLiveRegion="polite">
+      <div aria-busy="true" className={estilos.cargando}>
+        <Esqueleto alto={60} />
+        <Esqueleto alto={60} />
+        <p className={estilos.centrado} aria-live="polite">
           Trayendo los gastos…
-        </Texto>
-      </View>
+        </p>
+      </div>
     );
   }
   if (carga.estado === 'error') {
     return (
-      <Aviso alerta icono="nube" titulo="No pudimos traer los gastos" texto={mensajeError(carga.error)} accion={{ texto: 'Reintentar', onPress: reintentar }} />
+      <Aviso
+        alerta
+        icono="nube"
+        titulo="No pudimos traer los gastos"
+        texto={mensajeError(carga.error)}
+        accion={{ texto: 'Reintentar', onClick: reintentar }}
+      />
     );
   }
 
@@ -207,25 +204,25 @@ function Lista({ desde, hasta, filtros, nombreCategoria, integrantes, categorias
     <>
       {/* Siempre montada, para que el lector de pantalla anuncie cada cambio: el conteo cuando se deja de
           tipear y el vacío al aparecer. */}
-      <View testID="conteo-detalle" accessibilityLiveRegion="polite">
+      <div data-testid="conteo-detalle" aria-live="polite">
         {lista.length ? (
           // Volviendo de «no hay», el número va ya; si no, el demorado.
-          <Texto variante="sub">{conteo && conteo !== SIN_GASTOS ? conteo : conteoDe(lista.length)}</Texto>
+          <p className={estilos.sub}>{conteo && conteo !== SIN_GASTOS ? conteo : conteoDe(lista.length)}</p>
         ) : (
           <Tarjeta>
             <EstadoVacio icono="lupa" titulo={SIN_GASTOS} texto="Probá con otras fechas o sacá algún filtro." />
           </Tarjeta>
         )}
-      </View>
+      </div>
       {lista.length ? (
-        <Tarjeta style={{ paddingVertical: 0, gap: 0 }}>
+        <Tarjeta className={estilos.lista}>
           {visibles.map((g, i) => (
             <FilaGasto key={g.id} gasto={g} nombres={nombres} separador={i > 0} cerrado={cerrados.has(mesDe(g.fecha))} />
           ))}
           <FilaTotal rotulo={nombreCategoria ? `Total en ${nombreCategoria}` : 'Total'} centavos={total} />
         </Tarjeta>
       ) : null}
-      {quedan > 0 ? <Boton texto={`Ver ${Math.min(PAGINA, quedan)} más`} variante="borde" onPress={() => setCuantos((c) => c + PAGINA)} /> : null}
+      {quedan > 0 ? <Boton texto={`Ver ${Math.min(PAGINA, quedan)} más`} variante="borde" onClick={() => setCuantos((c) => c + PAGINA)} /> : null}
     </>
   );
 }

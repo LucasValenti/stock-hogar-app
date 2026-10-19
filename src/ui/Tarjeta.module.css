@@ -1,0 +1,24 @@
+.tarjeta {
+  position: relative;
+  background: var(--color-superficie);
+  border: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-tarjeta);
+  padding: var(--espacio-l);
+}
+
+.conIman {
+  margin-top: var(--medida-iman-sobresale);
+  box-shadow: var(--sombra-tarjeta);
+}
+
+.iman {
+  position: absolute;
+  top: calc(var(--medida-iman-sobresale) * -1);
+  left: 50%;
+  width: var(--medida-iman);
+  height: var(--medida-iman);
+  border-radius: var(--radio-chip);
+  background: var(--color-acento);
+  box-shadow: var(--sombra-iman);
+  transform: translateX(-50%);
+}

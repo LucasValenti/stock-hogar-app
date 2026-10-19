@@ -2,7 +2,7 @@
 
 Uso: python herramientas/iconos.py   (necesita Pillow)
 
-Escribe assets/images/{icon,android-icon-*,favicon,splash-icon}.png y public/icono-{192,512,maskable-512}.png.
+Escribe public/favicon.png y public/icono-{192,512,maskable-512}.png.
 La geometría está en una grilla de 1024 y se dibuja a 4x para suavizar los bordes.
 Colores de DESIGN.md: enlozado (color.claro.fondo), papelito (color.claro.superficie) y
 renglones (color.claro.textoSuave). El naranja del imán es solo del ícono: el acento de la app
@@ -68,19 +68,6 @@ def completo():
     return Image.alpha_composite(Image.new('RGBA', (LADO, LADO), FONDO + (255,)), primer_plano())
 
 
-def monocromo():
-    """Silueta blanca: Android la tiñe con el color del tema. Renglones calados y un aro
-    transparente alrededor del imán para que no se funda con el papel."""
-    capa = Image.new('L', (LADO, LADO), 0)
-    capa.paste(papelito(color_papel=(255, 255, 255), color_renglon=(0, 0, 0)).convert('L'))
-    d = ImageDraw.Draw(capa)
-    d.ellipse(s(414, 214, 610, 410), fill=0)
-    d.ellipse(s(434, 234, 590, 390), fill=255)
-    salida = Image.new('RGBA', (LADO, LADO), (255, 255, 255, 0))
-    salida.putalpha(capa)
-    return salida
-
-
 def cerrado(imagen):
     """Recorte de 640 al centro: el papelito ocupa más lugar donde nadie aplica máscara
     (favicon, ícono «any» de la PWA)."""
@@ -94,13 +81,8 @@ def guardar(imagen, ruta, lado):
 
 
 def principal():
-    lleno, frente = completo(), primer_plano()
-    guardar(lleno, 'assets/images/icon.png', 1024)
-    guardar(frente, 'assets/images/android-icon-foreground.png', 512)
-    guardar(Image.new('RGBA', (LADO, LADO), FONDO + (255,)), 'assets/images/android-icon-background.png', 512)
-    guardar(monocromo(), 'assets/images/android-icon-monochrome.png', 432)
-    guardar(cerrado(lleno), 'assets/images/favicon.png', 48)
-    guardar(frente, 'assets/images/splash-icon.png', 512)
+    lleno = completo()
+    guardar(cerrado(lleno), 'public/favicon.png', 48)
     guardar(cerrado(lleno), 'public/icono-192.png', 192)
     guardar(cerrado(lleno), 'public/icono-512.png', 512)
     guardar(lleno, 'public/icono-maskable-512.png', 512)

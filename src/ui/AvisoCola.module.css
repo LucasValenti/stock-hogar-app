@@ -1,0 +1,47 @@
+.aviso {
+  display: grid;
+  gap: var(--espacio-s);
+}
+
+.fila {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-s);
+}
+
+.icono {
+  display: grid;
+  flex: none;
+  color: var(--color-texto-suave);
+}
+
+.texto {
+  margin: 0;
+  flex-shrink: 1;
+  font-size: var(--tamano-m);
+  line-height: var(--interlineado-texto);
+}
+
+.rechazada {
+  display: grid;
+  gap: var(--espacio-s);
+}
+
+.separada {
+  padding-top: var(--espacio-s);
+  border-top: var(--medida-borde) solid var(--color-borde);
+}
+
+.titulo {
+  margin: 0;
+  font-size: var(--tamano-m);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+}
+
+.motivo {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}

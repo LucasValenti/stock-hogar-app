@@ -1,0 +1,82 @@
+.rotulo {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.seccion {
+  margin: 0;
+  font-family: var(--fuente-texto);
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.avisoFila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espacio-m);
+}
+
+.avisoTexto {
+  display: flex;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: calc(var(--medida-fila) * 2);
+  align-items: center;
+  gap: var(--espacio-s);
+  min-width: 0;
+}
+
+.icono {
+  display: grid;
+  flex: none;
+  color: var(--color-texto-suave);
+}
+
+.iconoFalta {
+  color: var(--color-falta);
+}
+
+.fuerte {
+  margin: 0;
+  flex-shrink: 1;
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+}
+
+.lista {
+  padding-block: 0;
+}
+
+.alInicio {
+  align-self: flex-start;
+}
+
+.filaEsqueleto {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-m);
+  min-height: var(--medida-fila);
+}
+
+.separador {
+  border-top: var(--medida-borde) solid var(--color-borde);
+}
+
+.textosEsqueleto {
+  display: grid;
+  flex: 1;
+  gap: var(--espacio-s);
+}
+
+.subCentrado {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+  text-align: center;
+}

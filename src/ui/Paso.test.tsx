@@ -1,15 +1,17 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { useState } from 'react';
 
-import tokens from '@/tema/tokens.json';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { Paso } from './Paso';
 
-const plano = (s: unknown) => StyleSheet.flatten(s as never) ?? {};
+const css = readFileSync(resolve(process.cwd(), 'src/ui/Paso.module.css'), 'utf8');
 
 async function dibujar(valor: string, decimales = false) {
-  const alCambiar = jest.fn();
-  await render(<Paso nombre="Yerba" valor={valor} decimales={decimales} alCambiar={alCambiar} />);
+  const alCambiar = vi.fn();
+  render(<Paso nombre="Yerba" valor={valor} decimales={decimales} alCambiar={alCambiar} />);
   return alCambiar;
 }
 
@@ -17,33 +19,51 @@ describe('Paso', () => {
   test('+ suma 1, − resta 1, y los botones miden medida.tactil', async () => {
     const alCambiar = await dibujar('2');
     const mas = screen.getByRole('button', { name: 'Sumar 1 a Yerba' });
-    expect(plano(mas.props.style)).toMatchObject({ minWidth: tokens.medida.tactil, minHeight: tokens.medida.tactil });
-    await fireEvent.press(mas);
+    expect(css).toMatch(/min-width:\s*var\(--medida-tactil\)/);
+    expect(css).toMatch(/min-height:\s*var\(--medida-tactil\)/);
+    await userEvent.click(mas);
     expect(alCambiar).toHaveBeenLastCalledWith('3');
-    await fireEvent.press(screen.getByRole('button', { name: 'Restar 1 a Yerba' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Restar 1 a Yerba' }));
     expect(alCambiar).toHaveBeenLastCalledWith('1');
   });
 
   test('con decimales suma sin ruido de coma flotante y escribe con coma', async () => {
     const alCambiar = await dibujar('1,1', true);
-    await fireEvent.press(screen.getByRole('button', { name: 'Sumar 1 a Yerba' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Sumar 1 a Yerba' }));
     expect(alCambiar).toHaveBeenLastCalledWith('2,1');
-    expect(screen.getByLabelText('Cantidad de Yerba').props.keyboardType).toBe('decimal-pad');
+    expect(screen.getByLabelText('Cantidad de Yerba')).toHaveAttribute('inputmode', 'decimal');
   });
 
   test('− no baja de lo mínimo: en 1 queda deshabilitado', async () => {
     const alCambiar = await dibujar('1');
     const menos = screen.getByRole('button', { name: 'Restar 1 a Yerba' });
-    expect(menos.props.accessibilityState).toMatchObject({ disabled: true });
-    await fireEvent.press(menos);
+    expect(menos).toBeDisabled();
+    await userEvent.click(menos);
     expect(alCambiar).not.toHaveBeenCalled();
   });
 
   test('la cantidad se puede tipear; sin decimales usa el teclado numérico', async () => {
-    const alCambiar = await dibujar('1');
+    const alCambiar = vi.fn();
+    function Controlado() {
+      const [valor, setValor] = useState('1');
+      return (
+        <Paso
+          nombre="Yerba"
+          valor={valor}
+          decimales={false}
+          alCambiar={(texto) => {
+            setValor(texto);
+            alCambiar(texto);
+          }}
+        />
+      );
+    }
+    render(<Controlado />);
     const cantidad = screen.getByLabelText('Cantidad de Yerba');
-    expect(cantidad.props.keyboardType).toBe('number-pad');
-    await fireEvent.changeText(cantidad, '4');
+    expect(cantidad).toHaveAttribute('inputmode', 'numeric');
+    await userEvent.clear(cantidad);
+    await userEvent.type(cantidad, '4');
     expect(alCambiar).toHaveBeenLastCalledWith('4');
+    expect(cantidad).toHaveValue('4');
   });
 });

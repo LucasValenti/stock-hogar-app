@@ -1,9 +1,8 @@
 // Confirmación propia (sin alert ni confirm del sistema): una hoja con la pregunta, qué pasa si se
 // acepta, la acción llena y «Cancelar». Mientras se envía, la acción queda ocupada; un error se ve en la hoja.
-
 import { Boton } from '../Boton';
-import { MensajeError } from '../FormularioProducto';
 import { Hoja } from '../Hoja';
+import { MensajeError } from '../MensajeError';
 
 type Props = {
   visible: boolean;
@@ -26,8 +25,8 @@ export function Confirmar({ visible, titulo, texto, accion, ocupado, error, alAc
       pie={
         <>
           <MensajeError texto={error} />
-          <Boton texto={accion} icono="candado" ocupado={ocupado} onPress={alAceptar} />
-          <Boton texto="Cancelar" variante="borde" onPress={alCerrar} />
+          <Boton texto={accion} icono="candado" ocupado={ocupado} onClick={alAceptar} />
+          <Boton texto="Cancelar" variante="borde" onClick={alCerrar} />
         </>
       }
     />

@@ -1,34 +1,45 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import tokens from '@/tema/tokens.json';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { PestanasInternas } from './PestanasInternas';
 
-const plano = (s: unknown) => StyleSheet.flatten(s as never) ?? {};
+const css = readFileSync(resolve(process.cwd(), 'src/ui/PestanasInternas.module.css'), 'utf8');
+
+const opciones = [
+  { clave: 'todo', texto: 'Todo' },
+  { clave: 'pendientes', texto: 'Pendientes 3' },
+  { clave: 'ocultos', texto: 'Ocultos' },
+] as const;
 
 test('pestañas con selected, la activa llena de acento y todas ≥ medida.tactil', async () => {
-  const alCambiar = jest.fn();
-  await render(
-    <PestanasInternas
-      etiqueta="Vista del stock"
-      opciones={[
-        { clave: 'todo', texto: 'Todo' },
-        { clave: 'pendientes', texto: 'Pendientes 3' },
-        { clave: 'ocultos', texto: 'Ocultos' },
-      ]}
-      activa="todo"
-      alCambiar={alCambiar}
-    />,
-  );
-  // El grupo no es `accessible` (agruparía las pestañas en un solo elemento en iOS): se busca por su nombre.
-  expect(screen.getByLabelText('Vista del stock').props.accessibilityRole).toBe('tablist');
+  const alCambiar = vi.fn();
+  render(<PestanasInternas etiqueta="Vista del stock" opciones={[...opciones]} activa="todo" alCambiar={alCambiar} />);
+  expect(screen.getByRole('tablist', { name: 'Vista del stock' })).toBeInTheDocument();
   const todo = screen.getByRole('tab', { name: 'Todo' });
-  expect(todo.props.accessibilityState).toMatchObject({ selected: true });
-  expect(plano(todo.props.style)).toMatchObject({ backgroundColor: tokens.color.claro.acento });
+  expect(todo).toHaveAttribute('aria-selected', 'true');
+  expect(css).toMatch(/\.pestana\[aria-selected='true'\][^{]*\{[^}]*background:\s*var\(--color-acento\)/s);
   const pendientes = screen.getByRole('tab', { name: 'Pendientes 3' });
-  expect(pendientes.props.accessibilityState).toMatchObject({ selected: false });
-  expect(plano(pendientes.props.style).minHeight).toBeGreaterThanOrEqual(tokens.medida.tactil);
-  await fireEvent.press(pendientes);
+  expect(pendientes).toHaveAttribute('aria-selected', 'false');
+  expect(css).toMatch(/\.pestana[^{]*\{[^}]*min-height:\s*var\(--medida-tactil\)/s);
+  await userEvent.click(pendientes);
   expect(alCambiar).toHaveBeenCalledWith('pendientes');
+});
+
+test('las flechas izquierda y derecha mueven el foco y la pestaña activa', async () => {
+  const alCambiar = vi.fn();
+  render(<PestanasInternas etiqueta="Vista del stock" opciones={[...opciones]} activa="todo" alCambiar={alCambiar} />);
+  const todo = screen.getByRole('tab', { name: 'Todo' });
+  todo.focus();
+  await userEvent.keyboard('{ArrowRight}');
+  expect(alCambiar).toHaveBeenLastCalledWith('pendientes');
+  expect(screen.getByRole('tab', { name: 'Pendientes 3' })).toHaveFocus();
+  await userEvent.keyboard('{ArrowLeft}');
+  expect(alCambiar).toHaveBeenLastCalledWith('todo');
+  expect(todo).toHaveFocus();
+  await userEvent.keyboard('{ArrowLeft}');
+  expect(alCambiar).toHaveBeenLastCalledWith('ocultos');
+  expect(screen.getByRole('tab', { name: 'Ocultos' })).toHaveFocus();
 });

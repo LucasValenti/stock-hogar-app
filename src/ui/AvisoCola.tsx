@@ -2,21 +2,18 @@
 // la base rechazó (con el motivo y «Descartar»). Las ops de otra cuenta en el mismo teléfono no se muestran.
 // Se vuelve a leer al montar, cuando cambia algo en la casa (sale lo pendiente), cuando la base rechaza
 // una op y cuando la pantalla lo pide (`refresco`, por ejemplo después de guardar).
-
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
 
 import { datos, escucharDescartes, obtenerCola, type Rechazada } from '@/datos';
 import { formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { fechaCorta } from '@/logica/meses';
 import { useSesion } from '@/sesion/sesion';
-import { useTema } from '@/tema/tema';
 
+import estilos from './AvisoCola.module.css';
 import { Boton } from './Boton';
 import { Icono } from './Icono';
 import { Tarjeta } from './Tarjeta';
-import { Texto } from './Texto';
 
 type Estado = { pendientes: number; rechazadas: Rechazada[] };
 
@@ -31,7 +28,6 @@ function queEra(r: Rechazada): string {
 
 /** `soloRechazadas`: la pantalla ya dice que hay algo esperando (Cargar en cola); los rechazos se muestran igual. */
 export function AvisoCola({ refresco = 0, soloRechazadas = false }: { refresco?: number; soloRechazadas?: boolean }) {
-  const tema = useTema();
   const { yo } = useSesion();
   const yoId = yo?.id ?? null;
   const [estado, setEstado] = useState<Estado>({ pendientes: 0, rechazadas: [] });
@@ -80,31 +76,25 @@ export function AvisoCola({ refresco = 0, soloRechazadas = false }: { refresco?:
   const pendientes = soloRechazadas ? 0 : estado.pendientes;
   if (!pendientes && !rechazadas.length) return null;
   return (
-    <Tarjeta accessibilityLiveRegion="polite">
+    <Tarjeta aria-live="polite" className={estilos.aviso}>
       {pendientes ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: tema.espacio.s }}>
-          <Icono nombre="nube" tamano={tema.medida.icono} color={tema.color.textoSuave} />
-          <Texto style={{ flexShrink: 1 }}>
+        <div className={estilos.fila}>
+          <span className={estilos.icono}>
+            <Icono nombre="nube" tamano={20} />
+          </span>
+          <p className={estilos.texto}>
             {pendientes === 1
               ? '1 gasto guardado en el celu: se manda cuando vuelva la conexión.'
               : `${pendientes} gastos guardados en el celu: se mandan cuando vuelva la conexión.`}
-          </Texto>
-        </View>
+          </p>
+        </div>
       ) : null}
       {rechazadas.map((r, i) => (
-        <View
-          key={r.op.id}
-          style={{
-            gap: tema.espacio.s,
-            paddingTop: pendientes || i > 0 ? tema.espacio.s : 0,
-            borderTopWidth: pendientes || i > 0 ? tema.medida.borde : 0,
-            borderTopColor: tema.color.borde,
-          }}
-        >
-          <Texto variante="fuerte">{`No se pudo guardar ${queEra(r)}.`}</Texto>
-          <Texto variante="sub">{mensajeError({ code: r.code, message: r.message })}</Texto>
-          <Boton texto="Descartar" variante="borde" onPress={() => void descartar(r.op.id)} />
-        </View>
+        <div key={r.op.id} className={[estilos.rechazada, (pendientes || i > 0) && estilos.separada].filter(Boolean).join(' ')}>
+          <p className={estilos.titulo}>{`No se pudo guardar ${queEra(r)}.`}</p>
+          <p className={estilos.motivo}>{mensajeError({ code: r.code, message: r.message })}</p>
+          <Boton texto="Descartar" variante="borde" onClick={() => void descartar(r.op.id)} />
+        </div>
       ))}
     </Tarjeta>
   );

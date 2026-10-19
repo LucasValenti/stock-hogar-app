@@ -1,31 +1,23 @@
-// El OCR corre en el dispositivo: en web con Tesseract autoalojado, en Android/iOS con ML Kit.
+// El OCR corre en el dispositivo: en la web con Tesseract autoalojado.
 /// <reference types="node" />
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { NativeModules } from 'react-native';
-import { MAX_BYTES, OcrNoDisponible } from './ocr';
+import { MAX_BYTES } from './ocr';
 
 const TEXTO_WEB = 'Mercado Pago\n$ 1.234,56';
-const TEXTO_NATIVO = 'Mercado Pago\n$ 9.999,00';
 
-const mockReconocerWeb = jest.fn();
-const mockTerminar = jest.fn();
-const mockCrearWorker = jest.fn();
-const mockReconocerNativo = jest.fn();
+const mockReconocerWeb = vi.fn();
+const mockTerminar = vi.fn();
+const mockCrearWorker = vi.fn();
 
-jest.mock('tesseract.js', () => ({ createWorker: (...args: unknown[]) => mockCrearWorker(...args) }));
-// El import dinámico real no corre en Jest: el cargador devuelve el tesseract.js mockeado.
-jest.mock('./ocr.tesseract', () => ({ cargarTesseract: () => Promise.resolve(require('tesseract.js')) }));
-jest.mock('@react-native-ml-kit/text-recognition', () => ({
-  __esModule: true,
-  default: { recognize: (...args: unknown[]) => mockReconocerNativo(...args) },
-}));
+vi.mock('tesseract.js', () => ({ createWorker: (...args: unknown[]) => mockCrearWorker(...args) }));
+// El import dinámico real no corre en Vitest: el cargador devuelve el tesseract.js mockeado.
+vi.mock('./ocr.tesseract', () => ({ cargarTesseract: () => import('tesseract.js') }));
 
-import { leerTexto as leerWeb } from './ocr.web';
-import { leerTexto as leerNativo } from './ocr.native';
+import { leerTexto as leerWeb } from './ocr';
 
-// El canvas y la imagen del DOM no existen en Jest: alcanza con que dibujen y avisen.
-const contextoFalso = { filter: '', drawImage: jest.fn() };
+// El canvas y la imagen del DOM no existen en jsdom: alcanza con que dibujen y avisen.
+const contextoFalso = { filter: '', drawImage: vi.fn() };
 const canvasFalso = { width: 0, height: 0, getContext: () => contextoFalso };
 class ImagenFalsa {
   onload: (() => void) | null = null;
@@ -38,20 +30,18 @@ class ImagenFalsa {
 }
 
 beforeAll(() => {
-  (globalThis as { Image?: unknown }).Image = ImagenFalsa;
-  (globalThis as { document?: unknown }).document = { createElement: () => canvasFalso };
+  vi.stubGlobal('Image', ImagenFalsa);
+  vi.spyOn(document, 'createElement').mockImplementation(() => canvasFalso as unknown as HTMLElement);
 });
 afterAll(() => {
-  delete (globalThis as { Image?: unknown }).Image;
-  delete (globalThis as { document?: unknown }).document;
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 beforeEach(() => {
   mockCrearWorker.mockReset().mockResolvedValue({ recognize: mockReconocerWeb, terminate: mockTerminar });
   mockReconocerWeb.mockReset().mockResolvedValue({ data: { text: TEXTO_WEB } });
   mockTerminar.mockReset().mockResolvedValue({});
-  mockReconocerNativo.mockReset().mockResolvedValue({ text: TEXTO_NATIVO });
-  delete NativeModules.TextRecognition;
 });
 
 test('en web prepara la imagen y usa el worker autoalojado', async () => {
@@ -64,17 +54,6 @@ test('en web prepara la imagen y usa el worker autoalojado', async () => {
     workerBlobURL: false,
   });
   expect(mockTerminar).toHaveBeenCalledTimes(1);
-});
-
-test('en el dispositivo devuelve el texto de ML Kit', async () => {
-  NativeModules.TextRecognition = { recognize: jest.fn() };
-  await expect(leerNativo('file://foto.jpg')).resolves.toBe(TEXTO_NATIVO);
-  expect(mockReconocerNativo).toHaveBeenCalledWith('file://foto.jpg');
-});
-
-test('sin el módulo nativo rechaza con OcrNoDisponible', async () => {
-  await expect(leerNativo('file://foto.jpg')).rejects.toBeInstanceOf(OcrNoDisponible);
-  expect(mockReconocerNativo).not.toHaveBeenCalled();
 });
 
 test('el límite de tamaño es 15 MB', () => {

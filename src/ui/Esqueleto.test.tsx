@@ -1,29 +1,33 @@
-import { act, render, screen } from '@testing-library/react-native';
-import { AccessibilityInfo, Animated } from 'react-native';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import tokens from '@/tema/tokens.json';
+import { render, screen } from '@testing-library/react';
 
 import { Esqueleto } from './Esqueleto';
 
-afterEach(() => jest.restoreAllMocks());
+const css = readFileSync(resolve(process.cwd(), 'src/ui/Esqueleto.module.css'), 'utf8');
 
-test('late en opacidad si no se pidió reducir el movimiento', async () => {
-  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
-  const loop = jest.spyOn(Animated, 'loop');
-  await render(<Esqueleto alto={10} testID="esq" />);
-  expect(loop).toHaveBeenCalled();
+test('late en opacidad si no se pidió reducir el movimiento', () => {
+  // El latido es solo de opacidad; con movimiento reducido lo corta base.css.
+  expect(css).toMatch(/@keyframes latir/);
+  expect(css).toMatch(/opacity/);
+  expect(css).not.toMatch(/transform/);
 });
 
-test('con movimiento reducido queda quieto en opacidad.esqueletoMax', async () => {
-  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
-  const loop = jest.spyOn(Animated, 'loop');
-  const fijar = jest.spyOn(Animated.Value.prototype, 'setValue');
-  await render(<Esqueleto alto={10} testID="esq" />);
-  await act(async () => undefined);
-  // El primer cuadro puede arrancar el latido antes de saber la preferencia; después queda quieto.
-  loop.mockClear();
-  await act(async () => undefined);
-  expect(loop).not.toHaveBeenCalled();
-  expect(fijar).toHaveBeenLastCalledWith(tokens.opacidad.esqueletoMax);
-  expect(screen.getByTestId('esq', { includeHiddenElements: true })).toBeTruthy();
+test('es decorativo, con el alto y el ancho pedidos', () => {
+  render(<Esqueleto alto={10} ancho="50%" testID="esq" />);
+  const esq = screen.getByTestId('esq');
+  expect(esq).toHaveAttribute('aria-hidden', 'true');
+  expect(esq.style.getPropertyValue('--esqueleto-alto')).toBe('10px');
+  expect(esq.style.getPropertyValue('--esqueleto-ancho')).toBe('50%');
+});
+
+test('el círculo usa el alto como ancho', () => {
+  render(
+    <>
+      <Esqueleto alto={10} testID="recto" />
+      <Esqueleto alto={10} circulo testID="circulo" />
+    </>,
+  );
+  expect(screen.getByTestId('circulo').className).not.toBe(screen.getByTestId('recto').className);
 });

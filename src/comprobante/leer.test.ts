@@ -1,13 +1,13 @@
 // leerArchivo decide el lector: los PDF van al lector de PDF, el resto al OCR.
-const mockLeerTexto = jest.fn();
-const mockLeerTextoPdf = jest.fn();
-jest.mock('./ocr', () => ({ leerTexto: (...args: unknown[]) => mockLeerTexto(...args) }));
-jest.mock('./pdf', () => ({ leerTextoPdf: (...args: unknown[]) => mockLeerTextoPdf(...args) }));
+const mockLeerTexto = vi.fn();
+const mockLeerTextoPdf = vi.fn();
+vi.mock('./ocr', () => ({ leerTexto: (...args: unknown[]) => mockLeerTexto(...args) }));
+vi.mock('./pdf', () => ({ leerTextoPdf: (...args: unknown[]) => mockLeerTextoPdf(...args) }));
 
 import { leerArchivo } from './leer';
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 test('un PDF por tipo lo lee el lector de PDF', async () => {

@@ -1,0 +1,60 @@
+.paso {
+  display: flex;
+  align-items: center;
+  border: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-boton);
+  background: var(--color-superficie);
+}
+
+.paso:focus-within {
+  outline: var(--medida-foco-grosor) solid var(--color-foco);
+  outline-offset: var(--medida-foco-separacion);
+}
+
+.boton {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: var(--medida-tactil);
+  min-height: var(--medida-tactil);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radio-boton);
+  background: none;
+  color: var(--color-texto);
+  font: inherit;
+  cursor: pointer;
+}
+
+.boton:disabled {
+  color: var(--color-texto-suave);
+  cursor: default;
+}
+
+.boton:focus-visible,
+.entrada:focus-visible {
+  outline: none;
+}
+
+.signo {
+  font-size: var(--tamano-xl);
+  font-weight: var(--peso-fuerte);
+  line-height: 1;
+}
+
+.entrada {
+  width: calc(var(--medida-tactil) * 1.5);
+  min-height: var(--medida-tactil);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-texto);
+  font: inherit;
+  font-size: var(--tamano-l);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.bloqueado {
+  color: var(--color-texto-suave);
+}

@@ -1,0 +1,126 @@
+.fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--espacio-m);
+  min-height: var(--medida-fila);
+}
+
+.separador {
+  border-top: var(--medida-borde) solid var(--color-borde);
+}
+
+.zona {
+  display: flex;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: calc(var(--medida-fila) * 2);
+  align-items: center;
+  gap: var(--espacio-m);
+  min-height: var(--medida-fila);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.zonaTilde {
+  gap: var(--espacio-m);
+}
+
+.zonaTocar {
+  padding-block: var(--espacio-s);
+}
+
+.zonaTexto {
+  display: block;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: calc(var(--medida-fila) * 2);
+  min-width: 0;
+  padding-block: var(--espacio-s);
+}
+
+.textos {
+  display: block;
+  flex-grow: 1;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.nombre {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  font-size: var(--tamano-m);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tilde {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--medida-tilde);
+  height: var(--medida-tilde);
+  border: var(--medida-tilde-borde) solid var(--color-borde);
+  border-radius: var(--radio-tilde);
+  background: var(--color-superficie);
+  color: var(--color-sobre-acento);
+}
+
+.tildado {
+  border-color: var(--color-acento);
+  background: var(--color-acento);
+}
+
+.derecha {
+  display: block;
+  margin-left: auto;
+  padding-block: var(--espacio-xs);
+}
+
+.estado {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espacio-xs);
+}
+
+.estadoTexto {
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+}
+
+.hay {
+  color: var(--color-hay);
+}
+
+.falta {
+  color: var(--color-falta);
+}
+
+.cerrado {
+  color: var(--color-cerrado);
+}
+
+.notita {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espacio-xs);
+  color: var(--color-texto-suave);
+}
+
+.notitaTexto {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

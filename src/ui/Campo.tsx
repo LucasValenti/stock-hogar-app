@@ -1,80 +1,47 @@
-// Campo de texto (DESIGN.md, Campo): píldora con borde sobre `superficie`, alto ≥ `medida.tactil`,
-// etiqueta arriba y ayuda (o el error, que se anuncia una vez como alerta) abajo. `grande` es el monto de Cargar.
+// Campo de texto con su rótulo visible y, debajo, la ayuda o el aviso de error (asociado al campo).
+// `grande` es el monto de Cargar: cifras tabulares grandes y centradas. `bloqueado` es de solo lectura.
+import { useId, type InputHTMLAttributes } from 'react';
 
-import { useId } from 'react';
-import { TextInput, View, type KeyboardTypeOptions } from 'react-native';
+import { Alerta } from './Alerta';
+import estilos from './Campo.module.css';
 
-import { FAMILIAS } from '@/tema/fuentes';
-import { useTema } from '@/tema/tema';
-
-import { anilloDeFoco, useFoco } from './estilos';
-import { Texto } from './Texto';
-
-type Props = {
+type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> & {
   etiqueta: string;
-  valor: string;
-  alCambiar(texto: string): void;
-  ayuda?: string;
   error?: string | null;
-  /** No se puede editar (mes cerrado, gasto de solo lectura). */
-  bloqueado?: boolean;
-  teclado?: KeyboardTypeOptions;
-  placeholder?: string;
-  /** El monto de Cargar: cifras tabulares grandes, centradas. */
+  /** Texto de ayuda debajo; el error lo reemplaza. */
+  ayuda?: string;
   grande?: boolean;
-  /** Emails y códigos: sin mayúscula automática ni corrector. */
-  sinCorrector?: boolean;
+  bloqueado?: boolean;
 };
 
-export function Campo({ etiqueta, valor, alCambiar, ayuda, error, bloqueado = false, teclado, placeholder, grande = false, sinCorrector = false }: Props) {
-  const tema = useTema();
-  const { conFoco, alFoco } = useFoco();
+export function Campo({ etiqueta, error, ayuda, grande = false, bloqueado = false, className, ...resto }: Props) {
   const id = useId();
+  const idError = `${id}-error`;
+  const idAyuda = `${id}-ayuda`;
+  const descrito = error ? idError : ayuda ? idAyuda : undefined;
   return (
-    <View style={{ gap: tema.espacio.xs }}>
-      <Texto variante="rotulo" nativeID={`${id}-etiqueta`}>
+    <div className={[estilos.campo, className].filter(Boolean).join(' ')}>
+      <label className={estilos.rotulo} htmlFor={id}>
         {etiqueta}
-      </Texto>
-      <TextInput
-        allowFontScaling
-        accessibilityLabel={etiqueta}
-        aria-labelledby={`${id}-etiqueta`}
-        // La ayuda va como pista; el error no, que ya lo anuncia la alerta de abajo.
-        accessibilityHint={error ? undefined : ayuda}
-        accessibilityState={{ disabled: bloqueado }}
-        editable={!bloqueado}
-        value={valor}
-        onChangeText={alCambiar}
-        keyboardType={teclado}
-        autoCapitalize={sinCorrector ? 'none' : undefined}
-        autoCorrect={sinCorrector ? false : undefined}
-        placeholder={placeholder}
-        placeholderTextColor={tema.color.textoSuave}
-        {...alFoco}
-        style={[
-          {
-            minHeight: tema.medida.tactil,
-            paddingHorizontal: tema.espacio.l,
-            paddingVertical: tema.espacio.s,
-            borderRadius: tema.radio.boton,
-            borderWidth: error ? tema.medida.bordeFuerte : tema.medida.borde,
-            borderColor: error ? tema.color.falta : tema.color.borde,
-            backgroundColor: tema.color.superficie,
-            color: bloqueado ? tema.color.textoSuave : tema.color.texto,
-            fontFamily: grande ? FAMILIAS.numeros : FAMILIAS.texto,
-            fontSize: grande ? tema.tamano.xxxl : tema.tamano.m,
-          },
-          grande && { textAlign: 'center', fontVariant: ['tabular-nums'] },
-          conFoco && anilloDeFoco(tema),
-        ]}
+      </label>
+      <input
+        id={id}
+        className={[estilos.entrada, grande && estilos.grande, bloqueado && estilos.bloqueado, error && estilos.conError]
+          .filter(Boolean)
+          .join(' ')}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={descrito}
+        aria-disabled={bloqueado || undefined}
+        readOnly={bloqueado || undefined}
+        {...resto}
       />
       {error ? (
-        <Texto variante="sub" color="falta" accessibilityRole="alert" accessibilityLiveRegion="polite">
-          {error}
-        </Texto>
+        <Alerta id={idError}>{error}</Alerta>
       ) : ayuda ? (
-        <Texto variante="sub">{ayuda}</Texto>
+        <p id={idAyuda} className={estilos.ayuda}>
+          {ayuda}
+        </p>
       ) : null}
-    </View>
+    </div>
   );
 }

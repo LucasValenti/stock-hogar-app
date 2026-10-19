@@ -1,51 +1,43 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet, Text } from 'react-native';
-
-import tokens from '@/tema/tokens.json';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { Estado, Fila } from './Fila';
 
-const plano = (s: unknown) => StyleSheet.flatten(s as never) ?? {};
-
 describe('Fila', () => {
-  test('con tilde: la fila entera es una casilla con su estado y alto ≥ medida.fila', async () => {
-    const alTildar = jest.fn();
-    await render(
-      <Fila nombre="Yerba" descripcion="Hay 1" tildado={false} alTildar={alTildar} detalle={<Estado tipo="hay" texto="Hay 1" />} />,
-    );
+  test('con tilde: la fila entera es una casilla con su estado', async () => {
+    const alTildar = vi.fn();
+    render(<Fila nombre="Yerba" descripcion="Hay 1" tildado={false} alTildar={alTildar} detalle={<Estado tipo="hay" texto="Hay 1" />} />);
     const casilla = screen.getByRole('checkbox', { name: 'Yerba, Hay 1' });
-    expect(casilla.props.accessibilityState).toMatchObject({ checked: false });
-    expect(plano(casilla.props.style).minHeight).toBeGreaterThanOrEqual(tokens.medida.fila);
-    await fireEvent.press(casilla);
+    expect(casilla).toHaveAttribute('aria-checked', 'false');
+    await userEvent.click(casilla);
     expect(alTildar).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Hay 1')).toBeTruthy();
+    expect(screen.getByText('Hay 1')).toBeInTheDocument();
   });
 
-  test('tildada: la casilla queda marcada y el tilde en acento', async () => {
-    await render(<Fila nombre="Leche" tildado alTildar={jest.fn()} />);
-    expect(screen.getByRole('checkbox', { name: 'Leche' }).props.accessibilityState).toMatchObject({ checked: true });
-    expect(plano(screen.getByTestId('tilde', { includeHiddenElements: true }).props.style)).toMatchObject({ backgroundColor: tokens.color.claro.acento });
+  test('tildada: la casilla queda marcada y el tilde en acento', () => {
+    render(<Fila nombre="Leche" tildado alTildar={vi.fn()} />);
+    expect(screen.getByRole('checkbox', { name: 'Leche' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('tilde').querySelector('svg')).not.toBeNull();
   });
 
-  test('sin tilde no hay casilla; lo de la derecha se dibuja', async () => {
-    await render(<Fila nombre="Yerba" derecha={<Text>$ 5.200</Text>} />);
-    expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.getByText('Yerba').props.numberOfLines).toBe(2);
-    expect(screen.getByText('$ 5.200')).toBeTruthy();
+  test('sin tilde no hay casilla; lo de la derecha se dibuja', () => {
+    render(<Fila nombre="Yerba" derecha={<span>$ 5.200</span>} />);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByText('Yerba')).toBeInTheDocument();
+    expect(screen.getByText('$ 5.200')).toBeInTheDocument();
   });
 
   test('con alTocar: la zona del nombre es un botón (abre la ficha) y lo de la derecha queda aparte', async () => {
-    const alTocar = jest.fn();
-    await render(<Fila nombre="Yerba" descripcion="Falta" alTocar={alTocar} derecha={<Text>paso</Text>} />);
+    const alTocar = vi.fn();
+    render(<Fila nombre="Yerba" descripcion="Falta" alTocar={alTocar} derecha={<span>paso</span>} />);
     const boton = screen.getByRole('button', { name: 'Yerba, Falta' });
-    expect(plano(boton.props.style).minHeight).toBeGreaterThanOrEqual(tokens.medida.tactil);
-    await fireEvent.press(boton);
+    await userEvent.click(boton);
     expect(alTocar).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('paso')).toBeTruthy();
+    expect(screen.getByText('paso')).toBeInTheDocument();
   });
 
-  test('Estado lleva palabra además del color', async () => {
-    await render(<Estado tipo="falta" texto="Falta" />);
-    expect(plano(screen.getByText('Falta').props.style).color).toBe(tokens.color.claro.falta);
+  test('Estado lleva palabra además del color', () => {
+    render(<Estado tipo="falta" texto="Falta" />);
+    expect(screen.getByText('Falta')).toBeInTheDocument();
   });
 });

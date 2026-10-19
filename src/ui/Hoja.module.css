@@ -1,0 +1,126 @@
+.hoja {
+  position: fixed;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-s);
+  width: 100%;
+  max-width: 40rem;
+  max-height: 85svh;
+  margin: 0 auto;
+  padding: var(--espacio-s) var(--espacio-l) calc(var(--espacio-xl) + env(safe-area-inset-bottom));
+  overflow: hidden;
+  border: 0;
+  border-top: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-hoja) var(--radio-hoja) 0 0;
+  background: var(--color-superficie);
+  color: var(--color-texto);
+  animation: subir var(--mov-normal) var(--mov-curva);
+}
+
+/* El navegador la oculta cuando no está abierta; el estilo de autor no debe mostrarla antes de showModal(). */
+.hoja:not([open]) {
+  display: none;
+}
+
+.hoja::backdrop {
+  background: var(--velo);
+  animation: aparecer var(--mov-normal) ease-out;
+}
+
+.asa {
+  flex: none;
+  align-self: center;
+  width: var(--medida-asa-ancho);
+  height: var(--medida-asa-alto);
+  border-radius: var(--radio-chip);
+  background: var(--color-borde);
+}
+
+.encabezado {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--espacio-s);
+}
+
+.titulos {
+  display: grid;
+  gap: var(--espacio-xs);
+  min-width: 0;
+}
+
+.titulo {
+  margin: 0;
+  font-family: var(--fuente-titulo);
+  font-size: var(--tamano-xl);
+  line-height: var(--interlineado-titulo);
+}
+
+.subtitulo {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.cerrar {
+  flex: none;
+  min-width: var(--medida-tactil);
+  min-height: var(--medida-tactil);
+  padding: 0 var(--espacio-s);
+  border: 0;
+  border-radius: var(--radio-boton);
+  background: none;
+  color: var(--color-texto-suave);
+  font: inherit;
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  cursor: pointer;
+}
+
+.contenido {
+  display: grid;
+  gap: var(--espacio-s);
+  overflow: auto;
+}
+
+.pie {
+  display: grid;
+  flex: none;
+  gap: var(--espacio-s);
+}
+
+@keyframes subir {
+  from {
+    opacity: 0;
+    transform: translateY(var(--espacio-xxl));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes aparecer {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoja {
+    animation-name: aparecer;
+    animation-duration: var(--mov-reducido);
+  }
+
+  .hoja::backdrop {
+    animation-duration: var(--mov-reducido);
+  }
+}

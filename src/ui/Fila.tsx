@@ -1,17 +1,12 @@
-// Fila de producto (DESIGN.md, Fila de producto con − / +): alto ≥ `medida.fila`, nombre en `peso.fuerte`
+// Fila de producto (DESIGN.md, Fila de producto con − / +): alto ≥ `--medida-fila`, nombre en peso fuerte
 // hasta dos renglones, el estado debajo y lo de la derecha (el paso, un monto). Si no entra al lado del
 // nombre, baja y se alinea a la derecha. Con `alTildar`, el tilde va a la izquierda y la parte del nombre
 // entera es la casilla (el blanco táctil no es el tilde chico). Con `alTocar`, esa zona es un botón (abre
 // la ficha del producto) y el paso de la derecha queda aparte. El separador lo pone la lista (`separador`).
-
 import type { ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
 
-import { useTema } from '@/tema/tema';
-
-import { anilloDeFoco, decorativo, useFoco } from './estilos';
+import estilos from './Fila.module.css';
 import { Icono, type NombreIcono } from './Icono';
-import { Texto } from './Texto';
 
 type Props = {
   nombre: string;
@@ -30,83 +25,46 @@ type Props = {
 };
 
 export function Fila({ nombre, detalle, descripcion, tildado = false, alTildar, alTocar, bloqueado = false, derecha, separador = false }: Props) {
-  const tema = useTema();
-  const { conFoco, alFoco } = useFoco();
-  const textos = (
-    <View style={{ flexShrink: 1, flexGrow: 1 }}>
-      <Texto variante="fuerte" numberOfLines={2}>
-        {nombre}
-      </Texto>
-      {detalle}
-    </View>
-  );
   const etiqueta = descripcion ? `${nombre}, ${descripcion}` : nombre;
-  const zona = {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: tema.medida.fila * 2,
-    minHeight: tema.medida.fila,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tema.espacio.m,
-  } as const;
+  const textos = (
+    <span className={estilos.textos}>
+      <span className={estilos.nombre}>{nombre}</span>
+      {detalle}
+    </span>
+  );
+
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        columnGap: tema.espacio.m,
-        minHeight: tema.medida.fila,
-        borderTopWidth: separador ? tema.medida.borde : 0,
-        borderTopColor: tema.color.borde,
-      }}
-    >
+    <div className={[estilos.fila, separador && estilos.separador].filter(Boolean).join(' ')}>
       {alTildar ? (
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityLabel={etiqueta}
-          accessibilityState={{ checked: tildado, disabled: bloqueado }}
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={tildado}
+          aria-label={etiqueta}
           disabled={bloqueado}
-          onPress={alTildar}
-          {...alFoco}
-          style={[zona, conFoco && anilloDeFoco(tema)]}
+          onClick={alTildar}
+          className={[estilos.zona, estilos.zonaTilde].join(' ')}
         >
-          <View
-            {...decorativo}
-            testID="tilde"
-            style={{
-              width: tema.medida.tilde,
-              height: tema.medida.tilde,
-              borderRadius: tema.radio.tilde,
-              borderWidth: tema.medida.tildeBorde,
-              borderColor: tildado ? tema.color.acento : tema.color.borde,
-              backgroundColor: tildado ? tema.color.acento : tema.color.superficie,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {tildado ? <Icono nombre="ok" tamano={tema.tamano.l} color={tema.color.sobreAcento} /> : null}
-          </View>
+          <span data-testid="tilde" className={[estilos.tilde, tildado && estilos.tildado].filter(Boolean).join(' ')} aria-hidden="true">
+            {tildado ? <Icono nombre="ok" tamano={16} /> : null}
+          </span>
           {textos}
-        </Pressable>
+        </button>
       ) : alTocar ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={etiqueta}
-          accessibilityState={{ disabled: bloqueado }}
+        <button
+          type="button"
+          aria-label={etiqueta}
           disabled={bloqueado}
-          onPress={alTocar}
-          {...alFoco}
-          style={[zona, { paddingVertical: tema.espacio.s }, conFoco && anilloDeFoco(tema)]}
+          onClick={alTocar}
+          className={[estilos.zona, estilos.zonaTocar].join(' ')}
         >
           {textos}
-        </Pressable>
+        </button>
       ) : (
-        <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: tema.medida.fila * 2, paddingVertical: tema.espacio.s }}>{textos}</View>
+        <span className={estilos.zonaTexto}>{textos}</span>
       )}
-      {derecha ? <View style={{ marginLeft: 'auto', paddingVertical: tema.espacio.xs }}>{derecha}</View> : null}
-    </View>
+      {derecha ? <span className={estilos.derecha}>{derecha}</span> : null}
+    </div>
   );
 }
 
@@ -114,26 +72,20 @@ const ICONO_ESTADO: Record<'falta' | 'hay' | 'cerrado', NombreIcono> = { falta: 
 
 /** Estado de un dato (DESIGN.md, Estados): ícono + palabra en su color, nunca solo color. */
 export function Estado({ tipo, texto }: { tipo: 'falta' | 'hay' | 'cerrado'; texto: string }) {
-  const tema = useTema();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: tema.espacio.xs }}>
-      <Icono nombre={ICONO_ESTADO[tipo]} tamano={tema.tamano.l} color={tema.color[tipo]} />
-      <Texto variante="seccion" color={tipo}>
-        {texto}
-      </Texto>
-    </View>
+    <span className={[estilos.estado, estilos[tipo]].join(' ')}>
+      <Icono nombre={ICONO_ESTADO[tipo]} tamano={16} />
+      <span className={estilos.estadoTexto}>{texto}</span>
+    </span>
   );
 }
 
 /** Notita (DESIGN.md): ícono de nota + texto suave, para las anotaciones rápidas. */
 export function Notita({ texto }: { texto: string }) {
-  const tema = useTema();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: tema.espacio.xs }}>
-      <Icono nombre="nota" tamano={tema.tamano.l} color={tema.color.textoSuave} />
-      <Texto variante="sub" numberOfLines={2}>
-        {texto}
-      </Texto>
-    </View>
+    <span className={estilos.notita}>
+      <Icono nombre="nota" tamano={16} />
+      <span className={estilos.notitaTexto}>{texto}</span>
+    </span>
   );
 }

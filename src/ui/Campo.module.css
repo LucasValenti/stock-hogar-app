@@ -1,0 +1,49 @@
+.campo {
+  display: grid;
+  gap: var(--espacio-xs);
+}
+
+.rotulo {
+  font-size: var(--tamano-xs);
+  font-weight: var(--peso-fuerte);
+  color: var(--color-texto-suave);
+}
+
+.entrada {
+  /* Sin esto, el ancho por defecto del input (20 caracteres) empuja la pantalla con la letra grande del monto. */
+  width: 100%;
+  min-width: 0;
+  min-height: var(--medida-tactil);
+  padding: 0 var(--espacio-l);
+  border-radius: var(--radio-boton);
+  border: var(--medida-borde) solid var(--color-borde);
+  background: var(--color-superficie);
+  color: var(--color-texto);
+  font: inherit;
+  font-size: var(--tamano-l);
+}
+
+.conError {
+  border-width: var(--medida-borde-fuerte);
+  border-color: var(--color-falta);
+}
+
+.ayuda {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.grande {
+  font-size: var(--tamano-xxxl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--peso-numeros);
+  text-align: center;
+}
+
+.bloqueado {
+  background: var(--color-fondo);
+  color: var(--color-texto-suave);
+  cursor: default;
+}

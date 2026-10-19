@@ -1,49 +1,40 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet, Text } from 'react-native';
-
-import tokens from '@/tema/tokens.json';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { Hoja } from './Hoja';
 
-jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
-
-const plano = (s: unknown) => StyleSheet.flatten(s as never) ?? {};
-
 describe('Hoja', () => {
-  test('cerrada no muestra nada', async () => {
-    await render(
-      <Hoja visible={false} titulo="Agregar producto" alCerrar={jest.fn()}>
-        <Text>Yerba</Text>
+  test('cerrada no muestra nada', () => {
+    render(
+      <Hoja visible={false} titulo="Agregar producto" alCerrar={vi.fn()}>
+        <span>Yerba</span>
       </Hoja>,
     );
-    expect(screen.queryByText('Agregar producto')).toBeNull();
+    expect(screen.queryByText('Agregar producto')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  test('abierta: título como encabezado, subtítulo, contenido y pie; radio.hoja arriba', async () => {
-    await render(
-      <Hoja visible titulo="Agregar producto" subtitulo="Tildá lo comprado." alCerrar={jest.fn()} pie={<Text>Pie</Text>}>
-        <Text>Yerba</Text>
+  test('abierta: título como encabezado, subtítulo, contenido y pie; queda como diálogo modal', () => {
+    render(
+      <Hoja visible titulo="Agregar producto" subtitulo="Tildá lo comprado." alCerrar={vi.fn()} pie={<span>Pie</span>}>
+        <span>Yerba</span>
       </Hoja>,
     );
-    expect(screen.getByRole('header', { name: 'Agregar producto' })).toBeTruthy();
-    expect(screen.getByText('Tildá lo comprado.')).toBeTruthy();
-    expect(screen.getByText('Yerba')).toBeTruthy();
-    expect(screen.getByText('Pie')).toBeTruthy();
-    expect(plano(screen.getByTestId('hoja').props.style)).toMatchObject({
-      borderTopLeftRadius: tokens.radio.hoja,
-      borderTopRightRadius: tokens.radio.hoja,
-      backgroundColor: tokens.color.claro.superficie,
-    });
+    expect(screen.getByRole('dialog')).toHaveAttribute('open');
+    expect(screen.getByRole('heading', { name: 'Agregar producto' })).toBeInTheDocument();
+    expect(screen.getByText('Tildá lo comprado.')).toBeInTheDocument();
+    expect(screen.getByText('Yerba')).toBeInTheDocument();
+    expect(screen.getByText('Pie')).toBeInTheDocument();
   });
 
-  test('tocar el velo cierra', async () => {
-    const alCerrar = jest.fn();
-    await render(
+  test('tocar el velo (o el botón Cerrar) cierra', async () => {
+    const alCerrar = vi.fn();
+    render(
       <Hoja visible titulo="Categoría" alCerrar={alCerrar}>
-        <Text>Luz</Text>
+        <span>Luz</span>
       </Hoja>,
     );
-    await fireEvent.press(screen.getByRole('button', { name: 'Cerrar' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
     expect(alCerrar).toHaveBeenCalledTimes(1);
   });
 });

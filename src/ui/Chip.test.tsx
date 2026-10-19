@@ -1,37 +1,39 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import tokens from '@/tema/tokens.json';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { Chip } from './Chip';
 
-const plano = (s: unknown) => StyleSheet.flatten(s as never) ?? {};
+const css = readFileSync(resolve(process.cwd(), 'src/ui/Chip.module.css'), 'utf8');
 
 describe('Chip', () => {
-  test('como opción: radio con su estado, activo lleno de acento, alto ≥ medida.tactil', async () => {
-    const onPress = jest.fn();
-    await render(
+  test('como opción: botón con aria-pressed, activo lleno de acento, alto ≥ medida.tactil', async () => {
+    const onClick = vi.fn();
+    render(
       <>
-        <Chip texto="Ana" activo onPress={onPress} />
-        <Chip texto="Bruno" activo={false} onPress={onPress} />
+        <Chip texto="Ana" activo onClick={onClick} />
+        <Chip texto="Bruno" activo={false} onClick={onClick} />
       </>,
     );
-    const ana = screen.getByRole('radio', { name: 'Ana' });
-    expect(ana.props.accessibilityState).toMatchObject({ checked: true });
-    expect(plano(ana.props.style)).toMatchObject({ backgroundColor: tokens.color.claro.acento });
-    expect(plano(ana.props.style).minHeight).toBeGreaterThanOrEqual(tokens.medida.tactil);
-    const bruno = screen.getByRole('radio', { name: 'Bruno' });
-    expect(bruno.props.accessibilityState).toMatchObject({ checked: false });
-    await fireEvent.press(bruno);
-    expect(onPress).toHaveBeenCalledTimes(1);
+    const ana = screen.getByRole('button', { name: 'Ana' });
+    expect(ana).toHaveAttribute('aria-pressed', 'true');
+    expect(css).toMatch(/\.chip\[aria-pressed='true'\][^{]*\{[^}]*background:\s*var\(--color-acento\)/s);
+    expect(css).toMatch(/min-height:\s*var\(--medida-tactil\)/);
+    const bruno = screen.getByRole('button', { name: 'Bruno' });
+    expect(bruno).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(bruno);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   test('con flecha es un botón que abre una hoja; bloqueado no responde', async () => {
-    const onPress = jest.fn();
-    await render(<Chip texto="Súper" flecha accessibilityLabel="Categoría: Súper" bloqueado onPress={onPress} />);
+    const onClick = vi.fn();
+    render(<Chip texto="Súper" flecha aria-label="Categoría: Súper" bloqueado onClick={onClick} />);
     const chip = screen.getByRole('button', { name: 'Categoría: Súper' });
-    expect(chip.props.accessibilityState).toMatchObject({ disabled: true });
-    await fireEvent.press(chip);
-    expect(onPress).not.toHaveBeenCalled();
+    expect(chip).toBeDisabled();
+    expect(chip.querySelector('svg')).not.toBeNull();
+    await userEvent.click(chip);
+    expect(onClick).not.toHaveBeenCalled();
   });
 });

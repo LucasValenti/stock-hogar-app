@@ -1,0 +1,29 @@
+.pantalla {
+  display: grid;
+  gap: var(--espacio-m);
+}
+
+.encabezado {
+  display: grid;
+  align-content: center;
+  min-height: var(--medida-tactil);
+}
+
+.saludo {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.titulo {
+  margin: 0;
+  font-family: var(--fuente-titulo);
+  font-size: var(--tamano-xxl);
+  line-height: var(--interlineado-titulo);
+}
+
+.contenido {
+  display: grid;
+  gap: var(--espacio-m);
+}

@@ -3,9 +3,7 @@
 // quedó guardado y «Reabrir mes». Debajo, los gastos del mes. Cerrar y Reabrir se confirman en una hoja.
 // Si mientras tanto alguien cargó o cambió algo (CIERRE_DESACTUALIZADO), se avisa y se muestra el reparto
 // con los datos de ahora. Permisos (sueldos) son F7: hoy cualquiera de la casa cierra y reabre.
-
 import { useState } from 'react';
-import { View } from 'react-native';
 
 import { datos } from '@/datos';
 import type { GastoConItems } from '@/datos/tipos';
@@ -15,19 +13,18 @@ import { mesActual, nombreMes } from '@/logica/meses';
 import { repartoDelMes } from '@/logica/reparto';
 import { enMayuscula } from '@/logica/texto';
 import type { Categoria, Cierre, Integrante } from '@/logica/tipos';
-import { useTema } from '@/tema/tema';
 
-import { Boton } from '../Boton';
-import { EstadoVacio } from '../EstadoVacio';
-import { Estado } from '../Fila';
-import { MensajeError } from '../FormularioProducto';
-import { Monto } from '../Monto';
-import { Tarjeta } from '../Tarjeta';
-import { Texto } from '../Texto';
+import estilos from './Resumen.module.css';
 import { Confirmar } from './Confirmar';
 import { FilaGasto, mapaDeNombres } from './FilaGasto';
 import { Registro } from './Registro';
 import { motivoSinReparto, Reparto, Transferencias } from './Reparto';
+import { Boton } from '../Boton';
+import { EstadoVacio } from '../EstadoVacio';
+import { Estado } from '../Fila';
+import { MensajeError } from '../MensajeError';
+import { Monto } from '../Monto';
+import { Tarjeta } from '../Tarjeta';
 
 const esDesactualizado = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? '').includes('CIERRE_DESACTUALIZADO');
 
@@ -44,7 +41,6 @@ type Props = {
 type Aviso = { bueno: boolean; texto: string } | null;
 
 export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar }: Props) {
-  const tema = useTema();
   const [confirmando, setConfirmando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [errorHoja, setErrorHoja] = useState<string | null>(null);
@@ -102,9 +98,9 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
     <>
       {aviso ? (
         aviso.bueno ? (
-          <View accessibilityLiveRegion="polite">
+          <div aria-live="polite">
             <Estado tipo="hay" texto={aviso.texto} />
-          </View>
+          </div>
         ) : (
           <MensajeError texto={aviso.texto} />
         )
@@ -113,32 +109,28 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
       {cierre ? (
         <>
           <Registro cierre={cierre} integrantes={integrantes} />
-          <Boton texto="Reabrir mes" icono="candado" variante="borde" onPress={abrir} />
+          <Boton texto="Reabrir mes" icono="candado" variante="borde" onClick={abrir} />
         </>
       ) : (
         <>
-          <Tarjeta iman accessible accessibilityLabel={`Gastos de ${soloMes}: ${formatear(reparto.total)}. ${cuantos}.`}>
-            <Texto variante="sub">{`Gastos de ${soloMes}`}</Texto>
+          <Tarjeta iman className={estilos.tarjeta} aria-label={`Gastos de ${soloMes}: ${formatear(reparto.total)}. ${cuantos}.`}>
+            <p className={estilos.rotulo}>{`Gastos de ${soloMes}`}</p>
             <Monto centavos={reparto.total} />
-            <Texto variante="sub">{cuantos}</Texto>
+            <p className={estilos.rotulo}>{cuantos}</p>
           </Tarjeta>
           <Reparto reparto={reparto} integrantes={integrantes} detallado />
           {reparto.ok && reparto.filas.length ? <Transferencias transferencias={reparto.transferencias} filas={reparto.filas} /> : null}
           {sePuedeCerrar ? (
-            <View style={{ gap: tema.espacio.xs }}>
-              <Boton texto="Cerrar mes" icono="candado" onPress={abrir} />
-              <Texto variante="sub" centrado>
-                {`Guarda el reparto y bloquea los gastos de ${soloMes}.`}
-              </Texto>
-            </View>
+            <div className={estilos.cerrar}>
+              <Boton texto="Cerrar mes" icono="candado" onClick={abrir} />
+              <p className={estilos.centrado}>{`Guarda el reparto y bloquea los gastos de ${soloMes}.`}</p>
+            </div>
           ) : null}
         </>
       )}
 
-      <Texto variante="seccion" accessibilityRole="header" aria-level={2}>
-        {`Gastos de ${soloMes}`}
-      </Texto>
-      <Tarjeta style={{ paddingVertical: 0, gap: 0 }}>
+      <h2 className={estilos.seccion}>{`Gastos de ${soloMes}`}</h2>
+      <Tarjeta className={estilos.lista}>
         {gastos.length ? (
           gastos.map((g, i) => <FilaGasto key={g.id} gasto={g} nombres={nombres} separador={i > 0} cerrado={cierre !== null} />)
         ) : (

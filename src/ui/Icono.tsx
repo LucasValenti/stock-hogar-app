@@ -1,10 +1,5 @@
-// Íconos de trazo de la maqueta «Heladera» (docs/diseno-2.0/maquetas.html), dibujados como SVG.
-// expo-image los muestra en Android, iOS y la web sin sumar una librería de SVG.
+// Íconos de trazo de la maqueta «Heladera» (docs/diseno-2.0/maquetas.html), dibujados como SVG en línea.
 // Son decorativos: el nombre lo da el control o el texto que los acompaña.
-
-import { Image } from 'expo-image';
-
-import { decorativo } from './estilos';
 
 const TRAZOS = {
   casa: '<path d="M3 11 12 4l9 7v9h-6v-6H9v6H3z"/>',
@@ -25,25 +20,25 @@ const TRAZOS = {
 
 export type NombreIcono = keyof typeof TRAZOS;
 
+type Props = { nombre: NombreIcono; tamano: number; grueso?: boolean; testID?: string };
+
 // Grosor del trazo de la maqueta: 2, y 2,4 en el + de Cargar (es parte del dibujo, no una medida de la app).
-function svg(nombre: NombreIcono, color: string, grueso: boolean): string {
+export function Icono({ nombre, tamano, grueso = false, testID }: Props) {
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" ` +
-    `stroke-width="${grueso ? 2.4 : 2}" stroke-linecap="round" stroke-linejoin="round">${TRAZOS[nombre]}</svg>`
-  );
-}
-
-type Props = { nombre: NombreIcono; color: string; tamano: number; grueso?: boolean; testID?: string };
-
-export function Icono({ nombre, color, tamano, grueso = false, testID }: Props) {
-  return (
-    <Image
-      {...decorativo}
-      testID={testID}
-      source={{ uri: `data:image/svg+xml;utf8,${encodeURIComponent(svg(nombre, color, grueso))}` }}
-      style={{ width: tamano, height: tamano }}
-      contentFit="contain"
-      transition={0}
-    />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={grueso ? 2.4 : 2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={tamano}
+      height={tamano}
+      aria-hidden="true"
+      focusable="false"
+      data-testid={testID}
+    >
+      <g dangerouslySetInnerHTML={{ __html: TRAZOS[nombre] }} />
+    </svg>
   );
 }

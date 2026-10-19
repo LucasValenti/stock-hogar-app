@@ -1,0 +1,41 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espacio-xs);
+  min-height: var(--medida-tactil);
+  padding: var(--espacio-xs) var(--espacio-l);
+  border: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-chip);
+  background: var(--color-superficie);
+  color: var(--color-texto);
+  font: inherit;
+  font-size: var(--tamano-m);
+  font-weight: var(--peso-fuerte);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--mov-rapido) ease-out;
+}
+
+.chip:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.chip[aria-pressed='true'],
+.chip[aria-checked='true'] {
+  border-color: var(--color-acento);
+  background: var(--color-acento);
+  color: var(--color-sobre-acento);
+}
+
+.bloqueado {
+  color: var(--color-texto-suave);
+  cursor: default;
+}
+
+.texto {
+  min-width: 0;
+}
+
+.icono {
+  flex: none;
+}

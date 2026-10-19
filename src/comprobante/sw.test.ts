@@ -1,6 +1,8 @@
 // El service worker de la web instalada: recibe el comprobante que se comparte desde otra app,
 // lo guarda en el caché y redirige a la app. El resto de los pedidos no los toca.
 
+import type { Mock } from 'vitest';
+
 type Handler = (evento: EventoFalso) => void;
 
 type EventoFalso = {
@@ -10,25 +12,26 @@ type EventoFalso = {
 };
 
 let handlers: Record<string, Handler>;
-let cachePut: jest.Mock;
-let cacheDelete: jest.Mock;
+let cachePut: Mock;
+let cacheDelete: Mock;
 
-beforeEach(() => {
-  jest.resetModules();
+beforeEach(async () => {
+  vi.resetModules();
   handlers = {};
-  cachePut = jest.fn(async () => undefined);
-  cacheDelete = jest.fn(async () => true);
+  cachePut = vi.fn(async () => undefined);
+  cacheDelete = vi.fn(async () => true);
   (globalThis as { caches?: unknown }).caches = {
-    open: jest.fn(async () => ({ put: cachePut, delete: cacheDelete })),
+    open: vi.fn(async () => ({ put: cachePut, delete: cacheDelete })),
   };
   (globalThis as { self?: unknown }).self = {
     addEventListener: (tipo: string, h: Handler) => {
       handlers[tipo] = h;
     },
-    skipWaiting: jest.fn(),
-    clients: { claim: jest.fn() },
+    skipWaiting: vi.fn(),
+    clients: { claim: vi.fn() },
   };
-  require('../../public/sw.js');
+  // @ts-expect-error public/sw.js es JavaScript plano fuera del proyecto TypeScript.
+  await import('../../public/sw.js');
 });
 
 afterEach(() => {

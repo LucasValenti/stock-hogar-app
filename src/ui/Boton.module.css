@@ -1,0 +1,52 @@
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--espacio-s);
+  width: 100%;
+  min-height: var(--medida-tactil);
+  padding: var(--espacio-s) var(--espacio-xl);
+  border-radius: var(--radio-boton);
+  border: var(--medida-borde) solid var(--color-borde);
+  font: inherit;
+  font-weight: var(--peso-fuerte);
+  font-size: var(--tamano-m);
+  text-align: center;
+  cursor: pointer;
+  transition: transform var(--mov-rapido) ease-out;
+}
+
+/* Al apretarlo se hunde apenas: se nota sin cambiar tamaños. */
+.boton:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.boton:disabled {
+  cursor: progress;
+}
+
+.lleno {
+  background: var(--color-acento);
+  border-color: var(--color-acento);
+  color: var(--color-sobre-acento);
+}
+
+.borde {
+  background: var(--color-superficie);
+  color: var(--color-texto);
+}
+
+.girando {
+  width: 1em;
+  height: 1em;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: girar var(--mov-latido) linear infinite;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(1turn);
+  }
+}

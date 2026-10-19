@@ -1,0 +1,23 @@
+.detalle {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-xs);
+  min-width: 0;
+}
+
+.candado {
+  display: grid;
+  flex: none;
+  color: var(--color-cerrado);
+}
+
+.linea {
+  display: -webkit-box;
+  overflow: hidden;
+  min-width: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
