@@ -3,8 +3,9 @@
 // quedó guardado y «Reabrir mes». Debajo, los gastos del mes. Cerrar y Reabrir se confirman en una hoja.
 // Si mientras tanto alguien cargó o cambió algo (CIERRE_DESACTUALIZADO), se avisa y se muestra el reparto
 // con los datos de ahora. Cerrar y reabrir piden el permiso de sueldos: sin él no aparecen y un aviso dice a
-// quién pedirlo. Al cerrar se mandan los sueldos reales (los pide solo quien tiene el permiso) para que la base
-// los compare; el reparto que se guarda no lleva sueldos.
+// quién pedirlo; mientras no se sabe el acceso no aparece ni lo uno ni lo otro. Al cerrar se mandan los sueldos
+// con que se calculó (el peso: quien puede cerrar reparte con los sueldos reales) para que la base los compare
+// con los de ahora; el reparto que se guarda no lleva sueldos.
 import { useState } from 'react';
 
 import { datos } from '@/datos';
@@ -42,6 +43,8 @@ type Props = {
   /** De `capacidades(acceso)`. */
   verSueldos: boolean;
   cerrarMes: boolean;
+  /** Falso mientras no se sabe el acceso (cargando, o falló miAcceso): no se ofrece cerrar ni se avisa nada. */
+  accesoConocido: boolean;
   categorias: Categoria[];
   gastos: GastoConItems[];
   cierre: Cierre | null;
@@ -51,7 +54,7 @@ type Props = {
 
 type Aviso = { bueno: boolean; texto: string } | null;
 
-export function Resumen({ mes, integrantes, verSueldos, cerrarMes, categorias, gastos, cierre, recargar }: Props) {
+export function Resumen({ mes, integrantes, verSueldos, cerrarMes, accesoConocido, categorias, gastos, cierre, recargar }: Props) {
   const [confirmando, setConfirmando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [errorHoja, setErrorHoja] = useState<string | null>(null);
@@ -87,15 +90,15 @@ export function Resumen({ mes, integrantes, verSueldos, cerrarMes, categorias, g
           return;
         }
         const { total, filas, transferencias } = reparto;
-        // Solo se llega acá con el permiso (el botón no aparece sin él). Si lo quitaron recién, la base no
-        // da los sueldos y rechaza el cierre: se ve «Esta cuenta no tiene permiso para hacer eso.».
-        const sueldos = await datos.sueldos();
-        const delCalculo: IntegranteDelCalculo[] = integrantes.map(({ id, tipo, activo, baja_desde }) => ({
+        // Solo se llega acá con el permiso (el botón no aparece sin él), así que el peso es el sueldo real con
+        // que se calculó. Si cambió desde entonces, la base responde CIERRE_DESACTUALIZADO; si quitaron el
+        // permiso, «Esta cuenta no tiene permiso para hacer eso.».
+        const delCalculo: IntegranteDelCalculo[] = integrantes.map(({ id, tipo, activo, baja_desde, peso }) => ({
           id,
           tipo,
           activo,
           baja_desde,
-          sueldo: sueldos[id] ?? null,
+          sueldo: peso,
         }));
         await datos.cerrarMes(mes, { total, filas, transferencias }, gastos, delCalculo);
         setAviso({ bueno: true, texto: `${enMayuscula(nombre)} quedó cerrado.` });
@@ -131,7 +134,7 @@ export function Resumen({ mes, integrantes, verSueldos, cerrarMes, categorias, g
       {cierre ? (
         <>
           <Registro cierre={cierre} integrantes={integrantes} />
-          {cerrarMes ? (
+          {!accesoConocido ? null : cerrarMes ? (
             <Boton texto="Reabrir mes" icono="candado" variante="borde" onClick={abrir} />
           ) : (
             <p className={estilos.centrado}>{sinPermiso('reabrir', admin)}</p>
@@ -146,7 +149,7 @@ export function Resumen({ mes, integrantes, verSueldos, cerrarMes, categorias, g
           </Tarjeta>
           <Reparto reparto={reparto} integrantes={integrantes} verSueldos={verSueldos} detallado />
           {reparto.ok && reparto.filas.length ? <Transferencias transferencias={reparto.transferencias} filas={reparto.filas} /> : null}
-          {sePuedeCerrar ? (
+          {sePuedeCerrar && accesoConocido ? (
             <div className={estilos.cerrar}>
               {cerrarMes ? (
                 <>

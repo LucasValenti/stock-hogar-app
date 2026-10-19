@@ -84,7 +84,8 @@ export function Analisis() {
   useEffect(() => setVista(vistaDe(vistaPedida)), [vistaPedida]);
   useEffect(() => setMes(mesDeRuta(mesPedido)), [mesPedido]);
 
-  const puede = capacidades(useSesion().acceso);
+  const { acceso } = useSesion();
+  const puede = capacidades(acceso);
   // Si cambia el permiso, se vuelve a pedir con los pesos que corresponden.
   const { carga, reintentar, recargar } = useEnVivo(() => pedirPeriodo(mes, puede.verSueldos), `${mes}:${puede.verSueldos}`);
 
@@ -132,6 +133,7 @@ export function Analisis() {
           integrantes={carga.valor.integrantes}
           verSueldos={puede.verSueldos}
           cerrarMes={puede.cerrarMes}
+          accesoConocido={acceso !== null}
           categorias={carga.valor.categorias}
           gastos={delMes}
           cierre={carga.valor.cierre}

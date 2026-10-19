@@ -172,7 +172,7 @@ test('Cerrar mes pide confirmación propia y guarda el reparto con lo que se us�
   expect(resultado.filas).toHaveLength(2);
   expect(resultado.transferencias).toEqual([{ de: 'b', a: 'a', monto: 400_00 }]);
   expect(gastos.map((g: GastoConItems) => g.id).sort()).toEqual(['g1', 'g2']);
-  // Los sueldos reales, y nada más que lo que la base compara.
+  // Los sueldos con que se calculó (los pesos cargados, que con el permiso son los sueldos reales).
   expect(integrantes).toEqual([
     { id: 'a', tipo: 'integrante', activo: true, baja_desde: null, sueldo: 600 },
     { id: 'b', tipo: 'integrante', activo: true, baja_desde: null, sueldo: 400 },
@@ -323,11 +323,38 @@ test('sin el permiso de sueldos un mes cerrado no ofrece «Reabrir mes» y dice 
   expect(mockDatos.sueldos).not.toHaveBeenCalled();
 });
 
-test('mientras no se sabe el acceso no se ofrece cerrar ni se piden sueldos', async () => {
+test('mientras no se sabe el acceso no se ofrece cerrar, no se avisa de permisos ni se piden sueldos', async () => {
   sesion.acceso = null;
   await abrir();
   expect(screen.queryByRole('button', { name: 'Cerrar mes' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/hace falta el permiso de sueldos/)).not.toBeInTheDocument();
   expect(mockDatos.sueldos).not.toHaveBeenCalled();
+});
+
+test('mientras no se sabe el acceso, un mes cerrado no ofrece reabrir ni avisa de permisos', async () => {
+  sesion.acceso = null;
+  cierres[MES] = { mes: MES, total: 0, detalle: { filas: [], transferencias: [] }, cerrado_por: 'a', fecha: '2026-10-01T23:15:00.123456+00:00' };
+  await abrir();
+  expect(screen.queryByRole('button', { name: 'Reabrir mes' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/hace falta el permiso de sueldos/)).not.toBeInTheDocument();
+});
+
+test('si un sueldo cambió desde que se cargó, al cerrar se manda el de antes y la base avisa que está desactualizado', async () => {
+  await abrir();
+  await tocar('button', 'Cerrar mes');
+  // Alguien con el permiso le cambió el sueldo a Bruno; el aviso en vivo todavía no llegó.
+  mockDatos.sueldos.mockResolvedValue({ a: 600, b: 450 });
+  mockDatos.cerrarMes.mockRejectedValue(Object.assign(new Error('CIERRE_DESACTUALIZADO'), { code: 'P0001' }));
+  const pedidosDeSueldos = mockDatos.sueldos.mock.calls.length;
+  await userEvent.click(hoja().getByRole('button', { name: 'Cerrar mes' }));
+  const [, , , integrantes] = mockDatos.cerrarMes.mock.calls[0];
+  expect(integrantes.find((i: { id: string }) => i.id === 'b').sueldo).toBe(400);
+  // Al cerrar no se piden los sueldos de ahora: el único pedido nuevo es la recarga que sigue al aviso.
+  const cierre = mockDatos.cerrarMes.mock.invocationCallOrder[0];
+  expect(mockDatos.sueldos.mock.invocationCallOrder.slice(pedidosDeSueldos).every((orden) => orden > cierre)).toBe(true);
+  expect(
+    await screen.findByText('Mientras mirabas, alguien cargó o cambió algo del mes. Revisá el reparto nuevo y cerrá otra vez.'),
+  ).toBeInTheDocument();
 });
 
 test('sin el permiso, a quien falta el sueldo lo ven todos, sin mandar a Ajustes', async () => {
