@@ -7,7 +7,7 @@
 // Web solo-demo (kusak.dev): npm run publicar:demo → `--demo` fuerza EXPO_PUBLIC_DATOS=memoria
 // y exporta a dist-demo/. `--destino <carpeta>` cambia el destino (por defecto dist/).
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -95,6 +95,23 @@ function leerEnv() {
   return valores;
 }
 
+// Cloudflare Pages no sube carpetas llamadas node_modules, y Expo deja ahí las fuentes y los
+// íconos de expo-router (assets/node_modules/…): en línea devolvían el index.html. Se mueven a
+// assets/nm y se corrigen las rutas en los archivos de texto.
+export function sacarNodeModules(dist) {
+  const origen = join(dist, 'assets', 'node_modules');
+  if (!existsSync(origen)) return;
+  renameSync(origen, join(dist, 'assets', 'nm'));
+  for (const entrada of readdirSync(dist, { recursive: true, withFileTypes: true })) {
+    if (!entrada.isFile() || !/\.(js|html|css|json)$/.test(entrada.name)) continue;
+    const ruta = join(entrada.parentPath, entrada.name);
+    const texto = readFileSync(ruta, 'utf8');
+    if (texto.includes('/assets/node_modules/')) {
+      writeFileSync(ruta, texto.replaceAll('/assets/node_modules/', '/assets/nm/'));
+    }
+  }
+}
+
 function principal() {
   const { destino, demo } = opcionesDe(process.argv.slice(2));
   if (demo) process.env.EXPO_PUBLIC_DATOS = 'memoria';
@@ -118,6 +135,7 @@ function principal() {
   });
 
   const dist = join(raiz, destino);
+  sacarNodeModules(dist);
   writeFileSync(join(dist, '_headers'), armarHeaders(enMemoria ? null : urlSupabase));
   writeFileSync(join(dist, '_redirects'), '/* /index.html 200\n');
   console.log(`Listo: ${destino}/ con _headers y _redirects.`);

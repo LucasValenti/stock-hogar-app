@@ -37,3 +37,26 @@ test('siempre están wasm-unsafe-eval, worker-src blob:, unsafe-inline en estilo
   assert.match(texto, /style-src 'self' 'unsafe-inline'/);
   assert.match(texto, /frame-ancestors 'none'/);
 });
+
+test('sacarNodeModules mueve assets/node_modules a assets/nm y corrige las rutas', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { sacarNodeModules } = await import('./publicar-web.mjs');
+  const dist = mkdtempSync(join(tmpdir(), 'dist-'));
+  mkdirSync(join(dist, 'assets/node_modules/@expo-google-fonts/rubik'), { recursive: true });
+  writeFileSync(join(dist, 'assets/node_modules/@expo-google-fonts/rubik/R.ttf'), 'fuente');
+  mkdirSync(join(dist, '_expo/static/js/web'), { recursive: true });
+  writeFileSync(join(dist, '_expo/static/js/web/entry.js'), 'a("/assets/node_modules/@expo-google-fonts/rubik/R.ttf")');
+  writeFileSync(join(dist, 'logo.png'), 'assets/node_modules/');
+
+  sacarNodeModules(dist);
+
+  assert.equal(existsSync(join(dist, 'assets/node_modules')), false);
+  assert.equal(readFileSync(join(dist, 'assets/nm/@expo-google-fonts/rubik/R.ttf'), 'utf8'), 'fuente');
+  assert.equal(
+    readFileSync(join(dist, '_expo/static/js/web/entry.js'), 'utf8'),
+    'a("/assets/nm/@expo-google-fonts/rubik/R.ttf")',
+  );
+  assert.equal(readFileSync(join(dist, 'logo.png'), 'utf8'), 'assets/node_modules/');
+});
