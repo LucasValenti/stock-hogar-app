@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "stock-hogar-app",
+    "name": "Stock del hogar",
     "slug": "stock-hogar-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -39,6 +39,17 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "owner": "kusakdev",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "811e34c5-ef0c-4d01-82af-cbf80deb1559"
+      }
     }
   }
 }
