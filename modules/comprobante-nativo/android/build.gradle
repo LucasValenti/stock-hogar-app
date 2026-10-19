@@ -9,6 +9,8 @@ android {
   defaultConfig {
     versionCode 1
     versionName "1.0.0"
+    // Las reglas de R8 viajan con el módulo a la app que lo usa.
+    consumerProguardFiles 'proguard-rules.pro'
   }
 }
 
