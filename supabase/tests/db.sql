@@ -2,8 +2,8 @@
 -- Si algo falla, se corta con un error que empieza con FALLA. Si todo pasa, la última fila dice OK.
 begin;
 
-insert into integrantes (id, nombre, email, sueldo)
-values ('00000000-0000-0000-0000-0000000000a1', 'Prueba A', 'prueba-a@example.com', 150000000);
+insert into integrantes (id, nombre, email)
+values ('00000000-0000-0000-0000-0000000000a1', 'Prueba A', 'prueba-a@example.com');
 -- Elenco: A admin (primer integrante), B común, C con altas y bajas, D con sueldos, E pagador externo.
 insert into integrantes (id, nombre, email, tipo) values
   ('00000000-0000-0000-0000-0000000000a2', 'Prueba B', 'prueba-b@example.com', 'integrante'),
@@ -13,6 +13,8 @@ insert into integrantes (id, nombre, email, tipo) values
 insert into permisos (integrante_id, permiso) values
   ('00000000-0000-0000-0000-0000000000a3', 'altas_bajas'),
   ('00000000-0000-0000-0000-0000000000a4', 'sueldos');
+-- Los sueldos viven aparte (solo los lee quien tiene el permiso): sin fila, sin sueldo.
+insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a1', 150000000);
 insert into categorias (id, nombre, tipo)
 values ('00000000-0000-0000-0000-0000000000c1', 'Categoría de prueba', 'producto');
 insert into productos (id, nombre, categoria_id)
@@ -78,7 +80,8 @@ begin
 
   -- Mes cerrado.
   perform cerrar_mes('2000-02', 0, '{}', '[]', (select jsonb_agg(jsonb_build_object(
-    'id', id, 'sueldo', sueldo, 'tipo', tipo, 'activo', activo, 'baja_desde', baja_desde)) from integrantes));
+    'id', i.id, 'sueldo', s.sueldo, 'tipo', i.tipo, 'activo', i.activo, 'baja_desde', i.baja_desde))
+    from integrantes i left join sueldos s on s.integrante_id = i.id));
   begin
     perform guardar_gasto(
       jsonb_build_object('fecha', '2000-02-05', 'pagado_por', '00000000-0000-0000-0000-0000000000a1', 'modo', 'total',
@@ -158,11 +161,9 @@ begin
   if not exists (select 1 from integrantes where email = 'prueba-a@example.com') then
     raise exception 'FALLA: un pagador externo no entra a la casa';
   end if;
-  -- Ve a los integrantes pero no los cambia.
-  update integrantes set sueldo = 1 where id = '00000000-0000-0000-0000-0000000000a1';
-  if (select sueldo from integrantes where id = '00000000-0000-0000-0000-0000000000a1') = 1 then
-    raise exception 'FALLA: un pagador externo cambió un sueldo';
-  end if;
+  -- Ve a los integrantes pero no los cambia, y los sueldos ni los ve (se comprueba abajo que siguen igual).
+  update sueldos set sueldo = 1 where integrante_id = '00000000-0000-0000-0000-0000000000a1';
+  if exists (select 1 from sueldos) then raise exception 'FALLA: un pagador externo ve sueldos'; end if;
   begin
     insert into integrantes (nombre, email) values ('Alta del externo', 'alta-externo@example.com');
     raise exception 'FALLA: un pagador externo dio de alta a alguien';
@@ -170,6 +171,12 @@ begin
   end;
 end $$;
 reset role;
+do $$
+begin
+  if (select sueldo from sueldos where integrante_id = '00000000-0000-0000-0000-0000000000a1') is distinct from 150000000 then
+    raise exception 'FALLA: un pagador externo cambió un sueldo';
+  end if;
+end $$;
 
 -- 6. Productos ocultos: por defecto se ven, y uno con compras no se puede borrar (se oculta).
 do $$
@@ -202,7 +209,8 @@ declare
   v_otro uuid;
   v_stock numeric;
   v_integrantes jsonb := (select jsonb_agg(jsonb_build_object(
-    'id', id, 'sueldo', sueldo, 'tipo', tipo, 'activo', activo, 'baja_desde', baja_desde)) from integrantes);
+    'id', i.id, 'sueldo', s.sueldo, 'tipo', i.tipo, 'activo', i.activo, 'baja_desde', i.baja_desde))
+    from integrantes i left join sueldos s on s.integrante_id = i.id);
   v_alta jsonb := jsonb_build_object('nuevo_id', '00000000-0000-0000-0000-0000000000d1', 'fecha', '2000-03-10',
     'pagado_por', '00000000-0000-0000-0000-0000000000a1', 'modo', 'productos', 'total', 1,
     'creado_por', '00000000-0000-0000-0000-0000000000ff');
@@ -242,6 +250,23 @@ begin
   exception when others then
     if sqlerrm not like '%CIERRE_DESACTUALIZADO%' then raise; end if;
   end;
+  -- Ni si el sueldo cambió en la tabla después de que la app lo leyó (uno cambiado, uno cargado de nuevo).
+  update sueldos set sueldo = sueldo + 1 where integrante_id = '00000000-0000-0000-0000-0000000000a1';
+  begin
+    perform cerrar_mes('2000-03', 1400, '{}', jsonb_build_array(jsonb_build_object('id', v_gasto, 'total', 1400, 'pagado_por', '00000000-0000-0000-0000-0000000000a1')), v_integrantes);
+    raise exception 'FALLA: cerró con un sueldo que cambió en la tabla';
+  exception when others then
+    if sqlerrm not like '%CIERRE_DESACTUALIZADO%' then raise; end if;
+  end;
+  update sueldos set sueldo = 150000000 where integrante_id = '00000000-0000-0000-0000-0000000000a1';
+  insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a4', 1);
+  begin
+    perform cerrar_mes('2000-03', 1400, '{}', jsonb_build_array(jsonb_build_object('id', v_gasto, 'total', 1400, 'pagado_por', '00000000-0000-0000-0000-0000000000a1')), v_integrantes);
+    raise exception 'FALLA: cerró con un sueldo cargado después de leer';
+  exception when others then
+    if sqlerrm not like '%CIERRE_DESACTUALIZADO%' then raise; end if;
+  end;
+  delete from sueldos where integrante_id = '00000000-0000-0000-0000-0000000000a4';
 
   -- Con los mismos datos, cierra y queda a nombre de quien cerró.
   perform cerrar_mes('2000-03', 1400, '{"filas":[]}', jsonb_build_array(jsonb_build_object('id', v_gasto, 'total', 1400, 'pagado_por', '00000000-0000-0000-0000-0000000000a1')), v_integrantes);
@@ -928,6 +953,265 @@ begin
   update integrantes set admin = false where id = '00000000-0000-0000-0000-0000000000a2';
   update integrantes set admin = true where id = '00000000-0000-0000-0000-0000000000a1';
   delete from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a2';
+end $$;
+
+-- 19. Sueldos aparte (migración 008): sin la columna vieja, RLS por permiso, partes del mes y cierre con permiso.
+-- Siembra: A=100, B=200, C=300, D sin sueldo, E (pagador externo) con un sueldo suelto y F, dado de baja desde 2026-10, con 400.
+select set_config('request.jwt.claims', '', true);
+do $$
+begin
+  if exists (select 1 from pg_attribute where attrelid = 'public.integrantes'::regclass and attname = 'sueldo' and not attisdropped) then
+    raise exception 'FALLA: integrantes todavía tiene la columna sueldo';
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'sueldos') then
+    raise exception 'FALLA: sueldos no está en tiempo real';
+  end if;
+
+  insert into integrantes (id, nombre, email, activo, baja_desde)
+  values ('00000000-0000-0000-0000-0000000000a7', 'Baja de octubre', 'baja-octubre@example.com', false, '2026-10');
+  delete from sueldos;
+  insert into sueldos (integrante_id, sueldo) values
+    ('00000000-0000-0000-0000-0000000000a1', 100), ('00000000-0000-0000-0000-0000000000a2', 200),
+    ('00000000-0000-0000-0000-0000000000a3', 300), ('00000000-0000-0000-0000-0000000000a5', 999),
+    ('00000000-0000-0000-0000-0000000000a7', 400);
+  -- Lo que mandaría la app al cerrar, guardado para quienes no pueden leer los sueldos.
+  perform set_config('prueba.integrantes', (select jsonb_agg(jsonb_build_object(
+    'id', i.id, 'sueldo', s.sueldo, 'tipo', i.tipo, 'activo', i.activo, 'baja_desde', i.baja_desde))
+    from integrantes i left join sueldos s on s.integrante_id = i.id)::text, true);
+end $$;
+
+-- B (común), C (altas y bajas) y E (pagador externo): ni leen ni escriben sueldos, ni cierran ni reabren;
+-- las partes del mes sí las piden, sin ver un solo sueldo.
+set local role authenticated;
+do $$
+declare
+  v_email text;
+  v_filas int;
+  v_integrantes jsonb := current_setting('prueba.integrantes')::jsonb;
+begin
+  foreach v_email in array array['prueba-b@example.com', 'prueba-c@example.com', 'prueba-e@example.com'] loop
+    perform set_config('request.jwt.claims', jsonb_build_object('email', v_email, 'role', 'authenticated')::text, true);
+    if exists (select 1 from sueldos) then raise exception 'FALLA: % lee sueldos', v_email; end if;
+    begin
+      insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a4', 400);
+      raise exception 'FALLA: % cargó un sueldo', v_email;
+    exception when insufficient_privilege then
+      if sqlerrm not like '%row-level security%' then raise; end if;
+    end;
+    update sueldos set sueldo = 1;
+    get diagnostics v_filas = row_count;
+    if v_filas <> 0 then raise exception 'FALLA: % cambió sueldos', v_email; end if;
+    delete from sueldos;
+    get diagnostics v_filas = row_count;
+    if v_filas <> 0 then raise exception 'FALLA: % borró sueldos', v_email; end if;
+
+    begin
+      perform cerrar_mes('2000-05', 0, '{}', '[]', v_integrantes);
+      raise exception 'FALLA: % cerró un mes', v_email;
+    exception when insufficient_privilege then
+      if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+    end;
+    begin
+      perform reabrir_mes('2000-02');
+      raise exception 'FALLA: % reabrió un mes', v_email;
+    exception when insufficient_privilege then
+      if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+    end;
+
+    if (select peso from partes_del_mes('2026-10') where integrante_id = '00000000-0000-0000-0000-0000000000a1')
+       is distinct from 166666666667 then
+      raise exception 'FALLA: % no recibió las partes del mes', v_email;
+    end if;
+  end loop;
+end $$;
+reset role;
+do $$
+begin
+  if not exists (select 1 from cierres where mes = '2000-02') then raise exception 'FALLA: se reabrió un mes sin permiso'; end if;
+  if exists (select 1 from cierres where mes = '2000-05') then raise exception 'FALLA: se cerró un mes sin permiso'; end if;
+  if (select count(*) from sueldos) <> 5 or (select sum(sueldo) from sueldos) <> 1999 then
+    raise exception 'FALLA: sin permiso cambió la tabla de sueldos';
+  end if;
+end $$;
+
+-- Una cuenta ajena y anon: nada de sueldos, ni partes del mes, ni cierres.
+select set_config('request.jwt.claims', '{"email":"intruso@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+declare
+  v_integrantes jsonb := current_setting('prueba.integrantes')::jsonb;
+begin
+  if exists (select 1 from sueldos) then raise exception 'FALLA: un intruso lee sueldos'; end if;
+  begin
+    insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a4', 400);
+    raise exception 'FALLA: un intruso cargó un sueldo';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform partes_del_mes('2026-10');
+    raise exception 'FALLA: un intruso pidió las partes del mes';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+  end;
+  begin
+    perform cerrar_mes('2000-05', 0, '{}', '[]', v_integrantes);
+    raise exception 'FALLA: un intruso cerró un mes';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+  end;
+  begin
+    perform reabrir_mes('2000-02');
+    raise exception 'FALLA: un intruso reabrió un mes';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+set local role anon;
+do $$
+begin
+  if exists (select 1 from sueldos) then raise exception 'FALLA: anon lee sueldos'; end if;
+  begin
+    insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a4', 400);
+    raise exception 'FALLA: anon cargó un sueldo';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform partes_del_mes('2026-10');
+    raise exception 'FALLA: anon pidió las partes del mes';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform cerrar_mes('2000-05', 0, '{}', '[]', '[]');
+    raise exception 'FALLA: anon cerró un mes';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform reabrir_mes('2000-02');
+    raise exception 'FALLA: anon reabrió un mes';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- A (admin) y D («sueldos»): leen y escriben sueldos, cierran y reabren.
+set local role authenticated;
+do $$
+declare
+  v_email text;
+  v_yo uuid;
+  v_integrantes jsonb := current_setting('prueba.integrantes')::jsonb;
+begin
+  foreach v_email in array array['prueba-a@example.com', 'prueba-d@example.com'] loop
+    perform set_config('request.jwt.claims', jsonb_build_object('email', v_email, 'role', 'authenticated')::text, true);
+    v_yo := yo_integrante();
+    if (select count(*) from sueldos) <> 5 then raise exception 'FALLA: % no lee los sueldos', v_email; end if;
+    begin
+      insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a4', -1);
+      raise exception 'FALLA: % cargó un sueldo negativo', v_email;
+    exception when check_violation then null;
+    end;
+    insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a4', 400);
+    update sueldos set sueldo = 450 where integrante_id = '00000000-0000-0000-0000-0000000000a4';
+    if (select sueldo from sueldos where integrante_id = '00000000-0000-0000-0000-0000000000a4') is distinct from 450 then
+      raise exception 'FALLA: % no cambió un sueldo', v_email;
+    end if;
+    delete from sueldos where integrante_id = '00000000-0000-0000-0000-0000000000a4';
+    if (select count(*) from sueldos) <> 5 then raise exception 'FALLA: % no borró un sueldo', v_email; end if;
+
+    perform cerrar_mes('2000-05', 0, '{"filas":[]}', '[]', v_integrantes);
+    if (select cerrado_por from cierres where mes = '2000-05') is distinct from v_yo then
+      raise exception 'FALLA: el cierre de % no quedó a su nombre', v_email;
+    end if;
+    perform reabrir_mes('2000-05');
+    if exists (select 1 from cierres where mes = '2000-05') then raise exception 'FALLA: % no reabrió el mes', v_email; end if;
+  end loop;
+end $$;
+reset role;
+
+-- partes_del_mes: peso = sueldo × 10^12 / suma de sueldos de los participantes (sin sueldo, 0). Lo pide D, que escribe los sueldos.
+select set_config('request.jwt.claims', '{"email":"prueba-d@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+declare
+  v_a constant text := '00000000-0000-0000-0000-0000000000a1';
+  v_b constant text := '00000000-0000-0000-0000-0000000000a2';
+  v_c constant text := '00000000-0000-0000-0000-0000000000a3';
+  v_d constant text := '00000000-0000-0000-0000-0000000000a4';
+  v_f constant text := '00000000-0000-0000-0000-0000000000a7';
+  v_mes text;
+  v_partes jsonb;
+begin
+  -- Sueldos 100, 200 y 300 y D sin sueldo: D pesa 0 y no estorba. E (externo, con un sueldo suelto) y F (baja desde este mes) no figuran.
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  if v_partes is distinct from jsonb_build_object(v_a, 166666666667, v_b, 333333333333, v_c, 500000000000, v_d, 0) then
+    raise exception 'FALLA: partes de 2026-10 dieron %', v_partes;
+  end if;
+  -- F sí participa en el mes anterior a su baja.
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-09'));
+  if v_partes is distinct from jsonb_build_object(v_a, 100000000000, v_b, 200000000000, v_c, 300000000000, v_d, 0, v_f, 400000000000) then
+    raise exception 'FALLA: partes de 2026-09 dieron %', v_partes;
+  end if;
+  -- Devuelve solo integrante_id y peso: nada con que leer un sueldo exacto.
+  if pg_get_function_result('partes_del_mes(text)'::regprocedure) is distinct from 'TABLE(integrante_id uuid, peso bigint)'
+     or (select array_agg(k order by k) from (select distinct jsonb_object_keys(to_jsonb(p)) as k from partes_del_mes('2026-10') p) x)
+        is distinct from array['integrante_id', 'peso'] then
+    raise exception 'FALLA: partes_del_mes devuelve algo más que integrante_id y peso';
+  end if;
+
+  -- Sin el sueldo de B: A y C se reparten entre sí; B pesa 0.
+  delete from sueldos where integrante_id = v_b::uuid;
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  if v_partes is distinct from jsonb_build_object(v_a, 250000000000, v_b, 0, v_c, 750000000000, v_d, 0) then
+    raise exception 'FALLA: partes sin el sueldo de B dieron %', v_partes;
+  end if;
+  -- Con un solo sueldo cargado, esa persona se lleva todo.
+  delete from sueldos where integrante_id = v_c::uuid;
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  if v_partes is distinct from jsonb_build_object(v_a, 1000000000000, v_b, 0, v_c, 0, v_d, 0) then
+    raise exception 'FALLA: partes con un solo sueldo dieron %', v_partes;
+  end if;
+  -- Suma 0 (sueldos en 0): todos pesan 0 y no hay error de división.
+  update sueldos set sueldo = 0;
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  if v_partes is distinct from jsonb_build_object(v_a, 0, v_b, 0, v_c, 0, v_d, 0) then
+    raise exception 'FALLA: partes con sueldos en 0 dieron %', v_partes;
+  end if;
+  -- Ningún sueldo cargado: igual.
+  delete from sueldos;
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  if v_partes is distinct from jsonb_build_object(v_a, 0, v_b, 0, v_c, 0, v_d, 0) then
+    raise exception 'FALLA: partes sin ningún sueldo dieron %', v_partes;
+  end if;
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-09'));
+  if v_partes is distinct from jsonb_build_object(v_a, 0, v_b, 0, v_c, 0, v_d, 0, v_f, 0) then
+    raise exception 'FALLA: partes de 2026-09 sin ningún sueldo dieron %', v_partes;
+  end if;
+
+  -- El mes tiene que ser AAAA-MM.
+  foreach v_mes in array array['2026-1', '2026-10-01', 'octubre', '', null] loop
+    begin
+      perform integrante_id from partes_del_mes(v_mes);
+      raise exception 'FALLA: partes_del_mes aceptó el mes %', coalesce(v_mes, 'null');
+    exception when invalid_parameter_value then
+      if sqlerrm not like '%MES_INVALIDO%' then raise; end if;
+    end;
+  end loop;
+end $$;
+reset role;
+
+-- Quien tiene «altas y bajas» borra a alguien con sueldo: el sueldo se va con la persona.
+select set_config('request.jwt.claims', '', true);
+insert into sueldos (integrante_id, sueldo) values ('00000000-0000-0000-0000-0000000000a7', 400);
+select set_config('request.jwt.claims', '{"email":"prueba-c@example.com","role":"authenticated"}', true);
+set local role authenticated;
+delete from integrantes where id = '00000000-0000-0000-0000-0000000000a7';
+reset role;
+do $$
+begin
+  if exists (select 1 from integrantes where id = '00000000-0000-0000-0000-0000000000a7') then raise exception 'FALLA: C no borró a F'; end if;
+  if exists (select 1 from sueldos) then raise exception 'FALLA: borrar a alguien no borró su sueldo'; end if;
 end $$;
 
 rollback;

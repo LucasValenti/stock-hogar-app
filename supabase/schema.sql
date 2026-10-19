@@ -3,7 +3,6 @@
 create table integrantes (
   id uuid primary key default gen_random_uuid(),
   nombre text not null check (length(trim(nombre)) > 0),
-  sueldo bigint check (sueldo is null or sueldo >= 0),
   email text not null unique check (email = lower(email)),
   activo boolean not null default true,
   baja_desde text check (baja_desde ~ '^\d{4}-\d{2}$'),
@@ -20,6 +19,12 @@ create table permisos (
   integrante_id uuid not null references integrantes on delete cascade,
   permiso text not null check (permiso in ('sueldos', 'altas_bajas')),
   primary key (integrante_id, permiso)
+);
+
+-- Sueldos aparte: solo los lee y los escribe quien tiene el permiso «sueldos». Sin fila, sin sueldo.
+create table sueldos (
+  integrante_id uuid primary key references integrantes on delete cascade,
+  sueldo bigint not null check (sueldo >= 0)
 );
 
 create table categorias (
@@ -132,6 +137,7 @@ $$;
 
 alter table integrantes enable row level security;
 alter table permisos enable row level security;
+alter table sueldos enable row level security;
 alter table categorias enable row level security;
 alter table productos enable row level security;
 alter table gastos enable row level security;
@@ -145,6 +151,7 @@ create policy baja on integrantes for delete to authenticated using (puede_edita
 create policy ver on permisos for select to authenticated using (es_de_la_casa());
 create policy dar on permisos for insert to authenticated with check (es_admin());
 create policy quitar on permisos for delete to authenticated using (es_admin());
+create policy sueldos on sueldos for all to authenticated using (tiene_permiso('sueldos')) with check (tiene_permiso('sueldos'));
 create policy casa on categorias for all to authenticated using (es_de_la_casa()) with check (es_de_la_casa());
 create policy casa on productos for all to authenticated using (es_de_la_casa()) with check (es_de_la_casa());
 create policy casa on gastos for all to authenticated using (es_de_la_casa()) with check (es_de_la_casa());
@@ -470,15 +477,42 @@ end $$;
 revoke execute on function guardar_gasto(jsonb, jsonb) from public, anon;
 grant execute on function guardar_gasto(jsonb, jsonb) to authenticated;
 
+-- Cuánto le toca a cada participante del mes, sin mostrar sueldos: su sueldo en partes por 10^12 de la suma
+-- de los sueldos de los participantes (sin sueldo, 0; si nadie tiene, todos 0). Participan los integrantes
+-- (no los pagadores externos) activos o dados de baja desde un mes posterior. La pide cualquiera de la casa.
+create function partes_del_mes(p_mes text) returns table (integrante_id uuid, peso bigint)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if not public.es_de_la_casa() then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
+  if p_mes is null or p_mes !~ '^\d{4}-\d{2}$' then raise exception 'MES_INVALIDO' using errcode = '22023'; end if;
+  return query
+  with participantes as (
+    select i.id, coalesce(s.sueldo, 0) as sueldo
+    from public.integrantes i
+    left join public.sueldos s on s.integrante_id = i.id
+    where i.tipo = 'integrante' and (i.activo or i.baja_desde > p_mes)
+  ), total as (
+    select sum(p.sueldo) as suma from participantes p
+  )
+  select p.id,
+         case when t.suma > 0 then round(p.sueldo::numeric * 1000000000000 / t.suma)::bigint else 0::bigint end
+  from participantes p cross join total t;
+end $$;
+
+revoke execute on function partes_del_mes(text) from public, anon;
+grant execute on function partes_del_mes(text) to authenticated;
+
 -- Cierra el mes solo si los gastos y los integrantes son los mismos con los que la app calculó el reparto.
--- p_gastos: [{id, total, pagado_por}] · p_integrantes: [{id, sueldo, tipo, activo, baja_desde}].
+-- p_gastos: [{id, total, pagado_por}] · p_integrantes: [{id, sueldo, tipo, activo, baja_desde}] (los sueldos, de la tabla sueldos).
+-- Solo quien tiene el permiso «sueldos»: es quien conoce los sueldos con que se calculó.
 create function cerrar_mes(p_mes text, p_total bigint, p_detalle jsonb, p_gastos jsonb, p_integrantes jsonb) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_yo uuid := public.yo_integrante();
-  v_desde date := (p_mes || '-01')::date;
+  v_desde date;
 begin
-  if v_yo is null then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
+  if not public.tiene_permiso('sueldos') then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
+  v_desde := (p_mes || '-01')::date;
   -- Nadie guarda un gasto de este mes mientras se compara y se cierra.
   lock table public.gastos in share row exclusive mode;
   if exists (select 1 from public.cierres where mes = p_mes) then raise exception 'MES_CERRADO'; end if;
@@ -492,7 +526,8 @@ begin
     except
     (select id, total, pagado_por from public.gastos where fecha >= v_desde and fecha < v_desde + interval '1 month')
   ) or exists (
-    (select id, sueldo, tipo, activo, baja_desde from public.integrantes)
+    (select i.id, s.sueldo, i.tipo, i.activo, i.baja_desde
+     from public.integrantes i left join public.sueldos s on s.integrante_id = i.id)
     except
     (select (e ->> 'id')::uuid, (e ->> 'sueldo')::bigint, e ->> 'tipo', (e ->> 'activo')::boolean, e ->> 'baja_desde'
      from jsonb_array_elements(p_integrantes) e)
@@ -500,7 +535,8 @@ begin
     (select (e ->> 'id')::uuid, (e ->> 'sueldo')::bigint, e ->> 'tipo', (e ->> 'activo')::boolean, e ->> 'baja_desde'
      from jsonb_array_elements(p_integrantes) e)
     except
-    (select id, sueldo, tipo, activo, baja_desde from public.integrantes)
+    (select i.id, s.sueldo, i.tipo, i.activo, i.baja_desde
+     from public.integrantes i left join public.sueldos s on s.integrante_id = i.id)
   ) then
     raise exception 'CIERRE_DESACTUALIZADO';
   end if;
@@ -511,7 +547,7 @@ end $$;
 create function reabrir_mes(p_mes text) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if public.yo_integrante() is null then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
+  if not public.tiene_permiso('sueldos') then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
   delete from public.cierres where mes = p_mes;
 end $$;
 
@@ -527,7 +563,7 @@ where gi.precio_unitario is not null
 order by gi.producto_id, g.fecha desc, g.creado desc;
 
 -- Tiempo real.
-alter publication supabase_realtime add table integrantes, categorias, productos, gastos, gasto_items, cierres, anotaciones, permisos;
+alter publication supabase_realtime add table integrantes, categorias, productos, gastos, gasto_items, cierres, anotaciones, permisos, sueldos;
 
 -- Categorías iniciales (editables desde Ajustes).
 insert into categorias (nombre, tipo) values
