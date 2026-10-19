@@ -11,6 +11,7 @@ import { BarraPestanas } from '@/ui/BarraPestanas';
 import estilos from './App.module.css';
 import { EnConstruccion } from './EnConstruccion';
 import { Ingresar } from './Ingresar';
+import { Inicio } from './Inicio';
 import { PantallaAjena, PantallaCarga, PantallaError } from './Sesion';
 
 export function App() {
@@ -53,7 +54,7 @@ function Pestanas() {
         <Switch>
           <Route path="/">
             <Conteo titulo="Inicio">
-              <EnConstruccion titulo="Inicio" />
+              <Inicio />
             </Conteo>
           </Route>
           <Route path="/stock">
