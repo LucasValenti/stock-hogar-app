@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit",
     "tokens": "node herramientas/tokens-css.mjs",
     "db:probar": "node herramientas/pg/correr.mjs",
-    "db:probar:migracion": "node herramientas/pg/correr.mjs --esquema supabase/schema-pre-007.sql supabase/migraciones/007-app-nativa.sql",
+    "db:probar:migracion": "node herramientas/pg/correr.mjs --esquema supabase/schema-pre-008.sql --antes supabase/tests/pre-008-datos.sql --despues supabase/tests/post-008-migracion.sql supabase/migraciones/008-usuarios.sql",
     "publicar:web": "node herramientas/publicar-web.mjs",
     "publicar:demo": "node herramientas/publicar-web.mjs --demo"
   },
