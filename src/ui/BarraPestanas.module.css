@@ -1,0 +1,92 @@
+.barra {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 10;
+  /* La franja de arriba queda transparente: + Cargar sobresale de la barra. */
+  padding-top: var(--medida-cargar-sube);
+  pointer-events: none;
+}
+
+.lista {
+  pointer-events: auto;
+}
+
+.lista {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: end;
+  margin: 0;
+  /* En pantallas anchas, las pestañas se alinean con el contenido (40rem); el fondo sigue de lado a lado. */
+  padding: 0 max(var(--espacio-xs), calc((100% - 40rem) / 2)) env(safe-area-inset-bottom);
+  list-style: none;
+  border-top: var(--medida-borde) solid var(--color-borde);
+  background: var(--color-superficie);
+}
+
+.celda {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.pestana {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--medida-pestana);
+  padding: var(--espacio-xs) 0;
+  border-radius: var(--radio-registro);
+  color: var(--color-texto-suave);
+  text-decoration: none;
+}
+
+.indicador {
+  display: grid;
+  place-items: center;
+  width: var(--medida-indicador-ancho);
+  height: var(--medida-indicador-alto);
+  border-radius: var(--radio-boton);
+  transition: transform var(--mov-rapido) var(--mov-curva);
+}
+
+.etiqueta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tamano-xxs);
+  font-weight: var(--peso-fuerte);
+}
+
+.pestana[aria-current='page'] {
+  color: var(--color-acento);
+}
+
+.pestana[aria-current='page'] .indicador {
+  background: var(--color-acento);
+  color: var(--color-sobre-acento);
+}
+
+.pestana:active .indicador {
+  transform: scale(0.92);
+}
+
+.cargar {
+  display: grid;
+  place-items: center;
+  width: var(--medida-cargar);
+  height: var(--medida-cargar);
+  margin: calc(var(--medida-cargar-sube) * -1) 0 var(--espacio-s);
+  border-radius: var(--radio-cargar);
+  background: var(--color-acento);
+  color: var(--color-sobre-acento);
+  box-shadow: var(--sombra-cargar);
+  transition: transform var(--mov-rapido) var(--mov-curva);
+}
+
+.cargar:active {
+  transform: scale(0.94);
+}

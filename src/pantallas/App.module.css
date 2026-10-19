@@ -1,0 +1,26 @@
+.app {
+  min-height: 100svh;
+}
+
+.contenido {
+  display: grid;
+  gap: var(--espacio-l);
+  align-content: start;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--espacio-xl) var(--espacio-l);
+  /* Lugar para la barra de pestañas fija y el + Cargar que sobresale. */
+  padding-bottom: calc(var(--medida-pestana) + var(--medida-cargar-sube) + var(--espacio-xxl) + env(safe-area-inset-bottom));
+}
+
+.titulo {
+  margin: 0;
+  font-size: var(--tamano-xxl);
+  line-height: var(--interlineado-titulo);
+}
+
+.aviso p {
+  margin: 0;
+  font-size: var(--tamano-s);
+}
