@@ -4,6 +4,15 @@ begin;
 
 insert into integrantes (id, nombre, email, sueldo)
 values ('00000000-0000-0000-0000-0000000000a1', 'Prueba A', 'prueba-a@example.com', 150000000);
+-- Elenco: A admin (primer integrante), B común, C con altas y bajas, D con sueldos, E pagador externo.
+insert into integrantes (id, nombre, email, tipo) values
+  ('00000000-0000-0000-0000-0000000000a2', 'Prueba B', 'prueba-b@example.com', 'integrante'),
+  ('00000000-0000-0000-0000-0000000000a3', 'Prueba C', 'prueba-c@example.com', 'integrante'),
+  ('00000000-0000-0000-0000-0000000000a4', 'Prueba D', 'prueba-d@example.com', 'integrante'),
+  ('00000000-0000-0000-0000-0000000000a5', 'Prueba E', 'prueba-e@example.com', 'pagador_externo');
+insert into permisos (integrante_id, permiso) values
+  ('00000000-0000-0000-0000-0000000000a3', 'altas_bajas'),
+  ('00000000-0000-0000-0000-0000000000a4', 'sueldos');
 insert into categorias (id, nombre, tipo)
 values ('00000000-0000-0000-0000-0000000000c1', 'Categoría de prueba', 'producto');
 insert into productos (id, nombre, categoria_id)
@@ -603,6 +612,323 @@ begin
   end if;
 end $$;
 reset role;
+
+-- 12. Admin y permisos (migración 008): el primer integrante es admin y hay uno solo.
+do $$
+begin
+  if (select array_agg(id) from integrantes where admin) is distinct from array['00000000-0000-0000-0000-0000000000a1'::uuid] then
+    raise exception 'FALLA: el primer integrante no quedó como único admin';
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'permisos') then
+    raise exception 'FALLA: permisos no está en tiempo real';
+  end if;
+end $$;
+
+-- 13. B (común): no toca integrantes ni permisos, lee los permisos y edita solo su perfil.
+select set_config('request.jwt.claims', '{"email":"prueba-b@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  begin
+    insert into integrantes (nombre, email) values ('Alta de B', 'alta-b@example.com');
+    raise exception 'FALLA: B dio de alta a alguien';
+  exception when insufficient_privilege then null;
+  end;
+  update integrantes set email = 'cambiado-b@example.com' where id = '00000000-0000-0000-0000-0000000000a5';
+  update integrantes set nombre = 'Cambiado por B' where id = '00000000-0000-0000-0000-0000000000a2';
+  delete from integrantes where id = '00000000-0000-0000-0000-0000000000a5';
+  if (select email from integrantes where id = '00000000-0000-0000-0000-0000000000a5') is distinct from 'prueba-e@example.com'
+     or (select nombre from integrantes where id = '00000000-0000-0000-0000-0000000000a2') is distinct from 'Prueba B' then
+    raise exception 'FALLA: B cambió o borró integrantes';
+  end if;
+
+  if tiene_permiso('sueldos') or tiene_permiso('altas_bajas') or es_admin() then raise exception 'FALLA: B tiene permisos'; end if;
+  if mi_acceso() is distinct from '{"admin": false, "permisos": []}'::jsonb then raise exception 'FALLA: mi_acceso de B dio %', mi_acceso(); end if;
+  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: B no lee los permisos de la casa'; end if;
+  begin
+    insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a2', 'sueldos');
+    raise exception 'FALLA: B se dio un permiso';
+  exception when insufficient_privilege then null;
+  end;
+  delete from permisos;
+  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: B borró permisos'; end if;
+  begin
+    perform ceder_admin('00000000-0000-0000-0000-0000000000a2');
+    raise exception 'FALLA: B cedió el admin';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- Perfil: cambia solo nombre y color de quien llama.
+  perform editar_perfil('Prueba B2', 'verde');
+  if (select (nombre, color, email, tipo, activo, admin) from integrantes where id = '00000000-0000-0000-0000-0000000000a2')
+     is distinct from ('Prueba B2'::text, 'verde'::text, 'prueba-b@example.com'::text, 'integrante'::text, true, false) then
+    raise exception 'FALLA: editar_perfil no cambió solo nombre y color';
+  end if;
+  if exists (select 1 from integrantes where id <> '00000000-0000-0000-0000-0000000000a2' and (color is not null or nombre = 'Prueba B2')) then
+    raise exception 'FALLA: editar_perfil tocó a otro integrante';
+  end if;
+  begin
+    perform editar_perfil('Prueba B3', 'fucsia');
+    raise exception 'FALLA: editar_perfil aceptó un color inventado';
+  exception when check_violation then null;
+  end;
+  begin
+    perform editar_perfil('   ', 'azul');
+    raise exception 'FALLA: editar_perfil aceptó un nombre vacío';
+  exception when check_violation then null;
+  end;
+  perform editar_perfil('Prueba B', null);
+end $$;
+reset role;
+
+-- 14. C (altas y bajas): da altas y cambia a los comunes, pero no al admin ni a quien tiene permisos.
+select set_config('request.jwt.claims', '{"email":"prueba-c@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+declare
+  v_id uuid;
+begin
+  if not tiene_permiso('altas_bajas') or tiene_permiso('sueldos') or es_admin() then raise exception 'FALLA: permisos de C'; end if;
+  if mi_acceso() is distinct from '{"admin": false, "permisos": ["altas_bajas"]}'::jsonb then raise exception 'FALLA: mi_acceso de C dio %', mi_acceso(); end if;
+
+  -- Alta: el nuevo nace sin admin aunque lo pida.
+  insert into integrantes (id, nombre, email, admin) values ('00000000-0000-0000-0000-0000000000a6', 'Nuevo de prueba', 'nuevo@example.com', true);
+  if (select admin from integrantes where id = '00000000-0000-0000-0000-0000000000a6') then raise exception 'FALLA: un alta nació admin'; end if;
+  update integrantes set email = 'nuevo-2@example.com' where id = '00000000-0000-0000-0000-0000000000a6';
+  if (select email from integrantes where id = '00000000-0000-0000-0000-0000000000a6') is distinct from 'nuevo-2@example.com' then
+    raise exception 'FALLA: C no cambió el email de un alta suya';
+  end if;
+  begin
+    update integrantes set admin = true where id = '00000000-0000-0000-0000-0000000000a6';
+    raise exception 'FALLA: C puso admin por update';
+  exception when insufficient_privilege then null;
+  end;
+  delete from integrantes where id = '00000000-0000-0000-0000-0000000000a6';
+  if exists (select 1 from integrantes where id = '00000000-0000-0000-0000-0000000000a6') then raise exception 'FALLA: C no borró un alta suya'; end if;
+
+  -- Con A (admin) y D (con permisos): ni email, ni tipo, ni baja, ni borrar.
+  foreach v_id in array array['00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a4']::uuid[] loop
+    begin
+      update integrantes set email = 'robado@example.com' where id = v_id;
+      raise exception 'FALLA: C cambió el email de %', v_id;
+    exception when insufficient_privilege then
+      if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+    end;
+    begin
+      update integrantes set tipo = 'pagador_externo' where id = v_id;
+      raise exception 'FALLA: C cambió el tipo de %', v_id;
+    exception when insufficient_privilege then
+      if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+    end;
+    begin
+      update integrantes set activo = false, baja_desde = '2000-01' where id = v_id;
+      raise exception 'FALLA: C dio de baja a %', v_id;
+    exception when insufficient_privilege then
+      if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+    end;
+    begin
+      delete from integrantes where id = v_id;
+      raise exception 'FALLA: C borró a %', v_id;
+    exception when insufficient_privilege then
+      if sqlerrm not like '%SIN_PERMISO%' then raise; end if;
+    end;
+  end loop;
+
+  -- Con B (común) sí.
+  update integrantes set email = 'prueba-b2@example.com', tipo = 'pagador_externo', activo = false, baja_desde = '2000-01'
+  where id = '00000000-0000-0000-0000-0000000000a2';
+  if (select (email, tipo, activo, baja_desde) from integrantes where id = '00000000-0000-0000-0000-0000000000a2')
+     is distinct from ('prueba-b2@example.com'::text, 'pagador_externo'::text, false, '2000-01'::text) then
+    raise exception 'FALLA: C no pudo cambiar a B';
+  end if;
+  update integrantes set email = 'prueba-b@example.com', tipo = 'integrante', activo = true, baja_desde = null
+  where id = '00000000-0000-0000-0000-0000000000a2';
+
+  begin
+    insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a3', 'sueldos');
+    raise exception 'FALLA: C se dio un permiso';
+  exception when insufficient_privilege then null;
+  end;
+  delete from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a3';
+  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: C borró permisos'; end if;
+  begin
+    perform ceder_admin('00000000-0000-0000-0000-0000000000a3');
+    raise exception 'FALLA: C cedió el admin';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- 15. D (sueldos) y E (pagador externo).
+select set_config('request.jwt.claims', '{"email":"prueba-d@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  if not tiene_permiso('sueldos') or tiene_permiso('altas_bajas') or es_admin() then raise exception 'FALLA: permisos de D'; end if;
+  if mi_acceso() is distinct from '{"admin": false, "permisos": ["sueldos"]}'::jsonb then raise exception 'FALLA: mi_acceso de D dio %', mi_acceso(); end if;
+  begin
+    perform ceder_admin('00000000-0000-0000-0000-0000000000a4');
+    raise exception 'FALLA: D cedió el admin';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"email":"prueba-e@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  if tiene_permiso('sueldos') or tiene_permiso('altas_bajas') or es_admin() then raise exception 'FALLA: E tiene permisos'; end if;
+  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: E no lee los permisos de la casa'; end if;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"email":"intruso@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  if exists (select 1 from permisos) then raise exception 'FALLA: un intruso ve permisos'; end if;
+  if tiene_permiso('sueldos') or es_admin() then raise exception 'FALLA: un intruso tiene permisos'; end if;
+  if mi_acceso() is distinct from '{"admin": false, "permisos": []}'::jsonb then raise exception 'FALLA: mi_acceso de un intruso dio %', mi_acceso(); end if;
+end $$;
+reset role;
+
+-- 16. A (admin): puede todo, maneja los permisos y cede el rol; no se borra ni se da de baja.
+select set_config('request.jwt.claims', '{"email":"prueba-a@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  if not (es_admin() and tiene_permiso('sueldos') and tiene_permiso('altas_bajas')) then raise exception 'FALLA: el admin no pasa los permisos'; end if;
+  if mi_acceso() is distinct from '{"admin": true, "permisos": []}'::jsonb then raise exception 'FALLA: mi_acceso de A dio %', mi_acceso(); end if;
+
+  -- La columna admin no se toca por update, ni siquiera el admin.
+  begin
+    update integrantes set admin = true where id = '00000000-0000-0000-0000-0000000000a2';
+    raise exception 'FALLA: A puso admin por update';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update integrantes set admin = false where id = '00000000-0000-0000-0000-0000000000a1';
+    raise exception 'FALLA: A se sacó el admin por update';
+  exception when insufficient_privilege then null;
+  end;
+  -- Al admin no se lo borra, ni se lo da de baja, ni se lo pasa a externo.
+  begin
+    delete from integrantes where id = '00000000-0000-0000-0000-0000000000a1';
+    raise exception 'FALLA: se borró al admin';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update integrantes set activo = false, baja_desde = '2000-01' where id = '00000000-0000-0000-0000-0000000000a1';
+    raise exception 'FALLA: se dio de baja al admin';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update integrantes set tipo = 'pagador_externo' where id = '00000000-0000-0000-0000-0000000000a1';
+    raise exception 'FALLA: se pasó a externo al admin';
+  exception when insufficient_privilege then null;
+  end;
+  -- El admin sí cambia a quien tiene permisos.
+  update integrantes set email = 'prueba-d2@example.com' where id = '00000000-0000-0000-0000-0000000000a4';
+  update integrantes set email = 'prueba-d@example.com' where id = '00000000-0000-0000-0000-0000000000a4';
+
+  -- Permisos: el admin los da y los saca; un pagador externo no los recibe.
+  begin
+    insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a5', 'sueldos');
+    raise exception 'FALLA: un pagador externo recibió un permiso';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a2', 'admin');
+    raise exception 'FALLA: se aceptó un permiso inventado';
+  exception when check_violation then null;
+  end;
+  insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a2', 'sueldos');
+  delete from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a2';
+  if exists (select 1 from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a2') then raise exception 'FALLA: A no sacó un permiso'; end if;
+  -- Pasar a externo a alguien con permisos le borra los permisos.
+  insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a2', 'sueldos');
+  update integrantes set tipo = 'pagador_externo' where id = '00000000-0000-0000-0000-0000000000a2';
+  if exists (select 1 from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a2') then
+    raise exception 'FALLA: pasar a externo no borró los permisos';
+  end if;
+  update integrantes set tipo = 'integrante' where id = '00000000-0000-0000-0000-0000000000a2';
+
+  -- Ceder: no a un externo, ni a alguien dado de baja, ni a sí mismo.
+  insert into integrantes (id, nombre, email, activo, baja_desde)
+  values ('00000000-0000-0000-0000-0000000000a6', 'Baja de prueba', 'baja@example.com', false, '2000-01');
+  begin
+    perform ceder_admin('00000000-0000-0000-0000-0000000000a5');
+    raise exception 'FALLA: se cedió el admin a un pagador externo';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform ceder_admin('00000000-0000-0000-0000-0000000000a6');
+    raise exception 'FALLA: se cedió el admin a alguien dado de baja';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform ceder_admin('00000000-0000-0000-0000-0000000000a1');
+    raise exception 'FALLA: el admin se cedió el rol a sí mismo';
+  exception when invalid_parameter_value then null;
+  end;
+  delete from integrantes where id = '00000000-0000-0000-0000-0000000000a6';
+
+  -- A cede a B (que tenía un permiso): un solo admin, A conserva los dos permisos y B queda sin filas.
+  insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a2', 'altas_bajas');
+  perform ceder_admin('00000000-0000-0000-0000-0000000000a2');
+  if (select array_agg(id) from integrantes where admin) is distinct from array['00000000-0000-0000-0000-0000000000a2'::uuid] then
+    raise exception 'FALLA: ceder no dejó a B como único admin';
+  end if;
+  if (select array_agg(permiso order by permiso) from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a1')
+     is distinct from array['altas_bajas', 'sueldos'] then
+    raise exception 'FALLA: quien cedió no conservó los dos permisos';
+  end if;
+  if exists (select 1 from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a2') then
+    raise exception 'FALLA: el nuevo admin quedó con filas de permisos';
+  end if;
+  if es_admin() then raise exception 'FALLA: A sigue siendo admin después de ceder'; end if;
+  -- Después de ceder, la columna admin vuelve a estar cerrada.
+  begin
+    update integrantes set admin = false where id = '00000000-0000-0000-0000-0000000000a2';
+    raise exception 'FALLA: se cambió admin por update después de ceder';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- 17. B (ahora admin) le devuelve el rol a A.
+select set_config('request.jwt.claims', '{"email":"prueba-b@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  if mi_acceso() is distinct from '{"admin": true, "permisos": []}'::jsonb then raise exception 'FALLA: mi_acceso del nuevo admin dio %', mi_acceso(); end if;
+  perform ceder_admin('00000000-0000-0000-0000-0000000000a1');
+  if (select array_agg(id) from integrantes where admin) is distinct from array['00000000-0000-0000-0000-0000000000a1'::uuid] then
+    raise exception 'FALLA: B no le devolvió el admin a A';
+  end if;
+  if exists (select 1 from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a1') then
+    raise exception 'FALLA: A volvió a ser admin con filas de permisos';
+  end if;
+end $$;
+reset role;
+
+-- 18. Sin sesión (consola, migraciones) la columna admin se pone a mano; sigue habiendo uno solo.
+select set_config('request.jwt.claims', '', true);
+do $$
+begin
+  begin
+    update integrantes set admin = true where id = '00000000-0000-0000-0000-0000000000a2';
+    raise exception 'FALLA: quedaron dos admins';
+  exception when unique_violation then null;
+  end;
+  update integrantes set admin = false where id = '00000000-0000-0000-0000-0000000000a1';
+  update integrantes set admin = true where id = '00000000-0000-0000-0000-0000000000a2';
+  if (select array_agg(id) from integrantes where admin) is distinct from array['00000000-0000-0000-0000-0000000000a2'::uuid] then
+    raise exception 'FALLA: sin sesión no se pudo poner admin a mano';
+  end if;
+  update integrantes set admin = false where id = '00000000-0000-0000-0000-0000000000a2';
+  update integrantes set admin = true where id = '00000000-0000-0000-0000-0000000000a1';
+  delete from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a2';
+end $$;
 
 rollback;
 select 'OK: todas las pruebas de la base pasaron' as resultado;

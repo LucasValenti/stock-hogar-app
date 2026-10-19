@@ -8,7 +8,18 @@ create table integrantes (
   activo boolean not null default true,
   baja_desde text check (baja_desde ~ '^\d{4}-\d{2}$'),
   tipo text not null default 'integrante' check (tipo in ('integrante', 'pagador_externo')),
-  creado timestamptz not null default now()
+  creado timestamptz not null default now(),
+  -- Un solo admin; solo ceder_admin lo cambia (ver integrantes_proteger).
+  admin boolean not null default false,
+  color text check (color in ('naranja', 'verde', 'azul', 'rosa', 'violeta', 'amarillo'))
+);
+create unique index integrantes_un_admin on integrantes (admin) where admin;
+
+-- Permisos de cada integrante; el admin los tiene todos sin filas acá.
+create table permisos (
+  integrante_id uuid not null references integrantes on delete cascade,
+  permiso text not null check (permiso in ('sueldos', 'altas_bajas')),
+  primary key (integrante_id, permiso)
 );
 
 create table categorias (
@@ -85,13 +96,42 @@ language sql stable security definer set search_path = public, pg_temp as $$
     and (activo or baja_desde > to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM'));
 $$;
 
--- Un pagador externo ve a los integrantes pero no los cambia (sueldos, emails, altas y bajas).
+create function es_admin() returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from public.integrantes where id = public.yo_integrante() and admin);
+$$;
+
+-- El admin pasa cualquier permiso; un pagador externo, ninguno.
+create function tiene_permiso(p text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (
+    select 1 from public.integrantes i
+    where i.id = public.yo_integrante() and i.tipo = 'integrante'
+      and (i.admin or exists (select 1 from public.permisos where integrante_id = i.id and permiso = p))
+  );
+$$;
+
+-- {"admin": bool, "permisos": [...]} de quien llama (solo sus filas: el admin vuelve con la lista vacía).
+create function mi_acceso() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'admin', public.es_admin(),
+    'permisos', coalesce((select jsonb_agg(permiso order by permiso) from public.permisos
+                          where integrante_id = public.yo_integrante()), '[]'::jsonb)
+  );
+$$;
+
+revoke execute on function es_admin(), tiene_permiso(text), mi_acceso() from public, anon;
+grant execute on function es_admin(), tiene_permiso(text), mi_acceso() to authenticated;
+
+-- Altas, bajas y emails: quien tiene «altas y bajas» (o el admin).
 create function puede_editar_integrantes() returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select exists (select 1 from public.integrantes where id = public.yo_integrante() and tipo = 'integrante');
+  select public.tiene_permiso('altas_bajas');
 $$;
 
 alter table integrantes enable row level security;
+alter table permisos enable row level security;
 alter table categorias enable row level security;
 alter table productos enable row level security;
 alter table gastos enable row level security;
@@ -102,12 +142,106 @@ create policy ver on integrantes for select to authenticated using (es_de_la_cas
 create policy alta on integrantes for insert to authenticated with check (puede_editar_integrantes());
 create policy cambio on integrantes for update to authenticated using (puede_editar_integrantes()) with check (puede_editar_integrantes());
 create policy baja on integrantes for delete to authenticated using (puede_editar_integrantes());
+create policy ver on permisos for select to authenticated using (es_de_la_casa());
+create policy dar on permisos for insert to authenticated with check (es_admin());
+create policy quitar on permisos for delete to authenticated using (es_admin());
 create policy casa on categorias for all to authenticated using (es_de_la_casa()) with check (es_de_la_casa());
 create policy casa on productos for all to authenticated using (es_de_la_casa()) with check (es_de_la_casa());
 create policy casa on gastos for all to authenticated using (es_de_la_casa()) with check (es_de_la_casa());
 create policy casa on gasto_items for all to authenticated using (es_de_la_casa()) with check (es_de_la_casa());
 -- Los cierres solo se leen: se crean y se borran con cerrar_mes y reabrir_mes.
 create policy ver on cierres for select to authenticated using (es_de_la_casa());
+
+-- Reglas de integrantes para los pedidos con sesión (la app). Sin sesión (consola, migraciones) quedan
+-- libres, salvo el admin inicial y que un pagador externo no conserva permisos.
+-- · Alta: admin solo si todavía no hay ninguno (base nueva) y es de tipo integrante.
+-- · La columna admin cambia solo dentro de ceder_admin.
+-- · Quien no es admin no cambia email, tipo ni baja, ni borra, a quien es admin o tiene permisos.
+-- · Al admin no se lo borra, ni se lo da de baja, ni se lo pasa a externo: primero cede el rol.
+create function proteger_integrante() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_sesion boolean := auth.jwt() ->> 'email' is not null;
+begin
+  if tg_op = 'INSERT' then
+    if v_sesion then new.admin := false; end if;
+    if new.tipo = 'integrante' and not exists (select 1 from public.integrantes where admin) then new.admin := true; end if;
+    return new;
+  end if;
+
+  if v_sesion then
+    if not public.es_admin()
+       and (old.admin or exists (select 1 from public.permisos where integrante_id = old.id)) then
+      if tg_op = 'DELETE'
+         or (new.email, new.tipo, new.activo, new.baja_desde) is distinct from (old.email, old.tipo, old.activo, old.baja_desde) then
+        raise exception 'SIN_PERMISO' using errcode = '42501';
+      end if;
+    end if;
+    if old.admin and (tg_op = 'DELETE' or new.tipo <> 'integrante' or (old.activo and not new.activo)
+                      or (new.baja_desde is not null and new.baja_desde is distinct from old.baja_desde)) then
+      raise exception 'ES_ADMIN' using errcode = '42501';
+    end if;
+    if tg_op = 'UPDATE' and new.admin is distinct from old.admin
+       and current_setting('app.ceder_admin', true) is distinct from 'si' then
+      raise exception 'SIN_PERMISO' using errcode = '42501';
+    end if;
+  end if;
+
+  if tg_op = 'DELETE' then return old; end if;
+  if new.tipo <> 'integrante' then delete from public.permisos where integrante_id = old.id; end if;
+  return new;
+end $$;
+
+create trigger integrantes_proteger before insert or update or delete on integrantes
+for each row execute function proteger_integrante();
+
+-- Solo un integrante de tipo integrante tiene permisos (un pagador externo, no).
+create function proteger_permiso() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not exists (select 1 from public.integrantes where id = new.integrante_id and tipo = 'integrante') then
+    raise exception 'SOLO_INTEGRANTES' using errcode = '23514';
+  end if;
+  return new;
+end $$;
+
+create trigger permisos_proteger before insert on permisos
+for each row execute function proteger_permiso();
+
+-- El admin pasa el rol a otro integrante activo. Quien cede se queda con los dos permisos como filas
+-- (no pierde de golpe los sueldos); al nuevo admin se le borran las suyas porque ya lo puede todo.
+create function ceder_admin(p_a uuid) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_yo uuid := public.yo_integrante();
+begin
+  if not public.es_admin() then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
+  if p_a is null or p_a = v_yo
+     or not exists (select 1 from public.integrantes where id = p_a and tipo = 'integrante' and activo) then
+    raise exception 'DESTINO_INVALIDO' using errcode = '22023';
+  end if;
+  -- Primero se saca y después se pone: el índice único no admite dos admins ni por un instante.
+  perform set_config('app.ceder_admin', 'si', true);
+  update public.integrantes set admin = false where id = v_yo;
+  update public.integrantes set admin = true where id = p_a;
+  perform set_config('app.ceder_admin', '', true);
+  insert into public.permisos (integrante_id, permiso) values (v_yo, 'sueldos'), (v_yo, 'altas_bajas')
+  on conflict do nothing;
+  delete from public.permisos where integrante_id = p_a;
+end $$;
+
+-- Perfil propio: solo nombre y color de quien llama.
+create function editar_perfil(p_nombre text, p_color text) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_yo uuid := public.yo_integrante();
+begin
+  if v_yo is null then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
+  update public.integrantes set nombre = p_nombre, color = p_color where id = v_yo;
+end $$;
+
+revoke execute on function ceder_admin(uuid), editar_perfil(text, text) from public, anon;
+grant execute on function ceder_admin(uuid), editar_perfil(text, text) to authenticated;
 
 -- Categoría aprendida por destinatario de un comprobante de MP (nombre normalizado en la app).
 create table destinos (
@@ -393,7 +527,7 @@ where gi.precio_unitario is not null
 order by gi.producto_id, g.fecha desc, g.creado desc;
 
 -- Tiempo real.
-alter publication supabase_realtime add table integrantes, categorias, productos, gastos, gasto_items, cierres, anotaciones;
+alter publication supabase_realtime add table integrantes, categorias, productos, gastos, gasto_items, cierres, anotaciones, permisos;
 
 -- Categorías iniciales (editables desde Ajustes).
 insert into categorias (nombre, tipo) values
