@@ -1,5 +1,5 @@
 // Las llamadas de supabase.ts con un cliente falso que registra cada cadena (from/rpc + pasos) y
-// responde lo que la prueba le pida. Fija los nombres y parámetros de la migración 007.
+// responde lo que la prueba le pida. Fija los nombres y parámetros de las migraciones 007 y 008.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -12,7 +12,7 @@ type Paso = [string, ...unknown[]];
 type Llamada = { via: 'from' | 'rpc'; nombre: string; params?: unknown; pasos: Paso[] };
 type Respuesta = { data: unknown; error?: unknown };
 
-function clienteGrabador(responder: (l: Llamada) => Respuesta = () => ({ data: null })) {
+function clienteGrabador(responder: (l: Llamada) => Respuesta = () => ({ data: null }), email: string | null = null) {
   const llamadas: Llamada[] = [];
   function cadena(l: Llamada): object {
     llamadas.push(l);
@@ -36,6 +36,8 @@ function clienteGrabador(responder: (l: Llamada) => Respuesta = () => ({ data: n
   const cliente = {
     from: (nombre: string) => cadena({ via: 'from', nombre, pasos: [] }),
     rpc: (nombre: string, params: unknown) => cadena({ via: 'rpc', nombre, params, pasos: [] }),
+    // Solo lo que lee editarPerfil: el email de la sesión.
+    auth: { getSession: async () => ({ data: { session: email ? { user: { email } } : null }, error: null }) },
   };
   return { datos: crearDatosSupabase(cliente as unknown as SupabaseClient), llamadas };
 }
@@ -233,5 +235,243 @@ describe('guardarGasto', () => {
     await expect(
       datos.guardarGasto({ fecha: '2026-10-18', pagado_por: 'i1', total: 1, modo: 'total', categoria_id: 'c1' }, []),
     ).rejects.toBe(falla);
+  });
+});
+
+describe('acceso, permisos, sueldos y perfil (migración 008)', () => {
+  const SIN_PERMISO = { code: '42501', message: expect.stringContaining('SIN_PERMISO') };
+  const COMUN = { admin: false, permisos: [] };
+  // Responde según la función o la tabla que se pide; lo no listado, vacío.
+  const responde = (porNombre: Record<string, Respuesta>) => (l: Llamada) => porNombre[l.nombre] ?? { data: null };
+
+  test('miAcceso llama a mi_acceso sin parámetros y devuelve admin y permisos', async () => {
+    const { datos, llamadas } = clienteGrabador(() => ({ data: { admin: false, permisos: ['altas_bajas', 'sueldos'] } }));
+    expect(await datos.miAcceso()).toEqual({ admin: false, permisos: ['altas_bajas', 'sueldos'] });
+    expect(llamadas).toEqual([{ via: 'rpc', nombre: 'mi_acceso', pasos: [] }]);
+  });
+
+  test('permisosDeLaCasa lee permisos y los agrupa por integrante, ordenados', async () => {
+    const { datos, llamadas } = clienteGrabador(() => ({
+      data: [
+        { integrante_id: 'i2', permiso: 'sueldos' },
+        { integrante_id: 'i3', permiso: 'altas_bajas' },
+        { integrante_id: 'i2', permiso: 'altas_bajas' },
+      ],
+    }));
+    expect(await datos.permisosDeLaCasa()).toEqual({ i2: ['altas_bajas', 'sueldos'], i3: ['altas_bajas'] });
+    expect(llamadas).toEqual([{ via: 'from', nombre: 'permisos', pasos: [['select', 'integrante_id, permiso']] }]);
+  });
+
+  test('permisosDeLaCasa sin filas da {}', async () => {
+    expect(await clienteGrabador(() => ({ data: [] })).datos.permisosDeLaCasa()).toEqual({});
+    expect(await clienteGrabador(() => ({ data: null })).datos.permisosDeLaCasa()).toEqual({});
+  });
+
+  describe('darPermiso', () => {
+    test('inserta la fila ignorando duplicados: darlo dos veces no es un error (como en memoria)', async () => {
+      const { datos, llamadas } = clienteGrabador();
+      await datos.darPermiso('i2', 'sueldos');
+      expect(llamadas).toEqual([
+        {
+          via: 'from',
+          nombre: 'permisos',
+          pasos: [['upsert', { integrante_id: 'i2', permiso: 'sueldos' }, { onConflict: 'integrante_id,permiso', ignoreDuplicates: true }]],
+        },
+      ]);
+    });
+
+    test('el error de la base (sin ser admin, o un pagador externo) sube tal cual', async () => {
+      const rls = { code: '42501', message: 'new row violates row-level security policy for table "permisos"' };
+      await expect(clienteGrabador(() => ({ data: null, error: rls })).datos.darPermiso('i2', 'sueldos')).rejects.toBe(rls);
+      const externo = { code: '23514', message: 'SOLO_INTEGRANTES' };
+      await expect(clienteGrabador(() => ({ data: null, error: externo })).datos.darPermiso('e1', 'sueldos')).rejects.toBe(externo);
+    });
+  });
+
+  describe('quitarPermiso', () => {
+    test('borra la fila por integrante y permiso y pide las filas borradas; si borró alguna, no consulta nada más', async () => {
+      const { datos, llamadas } = clienteGrabador(() => ({ data: [{ integrante_id: 'i2', permiso: 'sueldos' }] }));
+      await datos.quitarPermiso('i2', 'sueldos');
+      expect(llamadas).toEqual([
+        {
+          via: 'from',
+          nombre: 'permisos',
+          pasos: [['delete'], ['eq', 'integrante_id', 'i2'], ['eq', 'permiso', 'sueldos'], ['select']],
+        },
+      ]);
+    });
+
+    test('cero filas siendo admin es «no había nada que borrar»: sale bien, como en memoria', async () => {
+      const { datos, llamadas } = clienteGrabador(responde({ permisos: { data: [] }, mi_acceso: { data: { admin: true, permisos: [] } } }));
+      await expect(datos.quitarPermiso('i2', 'sueldos')).resolves.toBeUndefined();
+      expect(llamadas.map((l) => l.nombre)).toEqual(['permisos', 'mi_acceso']);
+    });
+
+    test('cero filas sin ser admin es la política que lo descartó: SIN_PERMISO 42501, como en memoria', async () => {
+      const { datos } = clienteGrabador(
+        responde({ permisos: { data: [] }, mi_acceso: { data: { admin: false, permisos: ['sueldos', 'altas_bajas'] } } }),
+      );
+      await expect(datos.quitarPermiso('i2', 'sueldos')).rejects.toMatchObject(SIN_PERMISO);
+    });
+
+    test('el error de la base sube tal cual', async () => {
+      const falla = { code: '42501', message: 'permission denied for table permisos' };
+      await expect(clienteGrabador(() => ({ data: null, error: falla })).datos.quitarPermiso('i2', 'sueldos')).rejects.toBe(falla);
+    });
+  });
+
+  describe('cederAdmin', () => {
+    test('llama a ceder_admin con p_a', async () => {
+      const { datos, llamadas } = clienteGrabador();
+      await datos.cederAdmin('i2');
+      expect(llamadas).toEqual([{ via: 'rpc', nombre: 'ceder_admin', params: { p_a: 'i2' }, pasos: [] }]);
+    });
+
+    test('SIN_PERMISO y DESTINO_INVALIDO suben tal cual', async () => {
+      const sin = { code: '42501', message: 'SIN_PERMISO' };
+      await expect(clienteGrabador(() => ({ data: null, error: sin })).datos.cederAdmin('i2')).rejects.toBe(sin);
+      const destino = { code: '22023', message: 'DESTINO_INVALIDO' };
+      await expect(clienteGrabador(() => ({ data: null, error: destino })).datos.cederAdmin('e1')).rejects.toBe(destino);
+    });
+  });
+
+  describe('sueldos', () => {
+    test('lee la tabla sueldos y la devuelve como Record por integrante', async () => {
+      const { datos, llamadas } = clienteGrabador(() => ({
+        data: [
+          { integrante_id: 'i1', sueldo: 900_000_00 },
+          { integrante_id: 'i2', sueldo: 0 },
+        ],
+      }));
+      expect(await datos.sueldos()).toEqual({ i1: 900_000_00, i2: 0 });
+      expect(llamadas).toEqual([{ via: 'from', nombre: 'sueldos', pasos: [['select', 'integrante_id, sueldo']] }]);
+    });
+
+    test('sin permiso la base devuelve cero filas (no un error): {}', async () => {
+      expect(await clienteGrabador(() => ({ data: [] })).datos.sueldos()).toEqual({});
+      expect(await clienteGrabador(() => ({ data: null })).datos.sueldos()).toEqual({});
+    });
+
+    test('un error de la base sube tal cual', async () => {
+      const falla = { code: '42501', message: 'permission denied' };
+      await expect(clienteGrabador(() => ({ data: null, error: falla })).datos.sueldos()).rejects.toBe(falla);
+    });
+  });
+
+  describe('fijarSueldo', () => {
+    test('con un monto hace upsert por integrante y pide la fila; si volvió, no consulta nada más', async () => {
+      const { datos, llamadas } = clienteGrabador(() => ({ data: [{ integrante_id: 'i2', sueldo: 600_000_00 }] }));
+      await datos.fijarSueldo('i2', 600_000_00);
+      expect(llamadas).toEqual([
+        {
+          via: 'from',
+          nombre: 'sueldos',
+          pasos: [['upsert', { integrante_id: 'i2', sueldo: 600_000_00 }, { onConflict: 'integrante_id' }], ['select']],
+        },
+      ]);
+    });
+
+    test('un upsert que no devuelve fila lo descartó la política: SIN_PERMISO 42501', async () => {
+      const { datos } = clienteGrabador(() => ({ data: [] }));
+      await expect(datos.fijarSueldo('i2', 600_000_00)).rejects.toMatchObject(SIN_PERMISO);
+    });
+
+    test('el error de la base (RLS, check, clave foránea) sube tal cual', async () => {
+      for (const falla of [
+        { code: '42501', message: 'new row violates row-level security policy for table "sueldos"' },
+        { code: '23514', message: 'new row for relation "sueldos" violates check constraint "sueldos_sueldo_check"' },
+        { code: '23503', message: 'insert or update on table "sueldos" violates foreign key constraint' },
+      ]) {
+        await expect(clienteGrabador(() => ({ data: null, error: falla })).datos.fijarSueldo('i2', 1)).rejects.toBe(falla);
+      }
+    });
+
+    test('con null borra la fila del integrante y pide las borradas; si borró alguna, no consulta nada más', async () => {
+      const { datos, llamadas } = clienteGrabador(() => ({ data: [{ integrante_id: 'i2', sueldo: 600_000_00 }] }));
+      await datos.fijarSueldo('i2', null);
+      expect(llamadas).toEqual([
+        { via: 'from', nombre: 'sueldos', pasos: [['delete'], ['eq', 'integrante_id', 'i2'], ['select']] },
+      ]);
+    });
+
+    test.each([
+      ['admin', { admin: true, permisos: [] }],
+      ['con «sueldos»', { admin: false, permisos: ['sueldos'] }],
+    ])('null sin nada que borrar, siendo %s: sale bien, como en memoria', async (_quien, acceso) => {
+      const { datos, llamadas } = clienteGrabador(responde({ sueldos: { data: [] }, mi_acceso: { data: acceso } }));
+      await expect(datos.fijarSueldo('i2', null)).resolves.toBeUndefined();
+      expect(llamadas.map((l) => l.nombre)).toEqual(['sueldos', 'mi_acceso']);
+    });
+
+    test.each([
+      ['común', COMUN],
+      ['con solo «altas_bajas»', { admin: false, permisos: ['altas_bajas'] }],
+    ])('null con cero filas siendo %s: la política lo descartó, SIN_PERMISO 42501', async (_quien, acceso) => {
+      const { datos } = clienteGrabador(responde({ sueldos: { data: [] }, mi_acceso: { data: acceso } }));
+      await expect(datos.fijarSueldo('i2', null)).rejects.toMatchObject(SIN_PERMISO);
+    });
+  });
+
+  test('partesDelMes llama a partes_del_mes con p_mes y devuelve los pesos como número por integrante', async () => {
+    const { datos, llamadas } = clienteGrabador(() => ({
+      data: [
+        { integrante_id: 'i1', peso: 450_000_000_000 },
+        { integrante_id: 'i2', peso: '300000000000' },
+        { integrante_id: 'i3', peso: 0 },
+      ],
+    }));
+    expect(await datos.partesDelMes('2026-10')).toEqual({ i1: 450_000_000_000, i2: 300_000_000_000, i3: 0 });
+    expect(llamadas).toEqual([{ via: 'rpc', nombre: 'partes_del_mes', params: { p_mes: '2026-10' }, pasos: [] }]);
+  });
+
+  test('partesDelMes sin filas da {} y un error de la base sube tal cual', async () => {
+    expect(await clienteGrabador(() => ({ data: [] })).datos.partesDelMes('2026-10')).toEqual({});
+    const falla = { code: '22023', message: 'MES_INVALIDO' };
+    await expect(clienteGrabador(() => ({ data: null, error: falla })).datos.partesDelMes('2026-1')).rejects.toBe(falla);
+  });
+
+  describe('editarPerfil', () => {
+    const fila = {
+      id: 'i2',
+      nombre: 'Bruno B',
+      email: 'bruno@example.com',
+      activo: true,
+      baja_desde: null,
+      tipo: 'integrante',
+      admin: false,
+      color: 'verde',
+      creado: '2026-01-01T12:00:00+00:00',
+    };
+
+    test('llama a editar_perfil y después lee la fila propia por el email de la sesión', async () => {
+      const { datos, llamadas } = clienteGrabador(responde({ integrantes: { data: fila } }), 'Bruno@Example.com');
+      expect(await datos.editarPerfil('Bruno B', 'verde')).toEqual(fila);
+      expect(llamadas).toEqual([
+        { via: 'rpc', nombre: 'editar_perfil', params: { p_nombre: 'Bruno B', p_color: 'verde' }, pasos: [] },
+        { via: 'from', nombre: 'integrantes', pasos: [['select', '*'], ['eq', 'email', 'bruno@example.com'], ['maybeSingle']] },
+      ]);
+    });
+
+    test('sin color manda null', async () => {
+      const { datos, llamadas } = clienteGrabador(responde({ integrantes: { data: { ...fila, color: null } } }), 'bruno@example.com');
+      expect((await datos.editarPerfil('Bruno B', null)).color).toBeNull();
+      expect(llamadas[0].params).toEqual({ p_nombre: 'Bruno B', p_color: null });
+    });
+
+    test('si la base rechaza (SIN_PERMISO, color inventado) sube tal cual y no lee nada más', async () => {
+      for (const falla of [
+        { code: '42501', message: 'SIN_PERMISO' },
+        { code: '23514', message: 'new row for relation "integrantes" violates check constraint "integrantes_color_check"' },
+      ]) {
+        const { datos, llamadas } = clienteGrabador(() => ({ data: null, error: falla }), 'bruno@example.com');
+        await expect(datos.editarPerfil('X', 'verde')).rejects.toBe(falla);
+        expect(llamadas.map((l) => l.nombre)).toEqual(['editar_perfil']);
+      }
+    });
+
+    test('sin sesión o sin fila propia no hay perfil: SIN_PERMISO 42501, como en memoria', async () => {
+      await expect(clienteGrabador(() => ({ data: null }), null).datos.editarPerfil('X', null)).rejects.toMatchObject(SIN_PERMISO);
+      await expect(clienteGrabador(() => ({ data: null }), 'nadie@example.com').datos.editarPerfil('X', null)).rejects.toMatchObject(SIN_PERMISO);
+    });
   });
 });
