@@ -1,13 +1,13 @@
-// Exporta la web (Expo) a dist/ y agrega los archivos de Cloudflare Pages:
+// Arma la web con Vite en dist/ y agrega los archivos de Cloudflare Pages:
 // _headers con la CSP, las cabeceras de seguridad y el caché, y _redirects para la SPA.
 //
-// Uso: EXPO_PUBLIC_DATOS=memoria npm run publicar:web
+// Uso: npm run publicar:web (o VITE_DATOS=memoria npm run publicar:web)
 // La clave y la URL de Supabase entran por .env (ignorado): acá solo se leen para armar la CSP.
 //
-// Web solo-demo (kusak.dev): npm run publicar:demo → `--demo` fuerza EXPO_PUBLIC_DATOS=memoria
-// y exporta a dist-demo/. `--destino <carpeta>` cambia el destino (por defecto dist/).
+// Web solo-demo (kusak.dev): npm run publicar:demo → `--demo` fuerza VITE_DATOS=memoria
+// y arma en dist-demo/. `--destino <carpeta>` cambia el destino (por defecto dist/).
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -43,7 +43,9 @@ export function armarHeaders(proyectoSupabase) {
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval'", // el OCR corre wasm
     "worker-src 'self' blob:",
-    "style-src 'self' 'unsafe-inline'", // react-native-web aplica estilos en línea
+    // Sin 'unsafe-inline': los estilos van en CSS; las pocas variables por elemento (Esqueleto, Barras)
+    // React las pone por CSSOM, que la CSP no bloquea.
+    "style-src 'self'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
@@ -60,7 +62,7 @@ export function armarHeaders(proyectoSupabase) {
     '  X-Content-Type-Options: nosniff',
     '  X-Frame-Options: DENY',
     '  Referrer-Policy: strict-origin-when-cross-origin',
-    '  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()',
+    '  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()',
     '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
     '  Cross-Origin-Opener-Policy: same-origin',
     '  X-Robots-Tag: noindex, nofollow',
@@ -71,7 +73,7 @@ export function armarHeaders(proyectoSupabase) {
     '/ocr/*',
     '  Cache-Control: public, max-age=31536000, immutable',
     '',
-    '/_expo/static/*',
+    '/assets/*',
     '  Cache-Control: public, max-age=31536000, immutable',
     '',
     '/index.html',
@@ -83,7 +85,7 @@ export function armarHeaders(proyectoSupabase) {
   ].join('\n');
 }
 
-/** Lee .env sin pisar lo que ya venga en el entorno (igual que hace Expo). */
+/** Lee .env sin pisar lo que ya venga en el entorno (igual que hace Vite). */
 function leerEnv() {
   const ruta = join(raiz, '.env');
   if (!existsSync(ruta)) return {};
@@ -95,47 +97,31 @@ function leerEnv() {
   return valores;
 }
 
-// Cloudflare Pages no sube carpetas llamadas node_modules, y Expo deja ahí las fuentes y los
-// íconos de expo-router (assets/node_modules/…): en línea devolvían el index.html. Se mueven a
-// assets/nm y se corrigen las rutas en los archivos de texto.
-export function sacarNodeModules(dist) {
-  const origen = join(dist, 'assets', 'node_modules');
-  if (!existsSync(origen)) return;
-  renameSync(origen, join(dist, 'assets', 'nm'));
-  for (const entrada of readdirSync(dist, { recursive: true, withFileTypes: true })) {
-    if (!entrada.isFile() || !/\.(js|html|css|json)$/.test(entrada.name)) continue;
-    const ruta = join(entrada.parentPath, entrada.name);
-    const texto = readFileSync(ruta, 'utf8');
-    if (texto.includes('/assets/node_modules/')) {
-      writeFileSync(ruta, texto.replaceAll('/assets/node_modules/', '/assets/nm/'));
-    }
-  }
-}
-
 function principal() {
   const { destino, demo } = opcionesDe(process.argv.slice(2));
-  if (demo) process.env.EXPO_PUBLIC_DATOS = 'memoria';
+  if (demo) process.env.VITE_DATOS = 'memoria';
   const env = { ...leerEnv(), ...process.env };
-  const enMemoria = env.EXPO_PUBLIC_DATOS === 'memoria';
-  const urlSupabase = env.EXPO_PUBLIC_SUPABASE_URL || null;
+  const enMemoria = env.VITE_DATOS === 'memoria';
+  const urlSupabase = env.VITE_SUPABASE_URL || null;
 
   if (!enMemoria && !urlSupabase) {
     console.error(
-      'Falta EXPO_PUBLIC_SUPABASE_URL en .env (o corré con EXPO_PUBLIC_DATOS=memoria).',
+      'Falta VITE_SUPABASE_URL en .env (o corré con VITE_DATOS=memoria).',
     );
     process.exit(1);
   }
 
-  console.log(`Exportando la web a ${destino}/…`);
-  // El CLI local de expo (lo mismo que `npx expo export -p web`, pero sin shell).
-  const cliExpo = join(raiz, 'node_modules', 'expo', 'bin', 'cli');
-  execFileSync(process.execPath, [cliExpo, 'export', '-p', 'web', '--output-dir', destino], {
+  console.log(`Armando la web en ${destino}/…`);
+  // El CLI local de Vite (lo mismo que `npx vite build`, pero sin shell). Vite lee .env solo;
+  // las variables del entorno (como VITE_DATOS de --demo) mandan sobre las de .env.
+  const cliVite = join(raiz, 'node_modules', 'vite', 'bin', 'vite.js');
+  execFileSync(process.execPath, [cliVite, 'build', '--outDir', destino, '--emptyOutDir'], {
     cwd: raiz,
     stdio: 'inherit',
+    env: { ...process.env },
   });
 
   const dist = join(raiz, destino);
-  sacarNodeModules(dist);
   writeFileSync(join(dist, '_headers'), armarHeaders(enMemoria ? null : urlSupabase));
   writeFileSync(join(dist, '_redirects'), '/* /index.html 200\n');
   console.log(`Listo: ${destino}/ con _headers y _redirects.`);

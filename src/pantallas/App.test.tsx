@@ -36,7 +36,8 @@ it('la barra lleva a cada pestaña', async () => {
   render(<App />);
   await userEvent.click(screen.getByRole('link', { name: 'Stock' }));
   expect(location.pathname).toBe('/stock');
-  expect(screen.getByRole('heading', { name: 'Stock' })).toBeInTheDocument();
+  // Stock se baja al entrar (carga diferida): hay que esperarla.
+  expect(await screen.findByRole('heading', { name: 'Stock' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Stock' })).toHaveAttribute('aria-current', 'page');
   expect(document.title).toBe('Stock · Stock del hogar');
 });
