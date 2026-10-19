@@ -13,7 +13,10 @@ import { Cargar } from './Cargar';
 import { EnConstruccion } from './EnConstruccion';
 import { Ingresar } from './Ingresar';
 import { Inicio } from './Inicio';
+import { Producto } from './Producto';
+import { ProductoNuevo } from './ProductoNuevo';
 import { PantallaAjena, PantallaCarga, PantallaError } from './Sesion';
+import { Stock } from './Stock';
 
 export function App() {
   return (
@@ -60,7 +63,7 @@ function Pestanas() {
           </Route>
           <Route path="/stock">
             <Conteo titulo="Stock">
-              <EnConstruccion titulo="Stock" />
+              <Stock />
             </Conteo>
           </Route>
           <Route path="/analisis">
@@ -78,9 +81,14 @@ function Pestanas() {
               <Cargar />
             </Conteo>
           </Route>
+          <Route path="/producto/nuevo">
+            <Conteo titulo="Producto nuevo">
+              <ProductoNuevo />
+            </Conteo>
+          </Route>
           <Route path="/producto/:id">
             <Conteo titulo="Producto">
-              <EnConstruccion titulo="Producto" />
+              <Producto />
             </Conteo>
           </Route>
           {/* /ingresar con la sesión lista, o cualquier ruta desconocida: a Inicio. */}

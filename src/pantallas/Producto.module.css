@@ -1,0 +1,21 @@
+.acciones {
+  display: grid;
+  gap: var(--espacio-s);
+}
+
+.datos {
+  display: grid;
+  gap: var(--espacio-xs);
+}
+
+.fuerte {
+  margin: 0;
+  font-weight: var(--peso-fuerte);
+}
+
+.sub {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
