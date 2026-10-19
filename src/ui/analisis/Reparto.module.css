@@ -1,0 +1,112 @@
+.seccion {
+  margin: 0;
+  font-family: var(--fuente-texto);
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.tarjeta {
+  padding-block: 0;
+}
+
+.lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espacio-m);
+  min-height: var(--medida-fila);
+  padding-block: var(--espacio-s);
+}
+
+.separador {
+  border-top: var(--medida-borde) solid var(--color-borde);
+}
+
+.inicial {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: var(--medida-indicador-alto);
+  aspect-ratio: 1;
+  padding: var(--espacio-s);
+  border: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-chip);
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+}
+
+.datos {
+  display: grid;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: calc(var(--medida-fila) * 2);
+  min-width: 0;
+}
+
+.nombre {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--tamano-m);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.sub {
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.saldo {
+  display: grid;
+  align-items: flex-end;
+  margin-left: auto;
+  text-align: right;
+}
+
+.palabra {
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.motivo {
+  padding-block: var(--espacio-m);
+}
+
+.texto {
+  margin: 0;
+  font-size: var(--tamano-m);
+  line-height: var(--interlineado-texto);
+}
+
+.transferencia {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espacio-m);
+  min-height: var(--medida-tactil);
+  padding-block: var(--espacio-s);
+}
+
+.textoTransferencia {
+  flex-grow: 1;
+  flex-shrink: 1;
+  font-size: var(--tamano-m);
+  line-height: var(--interlineado-texto);
+}
+
+.montoTransferencia {
+  margin-left: auto;
+}

@@ -1,0 +1,30 @@
+.tarjeta {
+  display: grid;
+  gap: var(--espacio-s);
+}
+
+.titulo {
+  margin: 0;
+  font-family: var(--fuente-titulo);
+  font-size: var(--tamano-xl);
+  line-height: var(--interlineado-titulo);
+}
+
+.texto {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-s);
+}
+
+.accion {
+  display: flex;
+  flex-grow: 1;
+  flex-basis: calc(var(--medida-fila) * 1.5);
+}

@@ -1,0 +1,22 @@
+.esqueleto {
+  display: block;
+  width: var(--esqueleto-ancho, 100%);
+  height: var(--esqueleto-alto);
+  border-radius: var(--radio-chip);
+  background: var(--color-borde);
+  animation: latir var(--mov-latido) ease-in-out infinite alternate;
+}
+
+.circulo {
+  width: var(--esqueleto-alto);
+}
+
+@keyframes latir {
+  from {
+    opacity: var(--opacidad-esqueleto-min);
+  }
+
+  to {
+    opacity: var(--opacidad-esqueleto-max);
+  }
+}

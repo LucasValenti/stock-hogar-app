@@ -1,0 +1,40 @@
+.tarjeta {
+  display: grid;
+  justify-items: center;
+  gap: var(--espacio-s);
+  text-align: center;
+}
+
+.marca {
+  display: grid;
+  place-items: center;
+  width: var(--medida-tactil);
+  height: var(--medida-tactil);
+  border: var(--medida-borde-fuerte) solid var(--color-borde);
+  border-radius: var(--radio-chip);
+  color: var(--color-texto-suave);
+}
+
+.bueno {
+  border-color: var(--color-hay);
+  color: var(--color-hay);
+}
+
+.titulo {
+  margin: 0;
+  font-family: var(--fuente-titulo);
+  font-size: var(--tamano-xl);
+  line-height: var(--interlineado-titulo);
+}
+
+.texto {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.accion {
+  align-self: stretch;
+  justify-self: stretch;
+}

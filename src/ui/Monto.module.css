@@ -1,0 +1,53 @@
+.monto {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--fuente-texto);
+  font-weight: var(--peso-numeros);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.total {
+  font-size: var(--tamano-xxxl);
+  line-height: var(--interlineado-total);
+}
+
+.fila {
+  font-size: var(--tamano-m);
+  line-height: var(--interlineado-texto);
+}
+
+.sub {
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-medio);
+  line-height: var(--interlineado-texto);
+}
+
+.texto {
+  color: var(--color-texto);
+}
+
+.textoSuave {
+  color: var(--color-texto-suave);
+}
+
+.acento {
+  color: var(--color-acento);
+}
+
+.sobreAcento {
+  color: var(--color-sobre-acento);
+}
+
+.falta {
+  color: var(--color-falta);
+}
+
+.hay {
+  color: var(--color-hay);
+}
+
+.cerrado {
+  color: var(--color-cerrado);
+}
