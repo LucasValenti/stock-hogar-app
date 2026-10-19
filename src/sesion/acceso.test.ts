@@ -1,11 +1,11 @@
 // Las llamadas de ingreso a Supabase Auth, con el cliente simulado.
 
 const mockAuth = {
-  signInWithOtp: jest.fn(),
-  verifyOtp: jest.fn(),
-  signOut: jest.fn(),
+  signInWithOtp: vi.fn(),
+  verifyOtp: vi.fn(),
+  signOut: vi.fn(),
 };
-jest.mock('@/datos/cliente', () => ({ obtenerCliente: () => ({ auth: mockAuth }) }));
+vi.mock('@/datos/cliente', () => ({ obtenerCliente: () => ({ auth: mockAuth }) }));
 
 import { cerrarSesion, pedirCodigo, verificarCodigo } from './acceso';
 

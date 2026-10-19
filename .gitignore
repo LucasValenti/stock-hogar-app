@@ -47,3 +47,4 @@ yarn-error.*
 
 # Código Expo de referencia para portar pantallas (está en main y en el tag v1.0.1)
 referencia-expo/
+.encargos/

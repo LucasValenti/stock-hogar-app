@@ -156,7 +156,7 @@ describe('crearDatosEnMemoria', () => {
 
   test('escucharCambios avisa al escribir y deja de avisar al cortar', async () => {
     const datos = crearDatosEnMemoria(semilla());
-    const alCambiar = jest.fn();
+    const alCambiar = vi.fn();
     const dejar = datos.escucharCambios(alCambiar);
     await datos.ajustarStock('p-yerba', 1);
     dejar();
@@ -484,7 +484,7 @@ describe('anotaciones', () => {
 
   test('crear y borrar avisan a quien escucha cambios', async () => {
     const datos = crearDatosEnMemoria(semilla());
-    const alCambiar = jest.fn();
+    const alCambiar = vi.fn();
     datos.escucharCambios(alCambiar);
     const a = await datos.crearAnotacion('Comprar pan');
     await datos.borrarAnotacion(a.id);
@@ -545,7 +545,7 @@ describe('último movimiento del stock y «Sigue habiendo»', () => {
 
   test('confirmarHay de un producto que no existe rechaza con PRODUCTO_INEXISTENTE y no avisa', async () => {
     const datos = crearDatosEnMemoria(semilla());
-    const alCambiar = jest.fn();
+    const alCambiar = vi.fn();
     datos.escucharCambios(alCambiar);
     await expect(datos.confirmarHay('no-existe')).rejects.toMatchObject({ message: 'PRODUCTO_INEXISTENTE' });
     expect(alCambiar).not.toHaveBeenCalled();
@@ -611,7 +611,7 @@ describe('productos: unidad y edición', () => {
 
   test('editarProducto cambia nombre, marca, categoría y unidad, y no toca stock ni fecha', async () => {
     const datos = crearDatosEnMemoria(semilla());
-    const alCambiar = jest.fn();
+    const alCambiar = vi.fn();
     datos.escucharCambios(alCambiar);
     const editado = await datos.editarProducto({
       id: 'p-harina',

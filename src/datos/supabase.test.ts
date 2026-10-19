@@ -70,8 +70,8 @@ describe('escucharCambios', () => {
   test('dos oyentes comparten un solo canal y los dos reciben cada cambio', () => {
     const { cliente, canales } = clienteFalso();
     const datos = crearDatosSupabase(cliente);
-    const a = jest.fn();
-    const b = jest.fn();
+    const a = vi.fn();
+    const b = vi.fn();
     datos.escucharCambios(a);
     expect(() => datos.escucharCambios(b)).not.toThrow();
     expect(canales).toHaveLength(1);
@@ -82,14 +82,14 @@ describe('escucharCambios', () => {
 
   test('escucha todo el esquema público, sin filtrar por tabla: las anotaciones (publicadas por la 007) también avisan', () => {
     const { cliente, canales } = clienteFalso();
-    crearDatosSupabase(cliente).escucharCambios(jest.fn());
+    crearDatosSupabase(cliente).escucharCambios(vi.fn());
     expect(canales[0].filtros).toEqual([{ event: '*', schema: 'public' }]);
   });
 
   test('el canal es uno por cliente aunque la capa de datos se arme dos veces', () => {
     const { cliente, canales } = clienteFalso();
-    const a = jest.fn();
-    const b = jest.fn();
+    const a = vi.fn();
+    const b = vi.fn();
     crearDatosSupabase(cliente).escucharCambios(a);
     crearDatosSupabase(cliente).escucharCambios(b);
     expect(canales).toHaveLength(1);
@@ -101,8 +101,8 @@ describe('escucharCambios', () => {
   test('sacar un oyente deja al otro escuchando; sacar los dos cierra el canal', () => {
     const { cliente, canales, removidos } = clienteFalso();
     const datos = crearDatosSupabase(cliente);
-    const a = jest.fn();
-    const b = jest.fn();
+    const a = vi.fn();
+    const b = vi.fn();
     const dejarA = datos.escucharCambios(a);
     const dejarB = datos.escucharCambios(b);
     dejarA();
@@ -121,8 +121,8 @@ describe('escucharCambios', () => {
   test('después de cerrarse, un oyente nuevo abre otro canal y recibe', () => {
     const { cliente, canales } = clienteFalso();
     const datos = crearDatosSupabase(cliente);
-    datos.escucharCambios(jest.fn())();
-    const c = jest.fn();
+    datos.escucharCambios(vi.fn())();
+    const c = vi.fn();
     datos.escucharCambios(c);
     expect(canales).toHaveLength(1);
     canales[0].emitir();
@@ -132,8 +132,8 @@ describe('escucharCambios', () => {
   test('si el canal se cae y vuelve, avisa a todos (lo del corte no llegó); la primera conexión no', () => {
     const { cliente, canales } = clienteFalso();
     const datos = crearDatosSupabase(cliente);
-    const a = jest.fn();
-    const b = jest.fn();
+    const a = vi.fn();
+    const b = vi.fn();
     datos.escucharCambios(a);
     datos.escucharCambios(b);
     canales[0].estado('SUBSCRIBED');

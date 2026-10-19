@@ -1,7 +1,7 @@
 // «Subir comprobante» en Cargar: elige una imagen o un PDF, lo lee en el dispositivo y pasa lo leído
-// al formulario. El OCR y el lector de PDF no están en Expo Go: ahí solo avisa. Si la pantalla se va mientras lee, no toca nada.
+// al formulario. El archivo lo elige la pantalla con un input tipo file y acá se le da una URL local.
+// Si la pantalla se va mientras lee, no toca nada.
 
-import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { datos } from '@/datos';
@@ -95,12 +95,12 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
     [integrantes, notaActual, aplicar],
   );
 
-  const elegir = useCallback(async () => {
-    const res = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true });
-    if (res.canceled || !res.assets?.length) return;
-    const a = res.assets[0];
-    await usar(a.uri, a.size, a.mimeType);
-  }, [usar]);
+  const elegir = useCallback(
+    async (archivo: File) => {
+      await usar(URL.createObjectURL(archivo), archivo.size, archivo.type);
+    },
+    [usar],
+  );
 
   return { elegir, usar, leyendo, aviso };
 }

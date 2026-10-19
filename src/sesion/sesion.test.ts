@@ -53,7 +53,7 @@ describe('salirSinCola', () => {
   async function conOpPendiente() {
     const sesion = { yo: 'ejemplo-ana' as string | null };
     const red = { hay: false };
-    const ejecutar = jest.fn(async (o: Op) => {
+    const ejecutar = vi.fn(async (o: Op) => {
       if (!red.hay) throw new TypeError('Network request failed');
       return o.id;
     });
@@ -61,7 +61,7 @@ describe('salirSinCola', () => {
     await cola.encolar({ id: 'a', tipo: 'guardarGasto', datos: {} });
     ejecutar.mockClear();
     red.hay = true;
-    const fijar = jest.fn((id: string | null) => {
+    const fijar = vi.fn((id: string | null) => {
       sesion.yo = id;
     });
     return { cola, ejecutar, fijar };
@@ -70,7 +70,7 @@ describe('salirSinCola', () => {
   test('desde que empieza a salir no se manda ninguna op pendiente, y quedan guardadas', async () => {
     const { cola, ejecutar, fijar } = await conOpPendiente();
     // Mientras se cierra la sesión vuelve la red y algo pide vaciar la cola.
-    const cerrar = jest.fn(async () => {
+    const cerrar = vi.fn(async () => {
       await cola.vaciar();
     });
     await salirSinCola(cerrar, fijar, 'ejemplo-ana');
