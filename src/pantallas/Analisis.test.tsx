@@ -379,7 +379,7 @@ test('Detalle anuncia cuántos hay cuando se deja de tipear (600 ms), en una reg
   history.replaceState(null, '', '/analisis?vista=detalle');
   render(<Analisis />);
   await screen.findByLabelText('Buscar');
-  const region = screen.getByTestId('conteo-detalle');
+  const region = await screen.findByTestId('conteo-detalle');
   expect(region).toHaveAttribute('aria-live', 'polite');
   await waitFor(() => expect(within(region).getByText('2 gastos')).toBeInTheDocument());
 
