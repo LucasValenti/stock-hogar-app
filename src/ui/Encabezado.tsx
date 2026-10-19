@@ -3,6 +3,7 @@
 // Sin `alVolver`, vuelve con el historial de la app; si no hay, va a Inicio.
 import { useLocation } from 'wouter';
 
+import { volver } from './volver';
 import estilos from './Encabezado.module.css';
 import { Icono } from './Icono';
 
@@ -11,18 +12,17 @@ type Props = { titulo: string; alVolver?: () => void };
 export function Encabezado({ titulo, alVolver }: Props) {
   const [, navegar] = useLocation();
 
-  function volver() {
+  function alTocar() {
     if (alVolver) {
       alVolver();
       return;
     }
-    if (window.history.length > 1) window.history.back();
-    else navegar('/');
+    volver(navegar);
   }
 
   return (
     <header className={estilos.encabezado}>
-      <button type="button" className={estilos.volver} aria-label="Volver" onClick={volver}>
+      <button type="button" className={estilos.volver} aria-label="Volver" onClick={alTocar}>
         <Icono nombre="atras" tamano={20} />
       </button>
       <h1 className={estilos.titulo}>{titulo}</h1>

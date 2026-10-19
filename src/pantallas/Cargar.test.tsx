@@ -111,7 +111,8 @@ N.* de operación de Mercado Pago
 
 function irA(ruta: string) {
   history.replaceState(null, '', '/');
-  history.pushState(null, '', ruta);
+  // Como si se viniera desde otra pantalla de la app: la entrada lleva su profundidad (ver src/ui/volver.ts).
+  history.pushState({ profundidad: 1 }, '', ruta);
 }
 
 beforeEach(() => {

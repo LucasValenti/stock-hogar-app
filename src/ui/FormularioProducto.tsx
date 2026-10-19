@@ -11,6 +11,7 @@ import { Chip } from './Chip';
 import { EstadoVacio } from './EstadoVacio';
 import { Hoja } from './Hoja';
 import { MensajeError } from './MensajeError';
+import { volver } from './volver';
 import estilos from './FormularioProducto.module.css';
 
 export { MensajeError };
@@ -23,18 +24,9 @@ const UNIDADES: Unidad[] = ['unidad', 'paquete', 'kg', 'litro'];
 
 type Navegar = (ruta: string) => void;
 
-/**
- * Al terminar en el alta o la ficha: atrás si se puede; si se entró directo, a Stock.
- * wouter no expone si el historial es propio: si el navegador tiene a dónde volver, vuelve;
- * si no, navega a /stock con la función de `useLocation` que recibe la pantalla.
- */
-export function volverAStock(navegar?: Navegar) {
-  if (window.history.length > 1) {
-    window.history.back();
-    return;
-  }
-  if (navegar) navegar('/stock');
-  else window.location.assign('/stock');
+/** Al terminar en el alta o la ficha: atrás si se vino desde la app; si se entró directo, a Stock. */
+export function volverAStock(navegar: Navegar) {
+  volver(navegar, '/stock');
 }
 
 /**

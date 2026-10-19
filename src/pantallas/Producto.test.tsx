@@ -54,7 +54,8 @@ beforeEach(() => {
   m.params = {};
   m.search = '';
   history.replaceState(null, '', '/');
-  history.pushState(null, '', '/producto/harina');
+  // Como si se viniera desde Stock: la entrada lleva su profundidad (ver src/ui/volver.ts).
+  history.pushState({ profundidad: 1 }, '', '/producto/harina');
   vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
   m.datos.categorias.mockResolvedValue([
     { id: 'almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 },

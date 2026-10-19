@@ -1,12 +1,13 @@
 // Raíz de la app: la sesión decide qué se ve (carga, error, cuenta ajena, ingreso o la app) y,
 // con la sesión lista, las rutas de wouter reparten las pantallas bajo la barra de pestañas.
-import { useCallback, useEffect, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { Redirect, Route, Switch, useLocation } from 'wouter';
 
 import { registrarSw } from '@/comprobante/registrarSw';
 import { useCompartidoPendiente } from '@/comprobante/useCompartidoPendiente';
 import { SesionProvider, useSesion } from '@/sesion/sesion';
 import { BarraPestanas } from '@/ui/BarraPestanas';
+import { anotarEntrada } from '@/ui/volver';
 
 import estilos from './App.module.css';
 import { Cargar } from './Cargar';
@@ -28,7 +29,13 @@ export function App() {
 
 function Raiz() {
   const { estado, error, reintentar } = useSesion();
-  const [, navegar] = useLocation();
+  const [ubicacion, navegar] = useLocation();
+  // Cada entrada del historial queda marcada con su profundidad en la app (para «Volver»).
+  const primera = useRef(true);
+  useEffect(() => {
+    anotarEntrada(primera.current);
+    primera.current = false;
+  }, [ubicacion]);
   // Un comprobante compartido desde otra app abre Cargar cuando la sesión está lista.
   const irACargar = useCallback(() => navegar('/cargar?compartido=1'), [navegar]);
   useCompartidoPendiente(irACargar);

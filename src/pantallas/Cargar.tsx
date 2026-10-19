@@ -5,6 +5,7 @@
 // Con `?id=` edita. Un gasto de un mes cerrado se ve bloqueado; uno viejo «por productos» (con precios)
 // se ve en solo lectura y solo se puede borrar. Sin red, el gasto queda en el celu (cola de escritura)
 // con su `nuevo_id`: aunque se reintente, la base lo guarda una sola vez.
+import { volver } from '@/ui/volver';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearch } from 'wouter';
 
@@ -72,10 +73,7 @@ export function Cargar() {
   const [carga, setCarga] = useState<Carga>({ estado: 'cargando' });
   const [intento, setIntento] = useState(0);
 
-  const volver = useCallback(() => {
-    if (window.history.length > 1) window.history.back();
-    else navegar('/');
-  }, [navegar]);
+  const alVolver = useCallback(() => volver(navegar), [navegar]);
 
   useEffect(() => {
     let vigente = true;
@@ -103,7 +101,7 @@ export function Cargar() {
   if (carga.estado === 'cargando') {
     return (
       <Pantalla ocupado>
-        <Encabezado titulo={titulo} alVolver={volver} />
+        <Encabezado titulo={titulo} alVolver={alVolver} />
         <Cargando />
       </Pantalla>
     );
@@ -111,7 +109,7 @@ export function Cargar() {
   if (carga.estado === 'error') {
     return (
       <Pantalla>
-        <Encabezado titulo={titulo} alVolver={volver} />
+        <Encabezado titulo={titulo} alVolver={alVolver} />
         <Aviso
           alerta
           icono="nube"
@@ -124,9 +122,9 @@ export function Cargar() {
   }
   const { existente } = carga.base;
   if (existente?.gasto.modo === 'productos') {
-    return <GastoPorProductos base={carga.base} existente={existente} alVolver={volver} />;
+    return <GastoPorProductos base={carga.base} existente={existente} alVolver={alVolver} />;
   }
-  return <Formulario base={carga.base} compartido={esCompartido} alVolver={volver} />;
+  return <Formulario base={carga.base} compartido={esCompartido} alVolver={alVolver} />;
 }
 
 // ——— Cargar o editar (por total, con tildados) ———
