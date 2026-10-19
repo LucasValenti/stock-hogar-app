@@ -31,11 +31,20 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
   // Cada lectura lleva un número: la última gana; una vieja (o una pantalla que se fue) no toca nada.
   const intento = useRef(0);
   const vigente = useRef(true);
+  // La URL local del archivo elegido: se libera al terminar de leer o al salir de la pantalla.
+  const url = useRef<string | null>(null);
+  const liberar = useCallback((actual: string) => {
+    if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(actual);
+  }, []);
   useEffect(
     () => () => {
       vigente.current = false;
+      if (url.current) {
+        liberar(url.current);
+        url.current = null;
+      }
     },
-    [],
+    [liberar],
   );
 
   const usar = useCallback(
@@ -97,9 +106,19 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
 
   const elegir = useCallback(
     async (archivo: File) => {
-      await usar(URL.createObjectURL(archivo), archivo.size, archivo.type);
+      if (url.current) liberar(url.current);
+      const actual = URL.createObjectURL(archivo);
+      url.current = actual;
+      try {
+        await usar(actual, archivo.size, archivo.type);
+      } finally {
+        if (url.current === actual) {
+          liberar(actual);
+          url.current = null;
+        }
+      }
     },
-    [usar],
+    [usar, liberar],
   );
 
   return { elegir, usar, leyendo, aviso };

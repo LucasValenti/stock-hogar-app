@@ -10,6 +10,9 @@
 }
 
 .entrada {
+  /* Sin esto, el ancho por defecto del input (20 caracteres) empuja la pantalla con la letra grande del monto. */
+  width: 100%;
+  min-width: 0;
   min-height: var(--medida-tactil);
   padding: 0 var(--espacio-l);
   border-radius: var(--radio-boton);

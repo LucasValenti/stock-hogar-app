@@ -9,6 +9,7 @@ import { SesionProvider, useSesion } from '@/sesion/sesion';
 import { BarraPestanas } from '@/ui/BarraPestanas';
 
 import estilos from './App.module.css';
+import { Cargar } from './Cargar';
 import { EnConstruccion } from './EnConstruccion';
 import { Ingresar } from './Ingresar';
 import { Inicio } from './Inicio';
@@ -74,7 +75,7 @@ function Pestanas() {
           </Route>
           <Route path="/cargar">
             <Conteo titulo="Cargar gasto">
-              <EnConstruccion titulo="Cargar gasto" />
+              <Cargar />
             </Conteo>
           </Route>
           <Route path="/producto/:id">

@@ -4,6 +4,7 @@
 
 .contenido {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--espacio-l);
   align-content: start;
   width: 100%;
