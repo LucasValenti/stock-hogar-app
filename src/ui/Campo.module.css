@@ -24,3 +24,23 @@
   border-width: var(--medida-borde-fuerte);
   border-color: var(--color-falta);
 }
+
+.ayuda {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.grande {
+  font-size: var(--tamano-xxxl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--peso-numeros);
+  text-align: center;
+}
+
+.bloqueado {
+  background: var(--color-fondo);
+  color: var(--color-texto-suave);
+  cursor: default;
+}

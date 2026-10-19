@@ -1,0 +1,28 @@
+.encabezado {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-s);
+  min-height: var(--medida-tactil);
+}
+
+.volver {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--medida-tactil);
+  height: var(--medida-tactil);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radio-boton);
+  background: none;
+  color: var(--color-texto);
+  cursor: pointer;
+}
+
+.titulo {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--fuente-titulo);
+  font-size: var(--tamano-xl);
+  line-height: var(--interlineado-titulo);
+}
