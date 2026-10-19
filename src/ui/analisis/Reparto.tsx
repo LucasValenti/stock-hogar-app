@@ -1,6 +1,6 @@
 // «Cómo viene el reparto» (Inicio y Análisis en curso): una fila por persona con su inicial, la parte,
 // lo que puso y el saldo con signo y palabra («recibe», «pone»); nunca solo color. Si no se puede
-// repartir, el motivo. En Análisis (`detallado`) la fila suma lo que le toca en pesos, como la maqueta.
+// repartir, el motivo: el sueldo que falta lo ven todos, y a quien puede cargarlo se le dice dónde. En Análisis (`detallado`) la fila suma lo que le toca en pesos, como la maqueta.
 import { formatear, formatearPorcentaje } from '@/logica/dinero';
 import type { ResultadoReparto } from '@/logica/reparto';
 import { enMayuscula } from '@/logica/texto';
@@ -10,16 +10,29 @@ import estilos from './Reparto.module.css';
 import { Monto, type NombreColorMonto } from '../Monto';
 import { Tarjeta } from '../Tarjeta';
 
-/** Por qué no se puede repartir, con dónde se arregla. */
-export function motivoSinReparto(reparto: Extract<ResultadoReparto, { ok: false }>, hayIntegrantes: boolean): string {
-  if (reparto.error === 'sueldo') return `Para repartir falta el sueldo de ${reparto.sinSueldo.join(', ')}. Se carga en Ajustes → Integrantes.`;
+/** Por qué no se puede repartir, con dónde se arregla. Ajustes → Integrantes solo para quien ve los sueldos. */
+export function motivoSinReparto(
+  reparto: Extract<ResultadoReparto, { ok: false }>,
+  hayIntegrantes: boolean,
+  verSueldos: boolean,
+): string {
+  if (reparto.error === 'sueldo') {
+    const falta = `Para repartir falta el sueldo de ${reparto.sinSueldo.join(', ')}.`;
+    return verSueldos ? `${falta} Se carga en Ajustes → Integrantes.` : falta;
+  }
   if (reparto.error === 'pagador') return 'Hay un gasto de alguien que ya no está en la casa: revisalo para poder repartir.';
   return hayIntegrantes ? 'Este mes no hay integrantes para repartir.' : 'Todavía no hay integrantes en la casa.';
 }
 
-type Props = { reparto: ResultadoReparto; integrantes: Pick<Integrante, 'id'>[]; detallado?: boolean };
+type Props = {
+  reparto: ResultadoReparto;
+  integrantes: Pick<Integrante, 'id'>[];
+  /** Quien puede ver (y cargar) sueldos: el aviso del sueldo que falta le dice dónde se carga. */
+  verSueldos: boolean;
+  detallado?: boolean;
+};
 
-export function Reparto({ reparto, integrantes, detallado = false }: Props) {
+export function Reparto({ reparto, integrantes, verSueldos, detallado = false }: Props) {
   return (
     <>
       <h2 className={estilos.seccion}>Cómo viene el reparto</h2>
@@ -29,7 +42,7 @@ export function Reparto({ reparto, integrantes, detallado = false }: Props) {
             reparto.filas.map((f, i) => <FilaDeReparto key={f.id} fila={f} primera={i === 0} detallado={detallado} />)
           ) : (
             <li className={estilos.motivo}>
-              <p className={estilos.texto}>{motivoSinReparto(reparto, integrantes.length > 0)}</p>
+              <p className={estilos.texto}>{motivoSinReparto(reparto, integrantes.length > 0, verSueldos)}</p>
             </li>
           )}
         </ul>

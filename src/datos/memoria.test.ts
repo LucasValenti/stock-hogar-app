@@ -1,4 +1,4 @@
-import { repartoDelMes } from '@/logica/reparto';
+import { integrantesConPeso, repartoDelMes } from '@/logica/reparto';
 import { paraRevisar } from '@/logica/revisar';
 import type { Integrante, Producto } from '@/logica/tipos';
 
@@ -122,7 +122,7 @@ describe('crearDatosEnMemoria', () => {
     await datos.guardarGasto(gastoTotal('2026-03-10', { nuevo_id: 'g-a' }), []);
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
     const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantes, '2026-03', gastos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
 
     // Otra persona carga un gasto del mes mientras se miraba el reparto.
@@ -139,7 +139,7 @@ describe('crearDatosEnMemoria', () => {
     await datos.guardarGasto(gastoTotal('2026-03-10', { nuevo_id: 'g-a' }), []);
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
     const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantes, '2026-03', gastos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
 
     await datos.cerrarMes('2026-03', r, gastos, integrantes);
@@ -155,7 +155,7 @@ describe('crearDatosEnMemoria', () => {
     await datos.guardarGasto(alta, []);
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
     const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantes, '2026-03', gastos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
     await datos.cerrarMes('2026-03', r, gastos, integrantes);
 
@@ -452,7 +452,7 @@ describe('gastos por total con productos tildados', () => {
     );
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
     const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantes, '2026-03', gastos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
     await datos.cerrarMes('2026-03', r, gastos, integrantes);
 
@@ -1151,7 +1151,7 @@ describe('cerrar y reabrir el mes piden el permiso «sueldos»', () => {
   async function calculoDe(datos: Datos) {
     const gastos = await datos.gastosEntre(`${MES}-01`, '2026-11-01');
     const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantes, MES, gastos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), MES, gastos);
     if (!r.ok) throw new Error('el reparto de la casa de ejemplo tendría que dar');
     return { r, gastos, integrantes };
   }

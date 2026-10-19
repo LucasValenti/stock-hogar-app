@@ -1,15 +1,18 @@
 // Inicio: el total del mes, lo que falta (con el paso a Stock › Pendientes), cómo viene el reparto,
 // «¿Todavía hay?» de a un producto y los últimos gastos, con los estados de la maqueta «Elegida»
 // (cargando, sin conexión y mes sin gastos). Se actualiza solo cuando cambia algo en la casa.
+// El reparto lo ven todos: con los sueldos quien tiene el permiso, con las partes del mes el resto.
 import { useLocation } from 'wouter';
 
 import { datos, esModoMemoria } from '@/datos';
 import { esCorte } from '@/datos/cola';
+import { pesosDelMes } from '@/datos/pesos';
 import type { GastoConItems } from '@/datos/tipos';
 import { formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, nombreMes, rangoMes } from '@/logica/meses';
-import { repartoDelMes } from '@/logica/reparto';
+import { capacidades } from '@/logica/permisos';
+import { integrantesConPeso, repartoDelMes } from '@/logica/reparto';
 import { pendientesConAnotaciones, textoPendientes } from '@/logica/stock';
 import { enMayuscula } from '@/logica/texto';
 import type { Anotacion, Categoria, Integrante, Producto } from '@/logica/tipos';
@@ -30,7 +33,7 @@ import { useEnVivo } from '@/ui/useEnVivo';
 import estilos from './Inicio.module.css';
 
 type Casa = {
-  integrantes: Integrante[];
+  integrantes: Array<Integrante & { peso: number | null }>;
   gastos: GastoConItems[];
   categorias: Categoria[];
   productos: Producto[];
@@ -42,7 +45,7 @@ const ULTIMOS = 5;
 /** «octubre de 2026» → «octubre». */
 const soloMes = (mes: string) => nombreMes(mes).split(' ')[0];
 
-function pedirCasa(mes: string): Promise<Casa> {
+function pedirCasa(mes: string, verSueldos: boolean): Promise<Casa> {
   const { desde, hastaExcl } = rangoMes(mes);
   return Promise.all([
     datos.integrantes(),
@@ -50,8 +53,9 @@ function pedirCasa(mes: string): Promise<Casa> {
     datos.categorias(),
     datos.productos(),
     datos.anotaciones(),
-  ]).then(([integrantes, gastos, categorias, productos, anotaciones]) => ({
-    integrantes,
+    pesosDelMes(mes, verSueldos),
+  ]).then(([integrantes, gastos, categorias, productos, anotaciones, pesos]) => ({
+    integrantes: integrantesConPeso(integrantes, pesos),
     gastos,
     categorias,
     productos,
@@ -60,9 +64,11 @@ function pedirCasa(mes: string): Promise<Casa> {
 }
 
 export function Inicio() {
-  const { yo, demo } = useSesion();
+  const { yo, demo, acceso } = useSesion();
   const mes = mesActual();
-  const { carga, reintentar } = useEnVivo(() => pedirCasa(mes), mes);
+  const { verSueldos } = capacidades(acceso);
+  // Si cambia el permiso, se vuelve a pedir con los pesos que corresponden.
+  const { carga, reintentar } = useEnVivo(() => pedirCasa(mes, verSueldos), `${mes}:${verSueldos}`);
   const nombre = soloMes(mes);
 
   return (
@@ -80,13 +86,13 @@ export function Inicio() {
           accion={{ texto: 'Reintentar', onClick: reintentar }}
         />
       ) : (
-        <DelMes mes={mes} nombre={nombre} casa={carga.valor} />
+        <DelMes mes={mes} nombre={nombre} casa={carga.valor} verSueldos={verSueldos} />
       )}
     </Pantalla>
   );
 }
 
-function DelMes({ mes, nombre, casa }: { mes: string; nombre: string; casa: Casa }) {
+function DelMes({ mes, nombre, casa, verSueldos }: { mes: string; nombre: string; casa: Casa; verSueldos: boolean }) {
   const [, navegar] = useLocation();
   const { integrantes, gastos, categorias, productos, anotaciones } = casa;
   const reparto = repartoDelMes(integrantes, mes, gastos);
@@ -112,7 +118,7 @@ function DelMes({ mes, nombre, casa }: { mes: string; nombre: string; casa: Casa
           accion={{ texto: 'Cargar gasto', icono: 'mas', onClick: () => navegar('/cargar') }}
         />
       ) : (
-        <Reparto reparto={reparto} integrantes={integrantes} />
+        <Reparto reparto={reparto} integrantes={integrantes} verSueldos={verSueldos} />
       )}
       <TodaviaHay productos={productos} categorias={categorias} sinLleno={cuantos === 0} />
       {cuantos ? (

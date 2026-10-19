@@ -9,7 +9,7 @@ import type { GastoConItems } from '@/datos/tipos';
 import { formatear, formatearPorcentaje } from '@/logica/dinero';
 import { fechaLarga, mesActual, mesAnterior, mesSiguiente, nombreMes, rangoMes, ultimoDia } from '@/logica/meses';
 import { enMayuscula } from '@/logica/texto';
-import type { Categoria, Cierre, Integrante } from '@/logica/tipos';
+import type { Acceso, Categoria, Cierre, Integrante } from '@/logica/tipos';
 
 import { Analisis } from './Analisis';
 
@@ -26,7 +26,12 @@ const mockDatos = vi.hoisted(() => ({
   cerrarMes: vi.fn(),
   reabrirMes: vi.fn(),
   escucharCambios: vi.fn((_f: () => void) => () => undefined),
+  partesDelMes: vi.fn(),
+  sueldos: vi.fn(),
 }));
+const sesion = vi.hoisted(() => ({ acceso: null as Acceso | null }));
+
+vi.mock('@/sesion/sesion', () => ({ useSesion: () => sesion }));
 
 vi.mock('@/datos', () => ({
   get datos() {
@@ -46,7 +51,7 @@ const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
   admin: false,
   color: null,
 });
-const casa = [persona('a', 'Ana', 600), persona('b', 'Bruno', 400)];
+const casa = [{ ...persona('a', 'Ana', 600), admin: true }, persona('b', 'Bruno', 400)];
 const categorias: Categoria[] = [
   { id: 'almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 },
   { id: 'luz', nombre: 'Luz', tipo: 'servicio', dias_sin_movimiento: 20 },
@@ -89,6 +94,10 @@ beforeEach(() => {
   ];
   cierres = {};
   mockDatos.integrantes.mockResolvedValue(casa);
+  // Con el permiso de sueldos se reparte (y se cierra) con los sueldos reales.
+  sesion.acceso = { admin: false, permisos: ['sueldos'] };
+  mockDatos.sueldos.mockResolvedValue({ a: 600, b: 400 });
+  mockDatos.partesDelMes.mockResolvedValue({ a: 600_000_000_000, b: 400_000_000_000 });
   mockDatos.categorias.mockResolvedValue(categorias);
   mockDatos.gastosEntre.mockImplementation(async (desde: string | null, hastaExcl: string | null) =>
     todos
@@ -163,7 +172,11 @@ test('Cerrar mes pide confirmación propia y guarda el reparto con lo que se us�
   expect(resultado.filas).toHaveLength(2);
   expect(resultado.transferencias).toEqual([{ de: 'b', a: 'a', monto: 400_00 }]);
   expect(gastos.map((g: GastoConItems) => g.id).sort()).toEqual(['g1', 'g2']);
-  expect(integrantes).toBe(casa);
+  // Los sueldos reales, y nada más que lo que la base compara.
+  expect(integrantes).toEqual([
+    { id: 'a', tipo: 'integrante', activo: true, baja_desde: null, sueldo: 600 },
+    { id: 'b', tipo: 'integrante', activo: true, baja_desde: null, sueldo: 400 },
+  ]);
   expect(await screen.findByText(`${enMayuscula(nombreMes(MES))} quedó cerrado.`)).toBeInTheDocument();
   expect(await screen.findByRole('heading', { name: `Cierre de ${soloMes(MES)}` })).toBeInTheDocument();
 });
@@ -235,7 +248,7 @@ test('un mes cerrado se ve como registro, con quién y cuándo cerró, y se reab
 });
 
 test('si falta un sueldo, no ofrece cerrar y dice dónde se carga', async () => {
-  mockDatos.integrantes.mockResolvedValue([casa[0], { ...casa[1], sueldo: null }]);
+  mockDatos.sueldos.mockResolvedValue({ a: 600 });
   await abrir();
   expect(screen.getByText('Para repartir falta el sueldo de Bruno. Se carga en Ajustes → Integrantes.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Cerrar mes' })).not.toBeInTheDocument();
@@ -253,7 +266,7 @@ test('si el reparto deja de cerrar con la hoja abierta, la cierra y dice por qu�
   await abrir();
   await tocar('button', 'Cerrar mes');
   // Mientras confirma, a Bruno le borraron el sueldo.
-  mockDatos.integrantes.mockResolvedValue([casa[0], { ...casa[1], sueldo: null }]);
+  mockDatos.sueldos.mockResolvedValue({ a: 600 });
   act(() => avisarCambio());
   expect(await screen.findByText('Para repartir falta el sueldo de Bruno. Se carga en Ajustes → Integrantes.')).toBeInTheDocument();
   await userEvent.click(hoja().getByRole('button', { name: 'Cerrar mes' }));
@@ -282,6 +295,57 @@ test('sin conexión avisa y Reintentar vuelve a pedir', async () => {
   expect(await screen.findByText('No pudimos traer los datos')).toBeInTheDocument();
   await tocar('button', 'Reintentar');
   expect(await screen.findByRole('button', { name: 'Cerrar mes' })).toBeInTheDocument();
+});
+
+// ——— Permiso de sueldos ———
+
+test('sin el permiso de sueldos se ve el reparto con las partes, sin «Cerrar mes» y con el aviso de a quién pedirlo', async () => {
+  sesion.acceso = { admin: false, permisos: ['altas_bajas'] };
+  await abrir();
+  expect(
+    screen.getByLabelText(
+      texto(
+        `Ana, le toca ${formatearPorcentaje(0.6)} (${formatear(600_00)}), puso ${formatear(1000_00)}. Recibe ${formatear(400_00)}.`,
+      ),
+    ),
+  ).toBeInTheDocument();
+  expect(mockDatos.sueldos).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Cerrar mes' })).not.toBeInTheDocument();
+  expect(screen.getByText('Para cerrar el mes hace falta el permiso de sueldos. Se lo pedís a Ana.')).toBeInTheDocument();
+});
+
+test('sin el permiso de sueldos un mes cerrado no ofrece «Reabrir mes» y dice a quién pedirlo', async () => {
+  sesion.acceso = { admin: false, permisos: [] };
+  cierres[MES] = { mes: MES, total: 0, detalle: { filas: [], transferencias: [] }, cerrado_por: 'a', fecha: '2026-10-01T23:15:00.123456+00:00' };
+  await abrir();
+  expect(screen.queryByRole('button', { name: 'Reabrir mes' })).not.toBeInTheDocument();
+  expect(screen.getByText('Para reabrir el mes hace falta el permiso de sueldos. Se lo pedís a Ana.')).toBeInTheDocument();
+  expect(mockDatos.sueldos).not.toHaveBeenCalled();
+});
+
+test('mientras no se sabe el acceso no se ofrece cerrar ni se piden sueldos', async () => {
+  sesion.acceso = null;
+  await abrir();
+  expect(screen.queryByRole('button', { name: 'Cerrar mes' })).not.toBeInTheDocument();
+  expect(mockDatos.sueldos).not.toHaveBeenCalled();
+});
+
+test('sin el permiso, a quien falta el sueldo lo ven todos, sin mandar a Ajustes', async () => {
+  sesion.acceso = { admin: false, permisos: [] };
+  mockDatos.partesDelMes.mockResolvedValue({ a: 1_000_000_000_000, b: 0 });
+  await abrir();
+  expect(screen.getByText('Para repartir falta el sueldo de Bruno.')).toBeInTheDocument();
+  expect(screen.queryByText(/Ajustes → Integrantes/)).not.toBeInTheDocument();
+});
+
+test('si le quitaron el permiso con la pantalla abierta, «Cerrar» dice que la cuenta no tiene permiso', async () => {
+  await abrir();
+  await tocar('button', 'Cerrar mes');
+  // La base ya no le da los sueldos y rechaza el cierre.
+  mockDatos.sueldos.mockResolvedValue({});
+  mockDatos.cerrarMes.mockRejectedValue(Object.assign(new Error('SIN_PERMISO'), { code: '42501' }));
+  await userEvent.click(hoja().getByRole('button', { name: 'Cerrar mes' }));
+  expect(await hoja().findByText('Esta cuenta no tiene permiso para hacer eso.')).toBeInTheDocument();
 });
 
 // ——— Categorías y Evolución ———

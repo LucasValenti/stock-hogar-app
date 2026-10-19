@@ -21,7 +21,11 @@ const ana: Integrante = {
 };
 
 const m = vi.hoisted(() => ({
-  datos: { miIntegrante: vi.fn() },
+  datos: {
+    miIntegrante: vi.fn(),
+    miAcceso: vi.fn(async () => ({ admin: true, permisos: [] })),
+    escucharCambios: vi.fn(() => () => undefined),
+  },
   entrarDemo: vi.fn(),
   salirDemo: vi.fn(),
   fijarIntegrante: vi.fn(),

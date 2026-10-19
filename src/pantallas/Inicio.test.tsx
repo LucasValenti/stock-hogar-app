@@ -5,7 +5,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { formatear } from '@/logica/dinero';
-import type { Categoria, Integrante, Producto } from '@/logica/tipos';
+import type { Acceso, Categoria, Integrante, Producto } from '@/logica/tipos';
 
 import { Inicio } from './Inicio';
 
@@ -22,9 +22,16 @@ const m = vi.hoisted(() => ({
     anotaciones: vi.fn(),
     confirmarHay: vi.fn(),
     ajustarStock: vi.fn(),
+    partesDelMes: vi.fn(),
+    sueldos: vi.fn(),
   },
   cola: { pendientes: vi.fn(), rechazadas: vi.fn(), olvidarRechazada: vi.fn() },
-  sesion: { yo: { id: 'a', nombre: 'Ana' } as Integrante | null, demo: false, salir: vi.fn() },
+  sesion: {
+    yo: { id: 'a', nombre: 'Ana' } as Integrante | null,
+    demo: false,
+    salir: vi.fn(),
+    acceso: { admin: false, permisos: [] } as Acceso | null,
+  },
   memoria: false,
   oyentes: new Set<() => void>(),
 }));
@@ -82,6 +89,10 @@ beforeEach(() => {
   m.memoria = false;
   m.sesion.demo = false;
   m.sesion.yo = casa[0];
+  m.sesion.acceso = { admin: false, permisos: [] };
+  // Sin el permiso «sueldos» se reparte con las partes del mes (60 % y 40 %).
+  m.datos.partesDelMes.mockResolvedValue({ a: 600_000_000_000, b: 400_000_000_000 });
+  m.datos.sueldos.mockResolvedValue({ a: 600, b: 400 });
   m.sesion.salir.mockReset().mockResolvedValue(undefined);
   m.oyentes.clear();
   m.datos.integrantes.mockResolvedValue(casa);
@@ -400,4 +411,39 @@ test('en el build solo-memoria el aviso va sin botón de salir', async () => {
   render(<Inicio />);
   expect(await screen.findByText('Estás en la demo: los datos son inventados.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Salir de la demo' })).not.toBeInTheDocument();
+});
+
+// ——— Reparto con pesos y permisos ———
+
+test('sin el permiso de sueldos, el reparto sale de las partes del mes y nunca se piden los sueldos', async () => {
+  m.datos.gastosEntre.mockResolvedValue([gasto('a', 1000_00)]);
+  render(<Inicio />);
+  expect(await screen.findByText(texto(`+ ${formatear(400_00)}`))).toBeInTheDocument();
+  expect(m.datos.partesDelMes).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/));
+  expect(m.datos.sueldos).not.toHaveBeenCalled();
+});
+
+test('con el permiso de sueldos, el reparto sale de los sueldos', async () => {
+  m.sesion.acceso = { admin: false, permisos: ['sueldos'] };
+  m.datos.gastosEntre.mockResolvedValue([gasto('a', 1000_00)]);
+  render(<Inicio />);
+  expect(await screen.findByText(texto(`+ ${formatear(400_00)}`))).toBeInTheDocument();
+  expect(m.datos.sueldos).toHaveBeenCalled();
+  expect(m.datos.partesDelMes).not.toHaveBeenCalled();
+});
+
+test('a quien falta el sueldo lo ven todos; sin el permiso, sin mandar a Ajustes', async () => {
+  m.datos.partesDelMes.mockResolvedValue({ a: 1_000_000_000_000, b: 0 });
+  m.datos.gastosEntre.mockResolvedValue([gasto('a', 1000_00)]);
+  render(<Inicio />);
+  expect(await screen.findByText('Para repartir falta el sueldo de Bruno.')).toBeInTheDocument();
+  expect(screen.queryByText(/Ajustes → Integrantes/)).not.toBeInTheDocument();
+});
+
+test('con el permiso de sueldos, el aviso del sueldo que falta manda a Ajustes', async () => {
+  m.sesion.acceso = { admin: true, permisos: [] };
+  m.datos.sueldos.mockResolvedValue({ a: 600 });
+  m.datos.gastosEntre.mockResolvedValue([gasto('a', 1000_00)]);
+  render(<Inicio />);
+  expect(await screen.findByText('Para repartir falta el sueldo de Bruno. Se carga en Ajustes → Integrantes.')).toBeInTheDocument();
 });

@@ -1,4 +1,4 @@
-// La sesión de la app: quién entró y si esa cuenta es de la casa.
+// La sesión de la app: quién entró, si esa cuenta es de la casa y qué puede hacer (admin y permisos).
 // Supabase guarda la sesión en el dispositivo (localStorage): al abrir la app no hay que volver a ingresar.
 // Con VITE_DATOS=memoria no hay cuentas: se entra directo como Ana, de la casa de ejemplo.
 // La demo de tiempo de ejecución (entrarDemo) hace lo mismo en el build normal, sin crear el cliente.
@@ -8,7 +8,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { datos, entrarDemo as entrarEnDemo, esModoMemoria, fijarIntegrante, salirDemo } from '@/datos';
 import { obtenerCliente } from '@/datos/cliente';
 import { semillaDeEjemplo } from '@/datos/memoria';
-import type { Integrante } from '@/logica/tipos';
+import { crearRecarga } from '@/datos/recarga';
+import type { Acceso, Integrante } from '@/logica/tipos';
 
 import { cerrarSesion } from './acceso';
 import { estadoDeSesion, integranteDeLaCola, salirSinCola, type EstadoSesion, type SesionAuth } from './estado';
@@ -20,6 +21,11 @@ export type Sesion = {
   estado: EstadoSesion;
   /** El integrante de la casa que usa la app; solo en `lista`. */
   yo: Integrante | null;
+  /**
+   * Admin y permisos de `yo` (ver `capacidades` en logica/permisos). `null` mientras carga o sin sesión lista:
+   * no habilita nada. Se vuelve a pedir cuando cambia algo en la casa (un permiso dado o quitado).
+   */
+  acceso: Acceso | null;
   /** Email de la cuenta con sesión (en `ajena`, para decir cuál no está en la casa). */
   email: string | null;
   /**
@@ -65,6 +71,8 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   // El email con el que la cola puede estar mandando ahora (se lee dentro del aviso de Supabase).
   const emailVigente = useRef<string | null>(null);
   const idEnCola = useRef<string | null>(null);
+  // El acceso de quien tiene la sesión lista, con su id para no mostrar el de otro mientras cambia.
+  const [acceso, setAcceso] = useState<{ id: string; acceso: Acceso } | null>(null);
 
   // 1) La sesión de Supabase, ahora y cada vez que cambia (ingreso, cierre, renovación del token).
   useEffect(() => {
@@ -153,8 +161,9 @@ export function SesionProvider({ children }: { children: ReactNode }) {
         estado = estadoDeSesion(session, yo);
       }
     }
-    return { estado, yo, email, error, demo, entrarDemo, salir, reintentar };
-  }, [error, session, email, miembro, demo, entrarDemo, salir, reintentar]);
+    const suAcceso = estado === 'lista' && yo && acceso?.id === yo.id ? acceso.acceso : null;
+    return { estado, yo, acceso: suAcceso, email, error, demo, entrarDemo, salir, reintentar };
+  }, [error, session, email, miembro, acceso, demo, entrarDemo, salir, reintentar]);
 
   // 3) La cola de escritura solo manda lo de quien tiene la sesión lista (ver datos/cola.ts).
   const idListo = integranteDeLaCola(valor.estado, valor.yo);
@@ -163,6 +172,28 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     idEnCola.current = idListo;
     fijarIntegrante(idListo);
   }, [idListo, email]);
+
+  // 4) Admin y permisos de quien tiene la sesión lista; se vuelven a pedir con cada cambio en la casa.
+  // Si falla, queda el último conocido (o nada): la base igual exige el permiso.
+  useEffect(() => {
+    if (!idListo) return;
+    const r = crearRecarga({
+      pedir: () => datos.miAcceso(),
+      alTener: (a: Acceso) => setAcceso({ id: idListo, acceso: a }),
+      alFallar: () => undefined,
+    });
+    r.ahora();
+    let dejar: (() => void) | undefined;
+    try {
+      dejar = datos.escucharCambios(() => r.pronto());
+    } catch {
+      // Sin configuración: no hay cambios que escuchar.
+    }
+    return () => {
+      r.cancelar();
+      dejar?.();
+    };
+  }, [idListo, demo]);
 
   return <Contexto value={valor}>{children}</Contexto>;
 }

@@ -68,7 +68,8 @@ export type GastoDeOperacion = Pick<Gasto, 'id' | 'fecha' | 'pagado_por'>;
 export type RepartoACerrar = { total: number; filas: FilaReparto[]; transferencias: Transferencia[] };
 /** Con lo que se calculó el reparto: la base lo compara con lo que tiene ahora. */
 export type GastoDelCalculo = Pick<Gasto, 'id' | 'total' | 'pagado_por'>;
-export type IntegranteDelCalculo = Pick<Integrante, 'id' | 'sueldo' | 'tipo' | 'activo' | 'baja_desde'>;
+/** El sueldo real (de `sueldos()`): solo lo tiene quien puede cerrar. */
+export type IntegranteDelCalculo = Pick<Integrante, 'id' | 'tipo' | 'activo' | 'baja_desde'> & { sueldo: number | null };
 
 export interface Datos {
   miIntegrante(email: string): Promise<Integrante | null>;

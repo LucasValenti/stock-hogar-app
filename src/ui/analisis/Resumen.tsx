@@ -2,11 +2,13 @@
 // lo que puso y si recibe o pone), las transferencias y «Cerrar mes». Mes cerrado: el registro con lo que
 // quedó guardado y «Reabrir mes». Debajo, los gastos del mes. Cerrar y Reabrir se confirman en una hoja.
 // Si mientras tanto alguien cargó o cambió algo (CIERRE_DESACTUALIZADO), se avisa y se muestra el reparto
-// con los datos de ahora. Permisos (sueldos) son F7: hoy cualquiera de la casa cierra y reabre.
+// con los datos de ahora. Cerrar y reabrir piden el permiso de sueldos: sin él no aparecen y un aviso dice a
+// quién pedirlo. Al cerrar se mandan los sueldos reales (los pide solo quien tiene el permiso) para que la base
+// los compare; el reparto que se guarda no lleva sueldos.
 import { useState } from 'react';
 
 import { datos } from '@/datos';
-import type { GastoConItems } from '@/datos/tipos';
+import type { GastoConItems, IntegranteDelCalculo } from '@/datos/tipos';
 import { formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, nombreMes } from '@/logica/meses';
@@ -26,11 +28,20 @@ import { MensajeError } from '../MensajeError';
 import { Monto } from '../Monto';
 import { Tarjeta } from '../Tarjeta';
 
+// [PENDIENTE: validar con Lucas] los dos avisos (cerrar y reabrir) y el respaldo sin admin conocido.
+function sinPermiso(accion: 'cerrar' | 'reabrir', admin: string | null): string {
+  return `Para ${accion} el mes hace falta el permiso de sueldos. ${admin ? `Se lo pedís a ${admin}.` : 'Se lo pedís a quien administra la casa.'}`;
+}
+
 const esDesactualizado = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? '').includes('CIERRE_DESACTUALIZADO');
 
 type Props = {
   mes: string;
-  integrantes: Integrante[];
+  /** Con el peso con que se reparte (sueldo o parte del mes). */
+  integrantes: Array<Integrante & { peso: number | null }>;
+  /** De `capacidades(acceso)`. */
+  verSueldos: boolean;
+  cerrarMes: boolean;
   categorias: Categoria[];
   gastos: GastoConItems[];
   cierre: Cierre | null;
@@ -40,7 +51,7 @@ type Props = {
 
 type Aviso = { bueno: boolean; texto: string } | null;
 
-export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar }: Props) {
+export function Resumen({ mes, integrantes, verSueldos, cerrarMes, categorias, gastos, cierre, recargar }: Props) {
   const [confirmando, setConfirmando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [errorHoja, setErrorHoja] = useState<string | null>(null);
@@ -50,6 +61,7 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
   const soloMes = nombre.split(' ')[0];
   const reparto = repartoDelMes(integrantes, mes, gastos);
   const nombres = { integrantes: mapaDeNombres(integrantes), categorias: mapaDeNombres(categorias) };
+  const admin = integrantes.find((i) => i.admin)?.nombre ?? null;
   const cuantos = gastos.length === 1 ? '1 gasto' : `${gastos.length} gastos`;
   // Un mes que todavía no llegó no se cierra.
   const sePuedeCerrar = reparto.ok && mes <= mesActual();
@@ -71,11 +83,21 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
         if (!reparto.ok) {
           // Cambió algo con la hoja abierta (un sueldo, un pagador): no se cierra y se dice por qué.
           setConfirmando(false);
-          setAviso({ bueno: false, texto: `No se pudo cerrar ${nombre}. ${motivoSinReparto(reparto, integrantes.length > 0)}` });
+          setAviso({ bueno: false, texto: `No se pudo cerrar ${nombre}. ${motivoSinReparto(reparto, integrantes.length > 0, verSueldos)}` });
           return;
         }
         const { total, filas, transferencias } = reparto;
-        await datos.cerrarMes(mes, { total, filas, transferencias }, gastos, integrantes);
+        // Solo se llega acá con el permiso (el botón no aparece sin él). Si lo quitaron recién, la base no
+        // da los sueldos y rechaza el cierre: se ve «Esta cuenta no tiene permiso para hacer eso.».
+        const sueldos = await datos.sueldos();
+        const delCalculo: IntegranteDelCalculo[] = integrantes.map(({ id, tipo, activo, baja_desde }) => ({
+          id,
+          tipo,
+          activo,
+          baja_desde,
+          sueldo: sueldos[id] ?? null,
+        }));
+        await datos.cerrarMes(mes, { total, filas, transferencias }, gastos, delCalculo);
         setAviso({ bueno: true, texto: `${enMayuscula(nombre)} quedó cerrado.` });
       }
       setConfirmando(false);
@@ -109,7 +131,11 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
       {cierre ? (
         <>
           <Registro cierre={cierre} integrantes={integrantes} />
-          <Boton texto="Reabrir mes" icono="candado" variante="borde" onClick={abrir} />
+          {cerrarMes ? (
+            <Boton texto="Reabrir mes" icono="candado" variante="borde" onClick={abrir} />
+          ) : (
+            <p className={estilos.centrado}>{sinPermiso('reabrir', admin)}</p>
+          )}
         </>
       ) : (
         <>
@@ -118,12 +144,18 @@ export function Resumen({ mes, integrantes, categorias, gastos, cierre, recargar
             <Monto centavos={reparto.total} />
             <p className={estilos.rotulo}>{cuantos}</p>
           </Tarjeta>
-          <Reparto reparto={reparto} integrantes={integrantes} detallado />
+          <Reparto reparto={reparto} integrantes={integrantes} verSueldos={verSueldos} detallado />
           {reparto.ok && reparto.filas.length ? <Transferencias transferencias={reparto.transferencias} filas={reparto.filas} /> : null}
           {sePuedeCerrar ? (
             <div className={estilos.cerrar}>
-              <Boton texto="Cerrar mes" icono="candado" onClick={abrir} />
-              <p className={estilos.centrado}>{`Guarda el reparto y bloquea los gastos de ${soloMes}.`}</p>
+              {cerrarMes ? (
+                <>
+                  <Boton texto="Cerrar mes" icono="candado" onClick={abrir} />
+                  <p className={estilos.centrado}>{`Guarda el reparto y bloquea los gastos de ${soloMes}.`}</p>
+                </>
+              ) : (
+                <p className={estilos.centrado}>{sinPermiso('cerrar', admin)}</p>
+              )}
             </div>
           ) : null}
         </>

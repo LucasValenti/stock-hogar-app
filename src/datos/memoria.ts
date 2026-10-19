@@ -3,7 +3,7 @@
 
 import { mesActual, mesAnterior, mesDe } from '@/logica/meses';
 import { COLORES_PERFIL } from '@/logica/perfil';
-import { participantesDelMes, repartoDelMes } from '@/logica/reparto';
+import { integrantesConPeso, participantesDelMes, repartoDelMes } from '@/logica/reparto';
 import { aplicarDelta } from '@/logica/stock';
 import type {
   Anotacion,
@@ -18,7 +18,7 @@ import type {
 } from '@/logica/tipos';
 
 import { nuevoId } from './id';
-import type { Datos, GastoConItems } from './tipos';
+import type { Datos, GastoConItems, IntegranteDelCalculo } from './tipos';
 
 export type Semilla = {
   integrantes: Integrante[];
@@ -519,7 +519,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
       if (cierres.some((c) => c.mes === mes)) throw errorDeBase('MES_CERRADO');
       const clavesGastos = (lista: Array<Pick<Gasto, 'id' | 'total' | 'pagado_por'>>) =>
         new Set(lista.map((g) => JSON.stringify([g.id, Number(g.total), g.pagado_por])));
-      const clavesIntegrantes = (lista: Array<Pick<Integrante, 'id' | 'sueldo' | 'tipo' | 'activo' | 'baja_desde'>>) =>
+      const clavesIntegrantes = (lista: IntegranteDelCalculo[]) =>
         new Set(lista.map((i) => JSON.stringify([i.id, i.sueldo, i.tipo, i.activo, i.baja_desde])));
       const iguales = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((x) => b.has(x));
       const delMes = gastos.filter((g) => mesDe(g.fecha) === mes);
@@ -855,11 +855,7 @@ export function semillaDeEjemplo(hoy: Date = new Date()): Semilla {
 
   // El mes pasado quedó cerrado: el reparto sale de sus gastos y los sueldos de la semilla.
   const delPasado = gastos.filter((g) => mesDe(g.fecha) === mesPasado);
-  const reparto = repartoDelMes(
-    integrantes.map((i) => ({ ...i, sueldo: sueldos[i.id] })),
-    mesPasado,
-    delPasado,
-  );
+  const reparto = repartoDelMes(integrantesConPeso(integrantes, sueldos), mesPasado, delPasado);
   const cierres: Cierre[] = reparto.ok
     ? [
         {
