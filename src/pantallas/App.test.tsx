@@ -75,12 +75,3 @@ it('una cuenta ajena ve el aviso y puede cerrar sesión', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
   expect(sesion.salir).toHaveBeenCalled();
 });
-
-it('en la demo, Ajustes avisa y deja salir de la demo', async () => {
-  sesion.demo = true;
-  history.replaceState(null, '', '/ajustes');
-  render(<App />);
-  expect(screen.getByText('Estás en la demo: los datos son inventados.')).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Salir de la demo' }));
-  expect(sesion.salir).toHaveBeenCalled();
-});

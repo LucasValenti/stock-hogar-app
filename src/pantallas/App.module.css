@@ -14,14 +14,3 @@
   /* Lugar para la barra de pestañas fija y el + Cargar que sobresale. */
   padding-bottom: calc(var(--medida-pestana) + var(--medida-cargar-sube) + var(--espacio-xxl) + env(safe-area-inset-bottom));
 }
-
-.titulo {
-  margin: 0;
-  font-size: var(--tamano-xxl);
-  line-height: var(--interlineado-titulo);
-}
-
-.aviso p {
-  margin: 0;
-  font-size: var(--tamano-s);
-}

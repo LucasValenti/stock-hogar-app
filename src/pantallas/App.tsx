@@ -10,9 +10,9 @@ import { BarraPestanas } from '@/ui/BarraPestanas';
 import { anotarEntrada } from '@/ui/volver';
 
 import estilos from './App.module.css';
+import { Ajustes } from './Ajustes';
 import { Analisis } from './Analisis';
 import { Cargar } from './Cargar';
-import { EnConstruccion } from './EnConstruccion';
 import { Ingresar } from './Ingresar';
 import { Inicio } from './Inicio';
 import { Producto } from './Producto';
@@ -81,7 +81,7 @@ function Pestanas() {
           </Route>
           <Route path="/ajustes">
             <Conteo titulo="Ajustes">
-              <EnConstruccion titulo="Ajustes" conSalida />
+              <Ajustes />
             </Conteo>
           </Route>
           <Route path="/cargar">

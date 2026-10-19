@@ -20,7 +20,8 @@
   transform: scale(0.98);
 }
 
-.chip[aria-pressed='true'] {
+.chip[aria-pressed='true'],
+.chip[aria-checked='true'] {
   border-color: var(--color-acento);
   background: var(--color-acento);
   color: var(--color-sobre-acento);
