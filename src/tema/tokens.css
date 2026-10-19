@@ -1,0 +1,93 @@
+/* Generado por herramientas/tokens-css.mjs desde src/tema/tokens.json. No editar a mano. */
+:root {
+  --color-fondo: #dce8e3;
+  --color-superficie: #fbfdfc;
+  --color-texto: #1c2422;
+  --color-texto-suave: #4d5b57;
+  --color-borde: #6c7d78;
+  --color-acento: #a8380a;
+  --color-sobre-acento: #fbfdfc;
+  --color-falta: #a8231a;
+  --color-hay: #2b6b3c;
+  --color-cerrado: #4b5563;
+  --color-foco: #1c2422;
+  --velo: rgba(10,12,14,0.5);
+  --tamano-xxs: 11px;
+  --tamano-xs: 12px;
+  --tamano-s: 13px;
+  --tamano-m: 15px;
+  --tamano-l: 16px;
+  --tamano-xl: 20px;
+  --tamano-xxl: 28px;
+  --tamano-xxxl: 40px;
+  --peso-texto: 400;
+  --peso-medio: 500;
+  --peso-fuerte: 600;
+  --peso-titulo: 600;
+  --peso-numeros: 600;
+  --espacio-xs: 4px;
+  --espacio-s: 8px;
+  --espacio-m: 12px;
+  --espacio-l: 16px;
+  --espacio-xl: 24px;
+  --espacio-xxl: 32px;
+  --medida-fila: 60px;
+  --medida-tactil: 48px;
+  --medida-icono: 20px;
+  --medida-pestana: 52px;
+  --medida-indicador-ancho: 56px;
+  --medida-indicador-alto: 32px;
+  --medida-cargar: 64px;
+  --medida-icono-cargar: 26px;
+  --medida-cargar-sube: 18px;
+  --medida-iman: 22px;
+  --medida-iman-sobresale: 9px;
+  --medida-tilde: 26px;
+  --medida-tilde-borde: 2px;
+  --medida-asa-ancho: 40px;
+  --medida-asa-alto: 5px;
+  --medida-borde: 1px;
+  --medida-borde-fuerte: 2px;
+  --medida-foco-grosor: 3px;
+  --medida-foco-separacion: 2px;
+  --radio-tarjeta: 20px;
+  --radio-boton: 999px;
+  --radio-chip: 999px;
+  --radio-cargar: 999px;
+  --radio-hoja: 28px;
+  --radio-registro: 12px;
+  --radio-tilde: 8px;
+  --interlineado-titulo: 1.15;
+  --interlineado-texto: 1.35;
+  --interlineado-total: 1.1;
+  --rastro-rotulo: 0.04em;
+  --mov-rapido: 180ms;
+  --mov-normal: 320ms;
+  --mov-reducido: 120ms;
+  --mov-latido: 1100ms;
+  --mov-curva: cubic-bezier(0.34, 1.3, 0.64, 1);
+  --opacidad-esqueleto-min: 0.18;
+  --opacidad-esqueleto-max: 0.45;
+  --sombra-tarjeta: 0 2px 0px rgb(0 0 0 / 0.08);
+  --sombra-iman: 0 2px 0px rgb(0 0 0 / 0.2);
+  --sombra-cargar: 0 3px 0px rgb(0 0 0 / 0.18);
+  --fuente-titulo: 'Fredoka', system-ui, sans-serif;
+  --fuente-texto: 'Rubik', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-fondo: #0f1715;
+    --color-superficie: #1a2522;
+    --color-texto: #e6efec;
+    --color-texto-suave: #a3b4af;
+    --color-borde: #627570;
+    --color-acento: #ff8f57;
+    --color-sobre-acento: #1d0f06;
+    --color-falta: #ff958b;
+    --color-hay: #80d49c;
+    --color-cerrado: #b9c2cf;
+    --color-foco: #e6efec;
+    --velo: rgba(0,0,0,0.65);
+  }
+}
