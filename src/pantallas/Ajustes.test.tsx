@@ -42,6 +42,8 @@ const persona = (id: string, nombre: string, extra: Partial<Integrante> = {}): I
   baja_desde: null,
   tipo: 'integrante',
   creado: '2026-01-01T12:00:00.000Z',
+  admin: false,
+  color: null,
   ...extra,
 });
 const PROXIMO = mesSiguiente(mesActual());

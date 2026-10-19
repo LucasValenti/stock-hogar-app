@@ -43,6 +43,8 @@ const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
   baja_desde: null,
   tipo: 'integrante',
   creado: '2026-01-01T12:00:00.000Z',
+  admin: false,
+  color: null,
 });
 const casa = [persona('a', 'Ana', 600), persona('b', 'Bruno', 400)];
 const categorias: Categoria[] = [

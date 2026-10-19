@@ -4,10 +4,22 @@
 
 export type TipoIntegrante = 'integrante' | 'pagador_externo';
 
+/** Lo que el admin le da a un integrante además de lo común; el admin los tiene todos sin que se le registren. */
+export type Permiso = 'sueldos' | 'altas_bajas';
+
+/** Paleta cerrada del perfil (la de la Heladera); la base solo acepta estos valores. */
+export type ColorPerfil = 'naranja' | 'verde' | 'azul' | 'rosa' | 'violeta' | 'amarillo';
+
+/** Lo que puede hacer quien usa la app: `admin` pasa cualquier permiso; `permisos` son solo los propios registrados. */
+export type Acceso = { admin: boolean; permisos: Permiso[] };
+
 export type Integrante = {
   id: string;
   nombre: string;
-  /** Centavos. Null mientras no se cargó; el pagador externo no lo necesita. */
+  /**
+   * Centavos. Null mientras no se cargó; el pagador externo no lo necesita.
+   * Transición: pasa a vivir aparte (`Datos.sueldos()`), y en memoria solo lo trae quien tiene el permiso.
+   */
   sueldo: number | null;
   email: string;
   activo: boolean;
@@ -15,6 +27,10 @@ export type Integrante = {
   baja_desde: string | null;
   tipo: TipoIntegrante;
   creado: string;
+  /** Uno solo en la casa; solo `cederAdmin` cambia quién es. */
+  admin: boolean;
+  /** Color del perfil que eligió cada uno; null si todavía no eligió. */
+  color: ColorPerfil | null;
 };
 
 export type TipoCategoria = 'producto' | 'servicio';

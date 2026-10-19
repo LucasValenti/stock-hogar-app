@@ -25,6 +25,10 @@ const aProducto = (p: Producto): Producto => ({
 });
 const aAnotacion = (a: Anotacion): Anotacion => ({ ...a, creado: normalizarTimestamp(a.creado) });
 
+const pendienteTask5 = async (): Promise<never> => {
+  throw new Error('Pendiente: Task 5');
+};
+
 export function crearDatosSupabase(supabase: SupabaseClient): Datos {
   async function guardar<T>(tabla: string, fila: { id?: string | null }): Promise<T> {
     const { id, ...campos } = fila;
@@ -166,6 +170,17 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
     async reabrirMes(mes) {
       ok(await supabase.rpc('reabrir_mes', { p_mes: mes }));
     },
+
+    // Permisos, sueldos aparte y perfil: los implementa la Task 5.
+    miAcceso: pendienteTask5,
+    permisosDeLaCasa: pendienteTask5,
+    darPermiso: pendienteTask5,
+    quitarPermiso: pendienteTask5,
+    cederAdmin: pendienteTask5,
+    sueldos: pendienteTask5,
+    fijarSueldo: pendienteTask5,
+    partesDelMes: pendienteTask5,
+    editarPerfil: pendienteTask5,
 
     escucharCambios: (alCambiar) => escucharCambios(supabase, alCambiar),
   };

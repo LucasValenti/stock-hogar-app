@@ -17,8 +17,17 @@ const ana: Integrante = {
   baja_desde: null,
   tipo: 'integrante',
   creado: '2026-01-01T00:00:00Z',
+  admin: true,
+  color: null,
 };
-const bruno: Integrante = { ...ana, id: 'i-bruno', nombre: 'Bruno', email: 'bruno@example.com', sueldo: 50_000_00 };
+const bruno: Integrante = {
+  ...ana,
+  id: 'i-bruno',
+  nombre: 'Bruno',
+  email: 'bruno@example.com',
+  sueldo: 50_000_00,
+  admin: false,
+};
 
 const VIEJO = '2026-01-01T00:00:00Z';
 
@@ -747,5 +756,520 @@ describe('semillaDeEjemplo con fechas relativas a hoy', () => {
     expect(a.integrantes).not.toBe(b.integrantes);
     a.gastos[0].nota = 'Cambiada';
     expect(b.gastos[0].nota).not.toBe('Cambiada');
+  });
+});
+
+// ——— Usuarios, permisos y sueldos aparte (F7): las mismas reglas que supabase/schema.sql ———
+
+const ANA = 'ejemplo-ana';
+const BRUNO = 'ejemplo-bruno';
+const CARO = 'ejemplo-caro';
+
+const otro = (id: string, nombre: string, extra: Partial<Integrante> = {}): Integrante => ({
+  id,
+  nombre,
+  sueldo: null,
+  email: `${nombre.toLowerCase()}@example.com`,
+  activo: true,
+  baja_desde: null,
+  tipo: 'integrante',
+  creado: VIEJO,
+  admin: false,
+  color: null,
+  ...extra,
+});
+const externo = otro('ejemplo-externo', 'Externo', { tipo: 'pagador_externo' });
+
+/** La casa de ejemplo, vista por `yo` (Ana, la admin, si no se dice), con permisos y gente de más a gusto. */
+function casa({
+  yo = ANA,
+  permisos,
+  sueldos,
+  mas = [],
+}: {
+  yo?: string;
+  permisos?: Semilla['permisos'];
+  sueldos?: Semilla['sueldos'];
+  mas?: Integrante[];
+} = {}): Datos {
+  const base = semillaDeEjemplo(HOY_EJEMPLO);
+  return crearDatosEnMemoria(
+    { ...base, integrantes: [...base.integrantes, ...mas], ...(permisos && { permisos }), ...(sueldos && { sueldos }) },
+    { yo },
+  );
+}
+
+const rechaza = (code: string, mensaje: string) => ({ code, message: expect.stringContaining(mensaje) });
+const SIN_PERMISO = rechaza('42501', 'SIN_PERMISO');
+
+const soloAdmin = async (datos: Datos) => (await datos.integrantes()).filter((i) => i.admin).map((i) => i.id);
+
+describe('miAcceso', () => {
+  test('Ana es admin y no registra permisos; Bruno, nada', async () => {
+    expect(await casa().miAcceso()).toEqual({ admin: true, permisos: [] });
+    expect(await casa({ yo: BRUNO }).miAcceso()).toEqual({ admin: false, permisos: [] });
+  });
+
+  test('trae solo los permisos propios, ordenados', async () => {
+    const permisos: Semilla['permisos'] = [
+      { integrante_id: BRUNO, permiso: 'sueldos' },
+      { integrante_id: BRUNO, permiso: 'altas_bajas' },
+      { integrante_id: CARO, permiso: 'sueldos' },
+    ];
+    expect(await casa({ yo: BRUNO, permisos }).miAcceso()).toEqual({ admin: false, permisos: ['altas_bajas', 'sueldos'] });
+    expect(await casa({ yo: CARO, permisos }).miAcceso()).toEqual({ admin: false, permisos: ['sueldos'] });
+  });
+
+  test('permisosDeLaCasa los agrupa por integrante; quien no tiene ninguno no aparece', async () => {
+    const permisos: Semilla['permisos'] = [
+      { integrante_id: BRUNO, permiso: 'sueldos' },
+      { integrante_id: BRUNO, permiso: 'altas_bajas' },
+    ];
+    expect(await casa({ yo: CARO, permisos }).permisosDeLaCasa()).toEqual({ [BRUNO]: ['altas_bajas', 'sueldos'] });
+    expect(await casa().permisosDeLaCasa()).toEqual({});
+  });
+});
+
+describe('sueldos aparte', () => {
+  test('quien no tiene el permiso recibe {} (cero filas, no un error); Ana recibe los tres', async () => {
+    expect(await casa({ yo: BRUNO }).sueldos()).toEqual({});
+    expect(await casa().sueldos()).toEqual({ [ANA]: 900_000_00, [BRUNO]: 600_000_00, [CARO]: 500_000_00 });
+  });
+
+  test('con el permiso «sueldos» los lee y los escribe sin ser admin; con «altas y bajas», no', async () => {
+    const conSueldos = casa({ yo: BRUNO, permisos: [{ integrante_id: BRUNO, permiso: 'sueldos' }] });
+    expect(Object.keys(await conSueldos.sueldos())).toHaveLength(3);
+    await conSueldos.fijarSueldo(CARO, 510_000_00);
+    expect((await conSueldos.sueldos())[CARO]).toBe(510_000_00);
+
+    const conAltas = casa({ yo: BRUNO, permisos: [{ integrante_id: BRUNO, permiso: 'altas_bajas' }] });
+    expect(await conAltas.sueldos()).toEqual({});
+    await expect(conAltas.fijarSueldo(CARO, 1)).rejects.toMatchObject(SIN_PERMISO);
+  });
+
+  test('fijarSueldo de Bruno rechaza con 42501 y no cambia nada; el de Ana guarda', async () => {
+    const bruno = casa({ yo: BRUNO });
+    await expect(bruno.fijarSueldo(CARO, 1_00)).rejects.toMatchObject(SIN_PERMISO);
+    await expect(bruno.fijarSueldo(CARO, null)).rejects.toMatchObject(SIN_PERMISO);
+
+    const ana = casa();
+    await ana.fijarSueldo(CARO, 550_000_00);
+    expect((await ana.sueldos())[CARO]).toBe(550_000_00);
+    // Un sueldo en cero es un sueldo cargado (distinto de no tener).
+    await ana.fijarSueldo(CARO, 0);
+    expect((await ana.sueldos())[CARO]).toBe(0);
+  });
+
+  test('fijarSueldo(null) borra: quien no tiene sueldo no aparece', async () => {
+    const ana = casa();
+    await ana.fijarSueldo(BRUNO, null);
+    expect(await ana.sueldos()).toEqual({ [ANA]: 900_000_00, [CARO]: 500_000_00 });
+  });
+
+  test('un sueldo negativo o de alguien que no existe rechaza como la base', async () => {
+    const ana = casa();
+    await expect(ana.fijarSueldo(CARO, -1)).rejects.toMatchObject({ code: '23514' });
+    await expect(ana.fijarSueldo('nadie', 1_00)).rejects.toMatchObject({ code: '23503' });
+    expect((await ana.sueldos())[CARO]).toBe(500_000_00);
+  });
+
+  test('mientras dura la transición integrantes() trae el sueldo, pero solo a quien tiene el permiso', async () => {
+    const deAna = await casa().integrantes();
+    expect(deAna.map((i) => i.sueldo)).toEqual([900_000_00, 600_000_00, 500_000_00]);
+    const deBruno = await casa({ yo: BRUNO }).integrantes();
+    expect(deBruno.map((i) => i.sueldo)).toEqual([null, null, null]);
+    const ana = casa();
+    await ana.fijarSueldo(BRUNO, null);
+    expect((await ana.integrantes()).find((i) => i.id === BRUNO)?.sueldo).toBeNull();
+  });
+
+  test('si la semilla trae sus sueldos aparte, esos mandan; si no, salen del campo sueldo de cada integrante', async () => {
+    expect(await crearDatosEnMemoria(semilla()).sueldos()).toEqual({ 'i-ana': 100_000_00, 'i-bruno': 50_000_00 });
+    expect(await casa({ sueldos: {} }).sueldos()).toEqual({});
+    expect(await casa({ sueldos: { [ANA]: 1_00, [BRUNO]: null } }).sueldos()).toEqual({ [ANA]: 1_00 });
+  });
+});
+
+describe('darPermiso y quitarPermiso', () => {
+  test('solo Ana: Bruno rechaza con 42501 en los dos', async () => {
+    const bruno = casa({ yo: BRUNO, permisos: [{ integrante_id: CARO, permiso: 'sueldos' }] });
+    await expect(bruno.darPermiso(BRUNO, 'sueldos')).rejects.toMatchObject(SIN_PERMISO);
+    await expect(bruno.quitarPermiso(CARO, 'sueldos')).rejects.toMatchObject(SIN_PERMISO);
+    expect(await bruno.permisosDeLaCasa()).toEqual({ [CARO]: ['sueldos'] });
+
+    // Tampoco con «altas y bajas»: los permisos los maneja solo el admin.
+    const conAltas = casa({ yo: BRUNO, permisos: [{ integrante_id: BRUNO, permiso: 'altas_bajas' }] });
+    await expect(conAltas.darPermiso(BRUNO, 'sueldos')).rejects.toMatchObject(SIN_PERMISO);
+  });
+
+  test('Ana da y quita; dar dos veces no duplica; quitar lo que no está no falla', async () => {
+    const ana = casa();
+    await ana.darPermiso(BRUNO, 'sueldos');
+    await ana.darPermiso(BRUNO, 'sueldos');
+    await ana.darPermiso(BRUNO, 'altas_bajas');
+    expect(await ana.permisosDeLaCasa()).toEqual({ [BRUNO]: ['altas_bajas', 'sueldos'] });
+
+    await ana.quitarPermiso(BRUNO, 'sueldos');
+    await ana.quitarPermiso(CARO, 'sueldos');
+    expect(await ana.permisosDeLaCasa()).toEqual({ [BRUNO]: ['altas_bajas'] });
+    await ana.quitarPermiso(BRUNO, 'altas_bajas');
+    expect(await ana.permisosDeLaCasa()).toEqual({});
+  });
+
+  test('un pagador externo no recibe permisos: violación de check, como el disparador de la base', async () => {
+    const ana = casa({ mas: [externo] });
+    await expect(ana.darPermiso(externo.id, 'sueldos')).rejects.toMatchObject(rechaza('23514', 'SOLO_INTEGRANTES'));
+    await expect(ana.darPermiso('nadie', 'sueldos')).rejects.toMatchObject(rechaza('23514', 'SOLO_INTEGRANTES'));
+    expect(await ana.permisosDeLaCasa()).toEqual({});
+  });
+
+  test('lo que se da se usa: Bruno con «sueldos» ve los sueldos', async () => {
+    const permisos: Semilla['permisos'] = [{ integrante_id: BRUNO, permiso: 'sueldos' }];
+    expect(Object.keys(await casa({ yo: BRUNO, permisos }).sueldos())).toHaveLength(3);
+  });
+});
+
+describe('cederAdmin', () => {
+  test('solo el admin: Bruno, aunque tenga los dos permisos, rechaza con 42501', async () => {
+    const permisos: Semilla['permisos'] = [
+      { integrante_id: BRUNO, permiso: 'sueldos' },
+      { integrante_id: BRUNO, permiso: 'altas_bajas' },
+    ];
+    const bruno = casa({ yo: BRUNO, permisos });
+    await expect(bruno.cederAdmin(CARO)).rejects.toMatchObject(SIN_PERMISO);
+    await expect(bruno.cederAdmin(BRUNO)).rejects.toMatchObject(SIN_PERMISO);
+    expect(await soloAdmin(bruno)).toEqual([ANA]);
+  });
+
+  test('no a un pagador externo, ni a alguien dado de baja, ni a sí mismo, ni a quien no existe', async () => {
+    const dani = otro('ejemplo-dani', 'Dani', { activo: false, baja_desde: '2026-03' });
+    const ana = casa({ mas: [externo, dani] });
+    for (const destino of [externo.id, dani.id, ANA, 'nadie']) {
+      await expect(ana.cederAdmin(destino)).rejects.toMatchObject(rechaza('22023', 'DESTINO_INVALIDO'));
+    }
+    expect(await soloAdmin(ana)).toEqual([ANA]);
+  });
+
+  test('después hay un solo admin y quien cedió conserva los dos permisos; el nuevo pierde los suyos', async () => {
+    const ana = casa({ permisos: [{ integrante_id: BRUNO, permiso: 'sueldos' }, { integrante_id: CARO, permiso: 'altas_bajas' }] });
+    await ana.cederAdmin(BRUNO);
+    expect(await soloAdmin(ana)).toEqual([BRUNO]);
+    // Ana sigue siendo quien usa la app: ya no es admin, pero tiene los dos permisos.
+    expect(await ana.miAcceso()).toEqual({ admin: false, permisos: ['altas_bajas', 'sueldos'] });
+    expect(await ana.permisosDeLaCasa()).toEqual({ [ANA]: ['altas_bajas', 'sueldos'], [CARO]: ['altas_bajas'] });
+    // Puede seguir con los sueldos, pero ya no maneja los permisos ni cede el rol.
+    expect(Object.keys(await ana.sueldos())).toHaveLength(3);
+    await expect(ana.darPermiso(CARO, 'sueldos')).rejects.toMatchObject(SIN_PERMISO);
+    await expect(ana.cederAdmin(CARO)).rejects.toMatchObject(SIN_PERMISO);
+  });
+
+  test('la columna admin no se cambia a mano', async () => {
+    const ana = casa();
+    await expect(ana.guardarIntegrante({ id: BRUNO, admin: true })).rejects.toMatchObject(SIN_PERMISO);
+    await expect(ana.guardarIntegrante({ id: ANA, admin: false })).rejects.toMatchObject(SIN_PERMISO);
+    expect(await soloAdmin(ana)).toEqual([ANA]);
+  });
+});
+
+describe('guardarIntegrante con permisos', () => {
+  const ALTAS: NonNullable<Semilla['permisos']> = [{ integrante_id: BRUNO, permiso: 'altas_bajas' }];
+  const nuevo = { nombre: 'Dani', email: 'dani@example.com' };
+
+  test('sin «altas y bajas» no hay altas ni cambios: rechaza con 42501 y no toca nada', async () => {
+    const bruno = casa({ yo: BRUNO });
+    await expect(bruno.guardarIntegrante(nuevo)).rejects.toMatchObject(SIN_PERMISO);
+    await expect(bruno.guardarIntegrante({ id: CARO, email: 'caro2@example.com' })).rejects.toMatchObject(SIN_PERMISO);
+    expect((await bruno.integrantes()).map((i) => i.nombre)).toEqual(['Ana', 'Bruno', 'Caro']);
+    expect((await bruno.miIntegrante('caro@example.com'))?.id).toBe(CARO);
+  });
+
+  test('con «altas y bajas» da altas, y el alta nace sin admin aunque lo pida', async () => {
+    const bruno = casa({ yo: BRUNO, permisos: ALTAS });
+    const dani = await bruno.guardarIntegrante({ ...nuevo, admin: true });
+    expect(dani).toMatchObject({ nombre: 'Dani', admin: false, color: null, tipo: 'integrante', activo: true });
+    expect(await soloAdmin(bruno)).toEqual([ANA]);
+    const cambiado = await bruno.guardarIntegrante({ id: dani.id, email: 'dani2@example.com' });
+    expect(cambiado.email).toBe('dani2@example.com');
+  });
+
+  test('el admin también da altas, y la casa sigue con un solo admin', async () => {
+    const ana = casa();
+    await ana.guardarIntegrante({ ...nuevo, admin: true });
+    expect(await soloAdmin(ana)).toEqual([ANA]);
+  });
+
+  test('con «altas y bajas» no cambia email, tipo ni baja del admin ni de quien tiene permisos', async () => {
+    const bruno = casa({ yo: BRUNO, permisos: [...ALTAS, { integrante_id: CARO, permiso: 'sueldos' }] });
+    for (const id of [ANA, CARO]) {
+      await expect(bruno.guardarIntegrante({ id, email: 'robado@example.com' })).rejects.toMatchObject(SIN_PERMISO);
+      await expect(bruno.guardarIntegrante({ id, tipo: 'pagador_externo' })).rejects.toMatchObject(SIN_PERMISO);
+      await expect(bruno.guardarIntegrante({ id, activo: false, baja_desde: '2026-03' })).rejects.toMatchObject(SIN_PERMISO);
+    }
+    const intactos = await bruno.integrantes();
+    expect(intactos.find((i) => i.id === ANA)).toMatchObject({ email: 'ana@example.com', tipo: 'integrante', activo: true });
+    expect(intactos.find((i) => i.id === CARO)).toMatchObject({ email: 'caro@example.com', tipo: 'integrante', activo: true });
+    expect(await bruno.permisosDeLaCasa()).toEqual({ [BRUNO]: ['altas_bajas'], [CARO]: ['sueldos'] });
+  });
+
+  test('con «altas y bajas» sí cambia a un común, y de quien tiene permisos cambia lo demás (el nombre)', async () => {
+    const bruno = casa({ yo: BRUNO, permisos: [...ALTAS, { integrante_id: CARO, permiso: 'sueldos' }] });
+    await bruno.guardarIntegrante({ id: CARO, nombre: 'Carolina' });
+    expect((await bruno.integrantes()).find((i) => i.id === CARO)?.nombre).toBe('Carolina');
+    const dani = await bruno.guardarIntegrante(nuevo);
+    await bruno.guardarIntegrante({ id: dani.id, tipo: 'pagador_externo', activo: false, baja_desde: '2026-03' });
+    expect((await bruno.integrantes()).find((i) => i.id === dani.id)).toMatchObject({ tipo: 'pagador_externo', activo: false });
+  });
+
+  test('al admin no se lo da de baja ni se lo pasa a externo, ni siquiera él mismo: primero cede el rol', async () => {
+    const ana = casa();
+    await expect(ana.guardarIntegrante({ id: ANA, activo: false })).rejects.toMatchObject(rechaza('42501', 'ES_ADMIN'));
+    await expect(ana.guardarIntegrante({ id: ANA, baja_desde: '2026-12' })).rejects.toMatchObject(rechaza('42501', 'ES_ADMIN'));
+    await expect(ana.guardarIntegrante({ id: ANA, tipo: 'pagador_externo' })).rejects.toMatchObject(rechaza('42501', 'ES_ADMIN'));
+    // Cambiarse el email sí.
+    await ana.guardarIntegrante({ id: ANA, email: 'ana2@example.com' });
+    expect((await ana.integrantes()).find((i) => i.id === ANA)).toMatchObject({ email: 'ana2@example.com', admin: true, activo: true });
+  });
+
+  test('el admin cambia a quien tiene permisos; si lo pasa a pagador externo, los permisos se van', async () => {
+    const ana = casa({ permisos: [{ integrante_id: CARO, permiso: 'sueldos' }, { integrante_id: CARO, permiso: 'altas_bajas' }] });
+    await ana.guardarIntegrante({ id: CARO, email: 'caro2@example.com' });
+    expect((await ana.permisosDeLaCasa())[CARO]).toHaveLength(2);
+    await ana.guardarIntegrante({ id: CARO, tipo: 'pagador_externo' });
+    expect(await ana.permisosDeLaCasa()).toEqual({});
+  });
+
+  test('el color tiene que ser de la paleta', async () => {
+    const ana = casa();
+    await expect(ana.guardarIntegrante({ id: CARO, color: 'fucsia' as never })).rejects.toMatchObject({ code: '23514' });
+    expect((await ana.guardarIntegrante({ id: CARO, color: 'verde' })).color).toBe('verde');
+  });
+
+  test('«altas y bajas» no escribe sueldos: mandar el campo sueldo pide el permiso «sueldos», cualquiera sea el valor', async () => {
+    const conAltas = casa({ yo: BRUNO, permisos: ALTAS });
+    await expect(conAltas.guardarIntegrante({ id: CARO, sueldo: 1_00 })).rejects.toMatchObject(SIN_PERMISO);
+    await expect(conAltas.guardarIntegrante({ id: CARO, sueldo: null })).rejects.toMatchObject(SIN_PERMISO);
+    await expect(conAltas.guardarIntegrante({ ...nuevo, sueldo: 1_00 })).rejects.toMatchObject(SIN_PERMISO);
+    expect((await conAltas.integrantes()).map((i) => i.nombre)).toEqual(['Ana', 'Bruno', 'Caro']);
+    // Sin el campo, sigue pudiendo cambiar a Caro.
+    await expect(conAltas.guardarIntegrante({ id: CARO, nombre: 'Carolina' })).resolves.toMatchObject({ id: CARO, nombre: 'Carolina', sueldo: null });
+  });
+
+  test('mientras dura la transición, el sueldo que llega por acá va a la tabla aparte (alta o edición)', async () => {
+    const ana = casa();
+    await ana.guardarIntegrante({ id: CARO, sueldo: 510_000_00 });
+    expect((await ana.sueldos())[CARO]).toBe(510_000_00);
+    const alta = await ana.guardarIntegrante({ ...nuevo, sueldo: 300_000_00 });
+    expect(alta.sueldo).toBe(300_000_00);
+    expect((await ana.sueldos())[alta.id]).toBe(300_000_00);
+    await ana.guardarIntegrante({ id: alta.id, sueldo: null });
+    expect((await ana.sueldos())[alta.id]).toBeUndefined();
+  });
+});
+
+describe('editarPerfil', () => {
+  test('cambia solo el nombre y el color de quien usa la app, y devuelve su fila', async () => {
+    const bruno = casa({ yo: BRUNO });
+    const antes = await bruno.integrantes();
+    const fila = await bruno.editarPerfil('Bruno B', 'verde');
+    expect(fila).toMatchObject({ id: BRUNO, nombre: 'Bruno B', color: 'verde', email: 'bruno@example.com', tipo: 'integrante', activo: true, admin: false });
+    const despues = await bruno.integrantes();
+    expect(despues.find((i) => i.id === BRUNO)).toMatchObject({ nombre: 'Bruno B', color: 'verde' });
+    for (const i of antes.filter((x) => x.id !== BRUNO)) expect(despues.find((x) => x.id === i.id)).toEqual(i);
+    expect((await bruno.editarPerfil('Bruno', null)).color).toBeNull();
+  });
+
+  test('no pide ningún permiso, ni siquiera cuando quien lo usa tiene permisos que lo protegen', async () => {
+    const caro = casa({ yo: CARO, permisos: [{ integrante_id: CARO, permiso: 'sueldos' }] });
+    expect((await caro.editarPerfil('Carolina', 'rosa')).nombre).toBe('Carolina');
+    expect((await casa().editarPerfil('Ana M', 'azul')).admin).toBe(true);
+  });
+
+  test('un color inventado o un nombre vacío rechaza como check y no cambia nada', async () => {
+    const bruno = casa({ yo: BRUNO });
+    await expect(bruno.editarPerfil('Bruno B', 'fucsia' as never)).rejects.toMatchObject({ code: '23514' });
+    await expect(bruno.editarPerfil('   ', 'azul')).rejects.toMatchObject({ code: '23514' });
+    expect((await bruno.integrantes()).find((i) => i.id === BRUNO)).toMatchObject({ nombre: 'Bruno', color: null });
+  });
+
+  test('quien no está en la casa no tiene perfil: 42501', async () => {
+    await expect(casa({ yo: 'nadie' }).editarPerfil('X', null)).rejects.toMatchObject(SIN_PERMISO);
+  });
+});
+
+describe('partesDelMes', () => {
+  const MES = '2026-10';
+
+  test('con la casa de ejemplo: 900 000, 600 000 y 500 000 pesos pesan 45 %, 30 % y 25 % (partes por 10^12)', async () => {
+    const esperado = { [ANA]: 450_000_000_000, [BRUNO]: 300_000_000_000, [CARO]: 250_000_000_000 };
+    expect(await casa().partesDelMes(MES)).toEqual(esperado);
+    // Cualquiera de la casa la pide, sin permiso: sale lo mismo y no trae sueldos.
+    expect(await casa({ yo: BRUNO }).partesDelMes(MES)).toEqual(esperado);
+  });
+
+  test('el peso es sueldo × 10^12 / suma, redondeado: 1 y 2 dan …333 y …667', async () => {
+    const datos = casa({ sueldos: { [ANA]: 1, [BRUNO]: 2, [CARO]: null } });
+    expect(await datos.partesDelMes(MES)).toEqual({ [ANA]: 333_333_333_333, [BRUNO]: 666_666_666_667, [CARO]: 0 });
+  });
+
+  test('sin el sueldo de uno, pesa 0 y los demás se reparten entre sí', async () => {
+    const ana = casa();
+    await ana.fijarSueldo(CARO, null);
+    expect(await ana.partesDelMes(MES)).toEqual({ [ANA]: 600_000_000_000, [BRUNO]: 400_000_000_000, [CARO]: 0 });
+  });
+
+  test('sin ningún sueldo (o con todos en 0) pesan todos 0, no hay división por cero', async () => {
+    expect(await casa({ sueldos: {} }).partesDelMes(MES)).toEqual({ [ANA]: 0, [BRUNO]: 0, [CARO]: 0 });
+    expect(await casa({ sueldos: { [ANA]: 0, [BRUNO]: 0 } }).partesDelMes(MES)).toEqual({ [ANA]: 0, [BRUNO]: 0, [CARO]: 0 });
+  });
+
+  test('participan los integrantes activos o dados de baja desde un mes posterior; el pagador externo, no', async () => {
+    const dani = otro('ejemplo-dani', 'Dani', { activo: false, baja_desde: '2026-10' });
+    const datos = casa({ mas: [externo, dani], sueldos: { [ANA]: 100, [BRUNO]: 100, [dani.id]: 200, [externo.id]: 999 } });
+    // Dani se fue en octubre: sigue figurando en septiembre, no en octubre. El externo, nunca.
+    expect(await datos.partesDelMes('2026-09')).toEqual({ [ANA]: 250_000_000_000, [BRUNO]: 250_000_000_000, [CARO]: 0, [dani.id]: 500_000_000_000 });
+    expect(await datos.partesDelMes('2026-10')).toEqual({ [ANA]: 500_000_000_000, [BRUNO]: 500_000_000_000, [CARO]: 0 });
+  });
+
+  test('el mes tiene que ser AAAA-MM: MES_INVALIDO con 22023', async () => {
+    const datos = casa();
+    for (const mes of ['', '2026', '2026-1', '2026-10-01', 'octubre']) {
+      await expect(datos.partesDelMes(mes)).rejects.toMatchObject(rechaza('22023', 'MES_INVALIDO'));
+    }
+  });
+
+  test('sigue el mapa de sueldos: cambia cuando Ana fija un sueldo', async () => {
+    const ana = casa();
+    await ana.fijarSueldo(ANA, 100_000_00);
+    expect((await ana.partesDelMes(MES))[ANA]).toBe(83_333_333_333);
+  });
+});
+
+describe('cerrar y reabrir el mes piden el permiso «sueldos»', () => {
+  const MES = '2026-10';
+  const MES_CERRADO = '2026-09';
+
+  async function calculoDe(datos: Datos) {
+    const gastos = await datos.gastosEntre(`${MES}-01`, '2026-11-01');
+    const integrantes = await datos.integrantes();
+    const r = repartoDelMes(integrantes, MES, gastos);
+    if (!r.ok) throw new Error('el reparto de la casa de ejemplo tendría que dar');
+    return { r, gastos, integrantes };
+  }
+
+  test('cerrarMes y reabrirMes de Bruno rechazan con 42501 y no cambian nada', async () => {
+    const { r, gastos, integrantes } = await calculoDe(casa());
+    const bruno = casa({ yo: BRUNO });
+    await expect(bruno.cerrarMes(MES, r, gastos, integrantes)).rejects.toMatchObject(SIN_PERMISO);
+    await expect(bruno.reabrirMes(MES_CERRADO)).rejects.toMatchObject(SIN_PERMISO);
+    expect(await bruno.mesesCerrados()).toEqual(new Set([MES_CERRADO]));
+
+    // «Altas y bajas» tampoco alcanza.
+    const conAltas = casa({ yo: BRUNO, permisos: [{ integrante_id: BRUNO, permiso: 'altas_bajas' }] });
+    await expect(conAltas.cerrarMes(MES, r, gastos, integrantes)).rejects.toMatchObject(SIN_PERMISO);
+    await expect(conAltas.reabrirMes(MES_CERRADO)).rejects.toMatchObject(SIN_PERMISO);
+    expect(await conAltas.mesesCerrados()).toEqual(new Set([MES_CERRADO]));
+  });
+
+  test('Ana cierra y reabre', async () => {
+    const ana = casa();
+    const { r, gastos, integrantes } = await calculoDe(ana);
+    await ana.cerrarMes(MES, r, gastos, integrantes);
+    expect(await ana.mesesCerrados()).toEqual(new Set([MES_CERRADO, MES]));
+    await ana.reabrirMes(MES);
+    await ana.reabrirMes(MES_CERRADO);
+    expect(await ana.mesesCerrados()).toEqual(new Set());
+  });
+
+  test('Bruno con el permiso «sueldos» (sin ser admin) también cierra y reabre', async () => {
+    const bruno = casa({ yo: BRUNO, permisos: [{ integrante_id: BRUNO, permiso: 'sueldos' }] });
+    const { r, gastos, integrantes } = await calculoDe(bruno);
+    await bruno.cerrarMes(MES, r, gastos, integrantes);
+    expect((await bruno.mesesCerrados()).has(MES)).toBe(true);
+    await bruno.reabrirMes(MES);
+    expect((await bruno.mesesCerrados()).has(MES)).toBe(false);
+  });
+
+  test('el cierre compara con los sueldos de la tabla aparte: si cambió uno desde el cálculo, CIERRE_DESACTUALIZADO', async () => {
+    const { r, gastos, integrantes } = await calculoDe(casa());
+    const ana = casa();
+    await ana.fijarSueldo(CARO, 510_000_00);
+    await expect(ana.cerrarMes(MES, r, gastos, integrantes)).rejects.toMatchObject({
+      message: expect.stringContaining('CIERRE_DESACTUALIZADO'),
+    });
+    // Uno que se cargó después de que la app calculó (sin sueldo entonces), también.
+    const otra = casa();
+    const sinCaro = integrantes.map((i) => (i.id === CARO ? { ...i, sueldo: null } : i));
+    await expect(otra.cerrarMes(MES, r, gastos, sinCaro)).rejects.toMatchObject({
+      message: expect.stringContaining('CIERRE_DESACTUALIZADO'),
+    });
+    expect((await otra.mesesCerrados()).has(MES)).toBe(false);
+  });
+});
+
+describe('escucharCambios con permisos y perfil', () => {
+  test('avisa al dar y al quitar un permiso, y deja de avisar al cortar', async () => {
+    const ana = casa();
+    const alCambiar = vi.fn();
+    const dejar = ana.escucharCambios(alCambiar);
+    await ana.darPermiso(BRUNO, 'sueldos');
+    expect(alCambiar).toHaveBeenCalledTimes(1);
+    await ana.quitarPermiso(BRUNO, 'sueldos');
+    expect(alCambiar).toHaveBeenCalledTimes(2);
+    dejar();
+    await ana.darPermiso(BRUNO, 'sueldos');
+    expect(alCambiar).toHaveBeenCalledTimes(2);
+  });
+
+  test('también al fijar un sueldo, cambiar el perfil, guardar un integrante y ceder el rol; no cuando rechaza', async () => {
+    const ana = casa();
+    const alCambiar = vi.fn();
+    ana.escucharCambios(alCambiar);
+    await ana.fijarSueldo(CARO, 1_00);
+    await ana.editarPerfil('Ana M', 'azul');
+    await ana.guardarIntegrante({ id: CARO, nombre: 'Carolina' });
+    await ana.cederAdmin(BRUNO);
+    expect(alCambiar).toHaveBeenCalledTimes(4);
+
+    // Ana ya no es admin: rechaza y no avisa. Conserva «sueldos», así que fijar un sueldo sí.
+    await expect(ana.cederAdmin(CARO)).rejects.toBeDefined();
+    await expect(ana.darPermiso(CARO, 'sueldos')).rejects.toBeDefined();
+    expect(alCambiar).toHaveBeenCalledTimes(4);
+    await ana.fijarSueldo(CARO, 2_00);
+    expect(alCambiar).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe('la casa de ejemplo con acceso', () => {
+  test('Ana es admin; Bruno y Caro, comunes, sin permisos; los sueldos de hoy van en el mapa aparte', () => {
+    const s = semillaDeEjemplo(HOY_EJEMPLO);
+    expect(s.integrantes.map((i) => [i.nombre, i.admin, i.color])).toEqual([
+      ['Ana', true, null],
+      ['Bruno', false, null],
+      ['Caro', false, null],
+    ]);
+    expect(s.permisos ?? []).toEqual([]);
+    expect(s.sueldos).toEqual({ [ANA]: 900_000_00, [BRUNO]: 600_000_00, [CARO]: 500_000_00 });
+    expect(s.integrantes.every((i) => i.sueldo === null)).toBe(true);
+  });
+
+  test('el mes cerrado de la semilla se repartió con esos sueldos', async () => {
+    const cierre = await casa().cierre('2026-09');
+    const pesos = Object.fromEntries((cierre?.detalle.filas ?? []).map((f) => [f.id, Number(f.peso.toFixed(2))]));
+    expect(pesos).toEqual({ [ANA]: 0.45, [BRUNO]: 0.3, [CARO]: 0.25 });
+  });
+
+  test('sin decir quién usa la app, es el admin de la semilla', async () => {
+    const datos = crearDatosEnMemoria(semillaDeEjemplo(HOY_EJEMPLO));
+    expect((await datos.miAcceso()).admin).toBe(true);
+    expect(Object.keys(await datos.sueldos())).toHaveLength(3);
+  });
+
+  test('dos casas no comparten permisos ni sueldos', async () => {
+    const a = casa();
+    const b = casa();
+    await a.darPermiso(BRUNO, 'sueldos');
+    await a.fijarSueldo(ANA, 1_00);
+    expect(await b.permisosDeLaCasa()).toEqual({});
+    expect((await b.sueldos())[ANA]).toBe(900_000_00);
   });
 });

@@ -1,10 +1,20 @@
-// Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 007:
+// Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 008:
 // para las pruebas y para ver la app sin cuenta (VITE_DATOS=memoria). No guarda nada.
 
 import { mesActual, mesAnterior, mesDe } from '@/logica/meses';
-import { repartoDelMes } from '@/logica/reparto';
+import { participantesDelMes, repartoDelMes } from '@/logica/reparto';
 import { aplicarDelta } from '@/logica/stock';
-import type { Anotacion, Categoria, Cierre, Gasto, GastoItem, Integrante, Producto, Unidad } from '@/logica/tipos';
+import type {
+  Anotacion,
+  Categoria,
+  Cierre,
+  Gasto,
+  GastoItem,
+  Integrante,
+  Permiso,
+  Producto,
+  Unidad,
+} from '@/logica/tipos';
 
 import { nuevoId } from './id';
 import type { Datos, GastoConItems } from './tipos';
@@ -19,6 +29,18 @@ export type Semilla = {
   cierres: Cierre[];
   /** Destinatario normalizado → categoría aprendida. */
   destinos?: Record<string, string>;
+  /** Permisos de cada integrante (el admin los tiene todos sin que se registren). Sin la clave, nadie tiene ninguno. */
+  permisos?: Array<{ integrante_id: string; permiso: Permiso }>;
+  /**
+   * Sueldos en centavos, aparte de los integrantes (como la tabla sueldos); sin entrada o con `null`, sin sueldo.
+   * Sin la clave (transición, hasta que `Integrante.sueldo` desaparezca) salen del campo `sueldo` de cada integrante.
+   */
+  sueldos?: Record<string, number | null>;
+};
+
+export type OpcionesMemoria = {
+  /** Id del integrante que usa la app; por defecto, el admin de la semilla. */
+  yo?: string;
 };
 
 // Los errores imitan a los de Supabase: `message` con la excepción de la base y `code` de Postgres.
@@ -38,14 +60,27 @@ const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.loc
 const ahora = () => new Date().toISOString();
 
 const UNIDADES: readonly string[] = ['unidad', 'paquete', 'kg', 'litro'];
+const COLORES: readonly string[] = ['naranja', 'verde', 'azul', 'rosa', 'violeta', 'amarillo'];
+const PERMISOS: readonly Permiso[] = ['sueldos', 'altas_bajas'];
+const ESCALA_DE_PESOS = 1_000_000_000_000n;
+// Lo que lanzan las funciones, las políticas y los disparadores de la base cuando falta el permiso.
+const sinPermiso = () => errorDeBase('SIN_PERMISO', '42501');
 const violaCheck = (tabla: string, regla: string) =>
   errorDeBase(`new row for relation "${tabla}" violates check constraint "${tabla}_${regla}_check"`, '23514');
 const violaClave = (tabla: string) =>
   errorDeBase(`insert or update on table "${tabla}" violates foreign key constraint`, '23503');
 
-export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Datos {
+export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opciones: OpcionesMemoria = {}): Datos {
   const s = copia(semilla);
-  const integrantes = s.integrantes;
+  // Los sueldos viven aparte (como la tabla sueldos); las filas guardadas ya no los llevan.
+  const sueldos = new Map<string, number>();
+  for (const [id, sueldo] of Object.entries(s.sueldos ?? Object.fromEntries(s.integrantes.map((i) => [i.id, i.sueldo])))) {
+    if (sueldo != null) sueldos.set(id, sueldo);
+  }
+  const integrantes: Integrante[] = s.integrantes.map((i) => ({ ...i, sueldo: null }));
+  const permisos = s.permisos ?? [];
+  // Quien usa la app: sin decirlo, el admin de la semilla.
+  const yo = opciones.yo ?? integrantes.find((i) => i.admin)?.id ?? null;
   const categorias = s.categorias;
   const productos = s.productos;
   const anotaciones: Anotacion[] = s.anotaciones ?? [];
@@ -90,12 +125,57 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Dato
     if (!categorias.some((c) => c.id === f.categoria_id)) throw violaClave('productos');
   }
 
+  // Quién usa la app y qué puede: es_admin() y tiene_permiso() de la base. El admin pasa cualquier permiso;
+  // un pagador externo, ninguno. Sin permiso, las escrituras rechazan con SIN_PERMISO (42501) aunque la base,
+  // en las políticas de update y delete, las descarte sin error (cero filas).
+  const filaYo = () => integrantes.find((i) => i.id === yo);
+  const esAdmin = () => filaYo()?.admin === true;
+  const tienePermiso = (permiso: Permiso) => {
+    const f = filaYo();
+    return !!f && f.tipo === 'integrante' && (f.admin || permisos.some((p) => p.integrante_id === f.id && p.permiso === permiso));
+  };
+  const exigirAdmin = () => {
+    if (!esAdmin()) throw sinPermiso();
+  };
+  const exigirPermiso = (permiso: Permiso) => {
+    if (!tienePermiso(permiso)) throw sinPermiso();
+  };
+  const quitarPermisosDe = (id: string) => {
+    for (let k = permisos.length - 1; k >= 0; k--) if (permisos[k].integrante_id === id) permisos.splice(k, 1);
+  };
+  // Transición: el sueldo sigue saliendo en la fila del integrante, pero solo para quien puede leerlo.
+  const conSueldo = (i: Integrante): Integrante => ({ ...i, sueldo: tienePermiso('sueldos') ? (sueldos.get(i.id) ?? null) : null });
+  const validarSueldo = (sueldo: number | null) => {
+    if (sueldo !== null && !(Number.isInteger(sueldo) && sueldo >= 0)) throw violaCheck('sueldos', 'sueldo');
+  };
+  const guardarSueldo = (id: string, sueldo: number | null) => {
+    if (sueldo === null) sueldos.delete(id);
+    else sueldos.set(id, sueldo);
+  };
+  // Disparador integrantes_proteger, para un cambio hecho con sesión.
+  function protegerCambio(antes: Integrante, despues: Integrante) {
+    const cambiaAcceso =
+      despues.email !== antes.email || despues.tipo !== antes.tipo || despues.activo !== antes.activo || despues.baja_desde !== antes.baja_desde;
+    // Quien no es admin no cambia el email, el tipo ni la baja de quien es admin o tiene permisos.
+    if (!esAdmin() && cambiaAcceso && (antes.admin || permisos.some((p) => p.integrante_id === antes.id))) throw sinPermiso();
+    // Al admin no se lo pasa a externo ni se lo da de baja: primero cede el rol.
+    if (
+      antes.admin &&
+      (despues.tipo !== 'integrante' || (antes.activo && !despues.activo) || (despues.baja_desde !== null && despues.baja_desde !== antes.baja_desde))
+    ) {
+      throw errorDeBase('ES_ADMIN', '42501');
+    }
+    // La columna admin cambia solo dentro de ceder_admin.
+    if (despues.admin !== antes.admin) throw sinPermiso();
+  }
+
   return {
     async miIntegrante(email) {
-      return copia(integrantes.find((i) => i.email === email.toLowerCase()) ?? null);
+      const fila = integrantes.find((i) => i.email === email.toLowerCase());
+      return fila ? conSueldo(fila) : null;
     },
     async integrantes() {
-      return copia([...integrantes].sort(porNombre));
+      return [...integrantes].sort(porNombre).map(conSueldo);
     },
     async categorias() {
       return copia([...categorias].sort(porNombre));
@@ -359,15 +439,32 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Dato
       return destinos.get(nombre) || null;
     },
 
+    // Políticas y disparador de integrantes: altas y cambios piden «altas y bajas» (el admin pasa todo); el alta nace
+    // sin admin; la columna admin no se toca. Mientras dura la transición el sueldo llega también por acá y va a su
+    // tabla, pero pide el permiso «sueldos» mande el valor que mande (así nadie averigua un sueldo probando valores).
     async guardarIntegrante(i) {
-      const email = i.email?.toLowerCase();
-      if (email && integrantes.some((x) => x.email === email && x.id !== i.id)) {
+      exigirPermiso('altas_bajas');
+      const { sueldo, ...resto } = i;
+      if (sueldo !== undefined) {
+        exigirPermiso('sueldos');
+        validarSueldo(sueldo);
+      }
+      const cambios: Partial<Omit<Integrante, 'creado'>> = Object.fromEntries(Object.entries(resto).filter(([, v]) => v !== undefined));
+      if (cambios.email) cambios.email = cambios.email.toLowerCase();
+      const antes = i.id ? integrantes.find((x) => x.id === i.id) : undefined;
+      if (antes) protegerCambio(antes, { ...antes, ...cambios });
+      if (cambios.color != null && !COLORES.includes(cambios.color)) throw violaCheck('integrantes', 'color');
+      if (cambios.email && integrantes.some((x) => x.email === cambios.email && x.id !== i.id)) {
         throw errorDeBase('duplicate key value violates unique constraint "integrantes_email_key"', '23505');
       }
-      const campos = email ? { ...i, email } : i;
-      let fila = i.id ? integrantes.find((x) => x.id === i.id) : undefined;
-      if (fila) Object.assign(fila, campos);
-      else {
+
+      let fila: Integrante;
+      if (antes) {
+        fila = antes;
+        Object.assign(fila, cambios);
+        // Un pagador externo no conserva permisos.
+        if (fila.tipo !== 'integrante') quitarPermisosDe(fila.id);
+      } else {
         fila = {
           nombre: '',
           sueldo: null,
@@ -375,14 +472,17 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Dato
           activo: true,
           baja_desde: null,
           tipo: 'integrante',
-          ...campos,
+          color: null,
+          ...cambios,
+          admin: false,
           id: i.id ?? nuevoId(),
           creado: ahora(),
         };
         integrantes.push(fila);
       }
+      if (sueldo !== undefined) guardarSueldo(fila.id, sueldo);
       avisar();
-      return copia(fila);
+      return conSueldo(fila);
     },
 
     async guardarCategoria(c) {
@@ -412,8 +512,10 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Dato
       avisar();
     },
 
-    // Como la RPC cerrar_mes: compara lo que se usó para calcular con lo que hay ahora.
+    // Como la RPC cerrar_mes: solo con el permiso «sueldos», y compara lo que se usó para calcular con lo que hay
+    // ahora (los sueldos, los de la tabla aparte).
     async cerrarMes(mes, resultado, gastosDelCalculo, integrantesDelCalculo) {
+      exigirPermiso('sueldos');
       if (cierres.some((c) => c.mes === mes)) throw errorDeBase('MES_CERRADO');
       const clavesGastos = (lista: Array<Pick<Gasto, 'id' | 'total' | 'pagado_por'>>) =>
         new Set(lista.map((g) => JSON.stringify([g.id, Number(g.total), g.pagado_por])));
@@ -423,7 +525,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Dato
       const delMes = gastos.filter((g) => mesDe(g.fecha) === mes);
       if (
         !iguales(clavesGastos(delMes), clavesGastos(gastosDelCalculo)) ||
-        !iguales(clavesIntegrantes(integrantes), clavesIntegrantes(integrantesDelCalculo))
+        !iguales(clavesIntegrantes(integrantes.map((i) => ({ ...i, sueldo: sueldos.get(i.id) ?? null }))), clavesIntegrantes(integrantesDelCalculo))
       ) {
         throw errorDeBase('CIERRE_DESACTUALIZADO');
       }
@@ -438,9 +540,92 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo()): Dato
     },
 
     async reabrirMes(mes) {
+      exigirPermiso('sueldos');
       const i = cierres.findIndex((c) => c.mes === mes);
       if (i >= 0) cierres.splice(i, 1);
       avisar();
+    },
+
+    // mi_acceso(): solo las filas propias; el admin vuelve con la lista vacía (lo puede todo).
+    async miAcceso() {
+      const f = filaYo();
+      return { admin: esAdmin(), permisos: f ? permisos.filter((p) => p.integrante_id === f.id).map((p) => p.permiso).sort() : [] };
+    },
+    async permisosDeLaCasa() {
+      const porIntegrante: Record<string, Permiso[]> = {};
+      for (const p of permisos) (porIntegrante[p.integrante_id] ??= []).push(p.permiso);
+      for (const lista of Object.values(porIntegrante)) lista.sort();
+      return porIntegrante;
+    },
+    // Políticas dar y quitar: solo el admin. Dar dos veces no duplica; solo un integrante recibe permisos
+    // (disparador proteger_permiso: un pagador externo o alguien que no existe, no).
+    async darPermiso(integranteId, permiso) {
+      exigirAdmin();
+      if (!integrantes.some((i) => i.id === integranteId && i.tipo === 'integrante')) {
+        throw errorDeBase('SOLO_INTEGRANTES', '23514');
+      }
+      if (!permisos.some((p) => p.integrante_id === integranteId && p.permiso === permiso)) {
+        permisos.push({ integrante_id: integranteId, permiso });
+      }
+      avisar();
+    },
+    async quitarPermiso(integranteId, permiso) {
+      exigirAdmin();
+      const i = permisos.findIndex((p) => p.integrante_id === integranteId && p.permiso === permiso);
+      if (i >= 0) permisos.splice(i, 1);
+      avisar();
+    },
+    // ceder_admin: a otro integrante activo. Quien cede se queda con los dos permisos como filas; el nuevo admin
+    // pierde los suyos (ya lo puede todo).
+    async cederAdmin(aIntegranteId) {
+      exigirAdmin();
+      const destino = integrantes.find((i) => i.id === aIntegranteId);
+      if (!destino || destino.id === yo || destino.tipo !== 'integrante' || !destino.activo) {
+        throw errorDeBase('DESTINO_INVALIDO', '22023');
+      }
+      (filaYo() as Integrante).admin = false;
+      destino.admin = true;
+      for (const permiso of PERMISOS) {
+        if (!permisos.some((p) => p.integrante_id === yo && p.permiso === permiso)) permisos.push({ integrante_id: yo as string, permiso });
+      }
+      quitarPermisosDe(destino.id);
+      avisar();
+    },
+
+    // La tabla sueldos: la lee y la escribe solo quien tiene «sueldos». Sin permiso, leer da cero filas ({}),
+    // no un error.
+    async sueldos() {
+      return tienePermiso('sueldos') ? Object.fromEntries(sueldos) : {};
+    },
+    async fijarSueldo(integranteId, sueldo) {
+      exigirPermiso('sueldos');
+      validarSueldo(sueldo);
+      if (sueldo !== null && !integrantes.some((i) => i.id === integranteId)) throw violaClave('sueldos');
+      guardarSueldo(integranteId, sueldo);
+      avisar();
+    },
+
+    // partes_del_mes: el sueldo de cada participante en partes por 10^12 del total, sin mostrar sueldos.
+    // Redondeo exacto en BigInt (sueldo × 10^12 pasa de 2^53). Sin sueldo, 0; si la suma es 0, todos 0.
+    async partesDelMes(mes) {
+      if (!/^\d{4}-\d{2}$/.test(mes)) throw errorDeBase('MES_INVALIDO', '22023');
+      const participantes = participantesDelMes(integrantes, mes).map((i) => ({ id: i.id, sueldo: BigInt(sueldos.get(i.id) ?? 0) }));
+      const suma = participantes.reduce((t, p) => t + p.sueldo, 0n);
+      return Object.fromEntries(
+        participantes.map((p) => [p.id, suma > 0n ? Number((2n * p.sueldo * ESCALA_DE_PESOS + suma) / (2n * suma)) : 0]),
+      );
+    },
+
+    // editar_perfil: solo el nombre y el color de quien usa la app.
+    async editarPerfil(nombre, color) {
+      const f = filaYo();
+      if (!f) throw sinPermiso();
+      if (!nombre.trim()) throw violaCheck('integrantes', 'nombre');
+      if (color !== null && !COLORES.includes(color)) throw violaCheck('integrantes', 'color');
+      f.nombre = nombre;
+      f.color = color;
+      avisar();
+      return conSueldo(f);
     },
 
     escucharCambios(alCambiar) {
@@ -461,15 +646,17 @@ const UN_DIA = 24 * 60 * 60 * 1000;
 const dosDigitos = (n: number) => String(n).padStart(2, '0');
 // Las fechas del stock se cuentan hacia atrás desde `hoy`: así «¿Todavía hay?» muestra lo mismo cualquier día.
 const haceDias = (n: number, hoy: Date) => new Date(hoy.getTime() - n * UN_DIA).toISOString();
-const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
+const persona = (id: string, nombre: string, admin = false): Integrante => ({
   id,
   nombre,
-  sueldo,
+  sueldo: null,
   email: `${nombre.toLowerCase()}@example.com`,
   activo: true,
   baja_desde: null,
   tipo: 'integrante',
   creado: CREADO,
+  admin,
+  color: null,
 });
 const prod = (
   id: string,
@@ -506,11 +693,9 @@ export function semillaDeEjemplo(hoy: Date = new Date()): Semilla {
   const enPasado = (dia: number) => `${mesPasado}-${dosDigitos(Math.min(dia, diasDelMes(mesPasado)))}`;
   const sellado = (fecha: string, hora: number) => `${fecha}T${dosDigitos(hora)}:00:00.000Z`;
 
-  const integrantes = [
-    persona('ejemplo-ana', 'Ana', 900_000_00),
-    persona('ejemplo-bruno', 'Bruno', 600_000_00),
-    persona('ejemplo-caro', 'Caro', 500_000_00),
-  ];
+  // Ana es la admin; Bruno y Caro, comunes y sin permisos. Los sueldos van aparte, como en la base.
+  const integrantes = [persona('ejemplo-ana', 'Ana', true), persona('ejemplo-bruno', 'Bruno'), persona('ejemplo-caro', 'Caro')];
+  const sueldos: Record<string, number> = { 'ejemplo-ana': 900_000_00, 'ejemplo-bruno': 600_000_00, 'ejemplo-caro': 500_000_00 };
   const categorias: Categoria[] = [
     { id: 'ejemplo-almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 },
     { id: 'ejemplo-limpieza', nombre: 'Limpieza', tipo: 'producto', dias_sin_movimiento: 30 },
@@ -670,7 +855,11 @@ export function semillaDeEjemplo(hoy: Date = new Date()): Semilla {
 
   // El mes pasado quedó cerrado: el reparto sale de sus gastos y los sueldos de la semilla.
   const delPasado = gastos.filter((g) => mesDe(g.fecha) === mesPasado);
-  const reparto = repartoDelMes(integrantes, mesPasado, delPasado);
+  const reparto = repartoDelMes(
+    integrantes.map((i) => ({ ...i, sueldo: sueldos[i.id] })),
+    mesPasado,
+    delPasado,
+  );
   const cierres: Cierre[] = reparto.ok
     ? [
         {
@@ -683,5 +872,5 @@ export function semillaDeEjemplo(hoy: Date = new Date()): Semilla {
       ]
     : [];
 
-  return { integrantes, categorias, productos, anotaciones, gastos, cierres };
+  return { integrantes, categorias, productos, anotaciones, gastos, cierres, permisos: [], sueldos };
 }

@@ -16,6 +16,8 @@ const ana: Integrante = {
   baja_desde: null,
   tipo: 'integrante',
   creado: '2026-01-01T12:00:00.000Z',
+  admin: true,
+  color: null,
 };
 
 const m = vi.hoisted(() => ({
