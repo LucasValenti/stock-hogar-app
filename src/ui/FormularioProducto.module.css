@@ -1,0 +1,29 @@
+.formulario {
+  display: grid;
+  gap: var(--espacio-l);
+}
+
+.grupo {
+  display: grid;
+  gap: var(--espacio-xs);
+}
+
+.rotulo {
+  margin: 0;
+  font-size: var(--tamano-xs);
+  font-weight: var(--peso-fuerte);
+  color: var(--color-texto-suave);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-s);
+}
+
+.ayuda {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}

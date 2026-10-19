@@ -1,0 +1,34 @@
+.pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-xs);
+  padding: var(--espacio-xs);
+  border: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-tarjeta);
+  background: var(--color-superficie);
+}
+
+.pestana {
+  flex: 1 1 auto;
+  min-height: var(--medida-tactil);
+  padding: 0 var(--espacio-m);
+  border: 0;
+  border-radius: var(--radio-chip);
+  background: transparent;
+  color: var(--color-texto-suave);
+  font: inherit;
+  font-size: var(--tamano-s);
+  font-weight: var(--peso-fuerte);
+  text-align: center;
+  cursor: pointer;
+  transition: transform var(--mov-rapido) ease-out;
+}
+
+.pestana:active {
+  transform: scale(0.98);
+}
+
+.pestana[aria-selected='true'] {
+  background: var(--color-acento);
+  color: var(--color-sobre-acento);
+}
