@@ -1,23 +1,25 @@
 .pestanas {
-  display: flex;
-  flex-wrap: wrap;
+  /* Columnas iguales en una sola fila: a 360 px entran las cuatro de Análisis sin bajar de renglón. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: var(--espacio-xs);
   padding: var(--espacio-xs);
   border: var(--medida-borde) solid var(--color-borde);
-  border-radius: var(--radio-tarjeta);
+  border-radius: var(--radio-boton);
   background: var(--color-superficie);
 }
 
 .pestana {
-  flex: 1 1 auto;
+  min-width: 0;
   min-height: var(--medida-tactil);
-  padding: 0 var(--espacio-m);
+  padding: 0 var(--espacio-xs);
   border: 0;
   border-radius: var(--radio-chip);
   background: transparent;
   color: var(--color-texto-suave);
   font: inherit;
-  font-size: var(--tamano-s);
+  font-size: var(--tamano-xs);
   font-weight: var(--peso-fuerte);
   text-align: center;
   cursor: pointer;

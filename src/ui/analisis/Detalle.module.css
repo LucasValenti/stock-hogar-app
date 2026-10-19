@@ -1,0 +1,63 @@
+.filtros {
+  display: grid;
+  gap: var(--espacio-m);
+}
+
+.grupo {
+  display: grid;
+  gap: var(--espacio-xs);
+}
+
+.grupoInicio {
+  justify-items: start;
+}
+
+.rotulo {
+  margin: 0;
+  font-size: var(--tamano-xs);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-s);
+}
+
+.fechas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-m);
+}
+
+.campoFecha {
+  flex-grow: 1;
+  flex-basis: calc(var(--medida-fila) * 2);
+  min-width: 0;
+}
+
+.lista {
+  padding-block: 0;
+}
+
+.sub {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+}
+
+.cargando {
+  display: grid;
+  gap: var(--espacio-s);
+}
+
+.centrado {
+  margin: 0;
+  font-size: var(--tamano-s);
+  line-height: var(--interlineado-texto);
+  color: var(--color-texto-suave);
+  text-align: center;
+}

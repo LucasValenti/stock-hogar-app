@@ -1,0 +1,66 @@
+.cambio {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-s);
+}
+
+.centro {
+  display: grid;
+  flex: 1;
+  justify-items: center;
+  gap: var(--espacio-xs);
+  min-width: 0;
+}
+
+.mes {
+  margin: 0;
+  font-family: var(--fuente-titulo);
+  font-size: var(--tamano-xl);
+  line-height: var(--interlineado-titulo);
+  text-align: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espacio-xs);
+  padding-inline: var(--espacio-s);
+  border: var(--medida-borde) solid var(--color-texto);
+  border-radius: var(--radio-chip);
+}
+
+.cerrado {
+  border-color: var(--color-cerrado);
+  color: var(--color-cerrado);
+}
+
+.abierto {
+  border-color: var(--color-texto);
+  color: var(--color-texto);
+}
+
+.chipTexto {
+  font-size: var(--tamano-xs);
+  font-weight: var(--peso-fuerte);
+  line-height: var(--interlineado-texto);
+}
+
+.flecha {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--medida-tactil);
+  height: var(--medida-tactil);
+  padding: 0;
+  border: var(--medida-borde) solid var(--color-borde);
+  border-radius: var(--radio-chip);
+  background: var(--color-superficie);
+  color: var(--color-texto);
+  cursor: pointer;
+  transition: transform var(--mov-rapido) ease-out;
+}
+
+.flecha:active {
+  border-color: var(--color-texto);
+  transform: scale(0.96);
+}
