@@ -11,7 +11,6 @@ const HOY_EJEMPLO = new Date('2026-10-15T12:00:00');
 const ana: Integrante = {
   id: 'i-ana',
   nombre: 'Ana',
-  sueldo: 100_000_00,
   email: 'ana@example.com',
   activo: true,
   baja_desde: null,
@@ -25,7 +24,6 @@ const bruno: Integrante = {
   id: 'i-bruno',
   nombre: 'Bruno',
   email: 'bruno@example.com',
-  sueldo: 50_000_00,
   admin: false,
 };
 
@@ -67,8 +65,13 @@ function semilla(): Semilla {
     gastos: [],
     cierres: [],
     anotaciones: [],
+    sueldos: { 'i-ana': 100_000_00, 'i-bruno': 50_000_00 },
   };
 }
+
+/** Los integrantes con el sueldo con que se calculó el reparto, como los manda la app al cerrar. */
+const delCalculo = (integrantes: Integrante[], sueldos: Record<string, number | null>) =>
+  integrantes.map((i) => ({ ...i, sueldo: sueldos[i.id] ?? null }));
 
 const gastoTotal = (fecha: string, extra: Partial<GastoAGuardar> = {}): GastoAGuardar => ({
   fecha,
@@ -121,8 +124,9 @@ describe('crearDatosEnMemoria', () => {
     const datos = crearDatosEnMemoria(semilla());
     await datos.guardarGasto(gastoTotal('2026-03-10', { nuevo_id: 'g-a' }), []);
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
-    const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
+    const sueldos = await datos.sueldos();
+    const integrantes = delCalculo(await datos.integrantes(), sueldos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, sueldos), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
 
     // Otra persona carga un gasto del mes mientras se miraba el reparto.
@@ -138,8 +142,9 @@ describe('crearDatosEnMemoria', () => {
     const datos = crearDatosEnMemoria(semilla());
     await datos.guardarGasto(gastoTotal('2026-03-10', { nuevo_id: 'g-a' }), []);
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
-    const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
+    const sueldos = await datos.sueldos();
+    const integrantes = delCalculo(await datos.integrantes(), sueldos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, sueldos), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
 
     await datos.cerrarMes('2026-03', r, gastos, integrantes);
@@ -154,8 +159,9 @@ describe('crearDatosEnMemoria', () => {
     const alta = gastoTotal('2026-03-10', { nuevo_id: 'g-a' });
     await datos.guardarGasto(alta, []);
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
-    const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
+    const sueldos = await datos.sueldos();
+    const integrantes = delCalculo(await datos.integrantes(), sueldos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, sueldos), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
     await datos.cerrarMes('2026-03', r, gastos, integrantes);
 
@@ -451,8 +457,9 @@ describe('gastos por total con productos tildados', () => {
       [],
     );
     const gastos = await datos.gastosEntre('2026-03-01', '2026-04-01');
-    const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), '2026-03', gastos);
+    const sueldos = await datos.sueldos();
+    const integrantes = delCalculo(await datos.integrantes(), sueldos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, sueldos), '2026-03', gastos);
     if (!r.ok) throw new Error('el reparto de prueba tendría que dar');
     await datos.cerrarMes('2026-03', r, gastos, integrantes);
 
@@ -768,7 +775,6 @@ const CARO = 'ejemplo-caro';
 const otro = (id: string, nombre: string, extra: Partial<Integrante> = {}): Integrante => ({
   id,
   nombre,
-  sueldo: null,
   email: `${nombre.toLowerCase()}@example.com`,
   activo: true,
   baja_desde: null,
@@ -873,17 +879,14 @@ describe('sueldos aparte', () => {
     expect((await ana.sueldos())[CARO]).toBe(500_000_00);
   });
 
-  test('mientras dura la transición integrantes() trae el sueldo, pero solo a quien tiene el permiso', async () => {
-    const deAna = await casa().integrantes();
-    expect(deAna.map((i) => i.sueldo)).toEqual([900_000_00, 600_000_00, 500_000_00]);
-    const deBruno = await casa({ yo: BRUNO }).integrantes();
-    expect(deBruno.map((i) => i.sueldo)).toEqual([null, null, null]);
-    const ana = casa();
-    await ana.fijarSueldo(BRUNO, null);
-    expect((await ana.integrantes()).find((i) => i.id === BRUNO)?.sueldo).toBeNull();
+  test('integrantes() no trae sueldos, ni a quien tiene el permiso', async () => {
+    for (const datos of [casa(), casa({ yo: BRUNO })]) {
+      expect((await datos.integrantes()).some((i) => 'sueldo' in i)).toBe(false);
+    }
+    expect('sueldo' in ((await casa().miIntegrante('ana@example.com')) ?? {})).toBe(false);
   });
 
-  test('si la semilla trae sus sueldos aparte, esos mandan; si no, salen del campo sueldo de cada integrante', async () => {
+  test('los sueldos salen del mapa aparte de la semilla; sin él, nadie tiene', async () => {
     expect(await crearDatosEnMemoria(semilla()).sueldos()).toEqual({ 'i-ana': 100_000_00, 'i-bruno': 50_000_00 });
     expect(await casa({ sueldos: {} }).sueldos()).toEqual({});
     expect(await casa({ sueldos: { [ANA]: 1_00, [BRUNO]: null } }).sueldos()).toEqual({ [ANA]: 1_00 });
@@ -1044,25 +1047,18 @@ describe('guardarIntegrante con permisos', () => {
     expect((await ana.guardarIntegrante({ id: CARO, color: 'verde' })).color).toBe('verde');
   });
 
-  test('«altas y bajas» no escribe sueldos: mandar el campo sueldo pide el permiso «sueldos», cualquiera sea el valor', async () => {
+  test('guardarIntegrante no toca sueldos: quien da el alta con «altas y bajas» la deja sin sueldo', async () => {
     const conAltas = casa({ yo: BRUNO, permisos: ALTAS });
-    await expect(conAltas.guardarIntegrante({ id: CARO, sueldo: 1_00 })).rejects.toMatchObject(SIN_PERMISO);
-    await expect(conAltas.guardarIntegrante({ id: CARO, sueldo: null })).rejects.toMatchObject(SIN_PERMISO);
-    await expect(conAltas.guardarIntegrante({ ...nuevo, sueldo: 1_00 })).rejects.toMatchObject(SIN_PERMISO);
-    expect((await conAltas.integrantes()).map((i) => i.nombre)).toEqual(['Ana', 'Bruno', 'Caro']);
-    // Sin el campo, sigue pudiendo cambiar a Caro.
-    await expect(conAltas.guardarIntegrante({ id: CARO, nombre: 'Carolina' })).resolves.toMatchObject({ id: CARO, nombre: 'Carolina', sueldo: null });
-  });
-
-  test('mientras dura la transición, el sueldo que llega por acá va a la tabla aparte (alta o edición)', async () => {
-    const ana = casa();
-    await ana.guardarIntegrante({ id: CARO, sueldo: 510_000_00 });
-    expect((await ana.sueldos())[CARO]).toBe(510_000_00);
-    const alta = await ana.guardarIntegrante({ ...nuevo, sueldo: 300_000_00 });
-    expect(alta.sueldo).toBe(300_000_00);
-    expect((await ana.sueldos())[alta.id]).toBe(300_000_00);
-    await ana.guardarIntegrante({ id: alta.id, sueldo: null });
-    expect((await ana.sueldos())[alta.id]).toBeUndefined();
+    const alta = await conAltas.guardarIntegrante(nuevo);
+    expect('sueldo' in alta).toBe(false);
+    await expect(conAltas.guardarIntegrante({ id: CARO, nombre: 'Carolina' })).resolves.toMatchObject({ nombre: 'Carolina' });
+    // Con los dos permisos se ve: el alta queda sin sueldo y Caro conserva el suyo.
+    const conLosDos = casa({ yo: BRUNO, permisos: [...ALTAS, { integrante_id: BRUNO, permiso: 'sueldos' }] });
+    const otra = await conLosDos.guardarIntegrante(nuevo);
+    await conLosDos.guardarIntegrante({ id: CARO, nombre: 'Carolina' });
+    const sueldos = await conLosDos.sueldos();
+    expect(sueldos[otra.id]).toBeUndefined();
+    expect(sueldos[CARO]).toBe(500_000_00);
   });
 });
 
@@ -1150,8 +1146,9 @@ describe('cerrar y reabrir el mes piden el permiso «sueldos»', () => {
 
   async function calculoDe(datos: Datos) {
     const gastos = await datos.gastosEntre(`${MES}-01`, '2026-11-01');
-    const integrantes = await datos.integrantes();
-    const r = repartoDelMes(integrantesConPeso(integrantes, await datos.sueldos()), MES, gastos);
+    const sueldos = await datos.sueldos();
+    const integrantes = delCalculo(await datos.integrantes(), sueldos);
+    const r = repartoDelMes(integrantesConPeso(integrantes, sueldos), MES, gastos);
     if (!r.ok) throw new Error('el reparto de la casa de ejemplo tendría que dar');
     return { r, gastos, integrantes };
   }
@@ -1249,7 +1246,7 @@ describe('la casa de ejemplo con acceso', () => {
     ]);
     expect(s.permisos ?? []).toEqual([]);
     expect(s.sueldos).toEqual({ [ANA]: 900_000_00, [BRUNO]: 600_000_00, [CARO]: 500_000_00 });
-    expect(s.integrantes.every((i) => i.sueldo === null)).toBe(true);
+    expect(s.integrantes.some((i) => 'sueldo' in i)).toBe(false);
   });
 
   test('el mes cerrado de la semilla se repartió con esos sueldos', async () => {

@@ -39,10 +39,9 @@ vi.mock('@/datos', () => ({
   },
 }));
 
-const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
+const persona = (id: string, nombre: string): Integrante => ({
   id,
   nombre,
-  sueldo,
   email: `${id}@example.com`,
   activo: true,
   baja_desde: null,
@@ -51,7 +50,7 @@ const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
   admin: false,
   color: null,
 });
-const casa = [{ ...persona('a', 'Ana', 600), admin: true }, persona('b', 'Bruno', 400)];
+const casa = [{ ...persona('a', 'Ana'), admin: true }, persona('b', 'Bruno')];
 const categorias: Categoria[] = [
   { id: 'almacen', nombre: 'Almacén', tipo: 'producto', dias_sin_movimiento: 20 },
   { id: 'luz', nombre: 'Luz', tipo: 'servicio', dias_sin_movimiento: 20 },

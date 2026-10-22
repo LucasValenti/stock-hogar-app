@@ -16,11 +16,7 @@ export type Acceso = { admin: boolean; permisos: Permiso[] };
 export type Integrante = {
   id: string;
   nombre: string;
-  /**
-   * Centavos. Null mientras no se cargó; el pagador externo no lo necesita.
-   * Transición: pasa a vivir aparte (`Datos.sueldos()`), y en memoria solo lo trae quien tiene el permiso.
-   */
-  sueldo: number | null;
+  // El sueldo vive aparte (`Datos.sueldos()`, tabla sueldos): solo lo lee quien tiene el permiso «sueldos».
   email: string;
   activo: boolean;
   /** Mes 'AAAA-MM' desde el cual dejó de participar. */

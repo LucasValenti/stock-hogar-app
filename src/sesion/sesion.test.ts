@@ -7,7 +7,6 @@ import { estadoDeSesion, integranteDeLaCola, salirSinCola } from './estado';
 const ana: Integrante = {
   id: 'ejemplo-ana',
   nombre: 'Ana',
-  sueldo: null,
   email: 'ana@example.com',
   activo: true,
   baja_desde: null,

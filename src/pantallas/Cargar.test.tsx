@@ -61,7 +61,6 @@ const texto = (s: string) => s.replace(/\u00a0/g, ' ');
 const persona = (id: string, nombre: string, extra: Partial<Integrante> = {}): Integrante => ({
   id,
   nombre,
-  sueldo: 100_00,
   email: `${id}@example.com`,
   activo: true,
   baja_desde: null,
@@ -126,7 +125,7 @@ beforeEach(() => {
     persona('bruno', 'Bruno'),
     // Dejó la casa este mes: puede figurar como pagadora solo en los meses anteriores.
     persona('caro', 'Caro', { activo: false, baja_desde: MES }),
-    persona('dani', 'Dani', { tipo: 'pagador_externo', sueldo: null }),
+    persona('dani', 'Dani', { tipo: 'pagador_externo' }),
   ]);
   m.datos.categorias.mockResolvedValue([
     { id: 'super', nombre: 'Súper', tipo: 'producto', dias_sin_movimiento: 20 },

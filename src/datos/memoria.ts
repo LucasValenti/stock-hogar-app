@@ -32,10 +32,7 @@ export type Semilla = {
   destinos?: Record<string, string>;
   /** Permisos de cada integrante (el admin los tiene todos sin que se registren). Sin la clave, nadie tiene ninguno. */
   permisos?: Array<{ integrante_id: string; permiso: Permiso }>;
-  /**
-   * Sueldos en centavos, aparte de los integrantes (como la tabla sueldos); sin entrada o con `null`, sin sueldo.
-   * Sin la clave (transición, hasta que `Integrante.sueldo` desaparezca) salen del campo `sueldo` de cada integrante.
-   */
+  /** Sueldos en centavos, aparte de los integrantes (como la tabla sueldos); sin entrada o con `null`, sin sueldo. */
   sueldos?: Record<string, number | null>;
 };
 
@@ -72,12 +69,12 @@ const violaClave = (tabla: string) =>
 
 export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opciones: OpcionesMemoria = {}): Datos {
   const s = copia(semilla);
-  // Los sueldos viven aparte (como la tabla sueldos); las filas guardadas ya no los llevan.
+  // Los sueldos viven aparte (como la tabla sueldos).
   const sueldos = new Map<string, number>();
-  for (const [id, sueldo] of Object.entries(s.sueldos ?? Object.fromEntries(s.integrantes.map((i) => [i.id, i.sueldo])))) {
+  for (const [id, sueldo] of Object.entries(s.sueldos ?? {})) {
     if (sueldo != null) sueldos.set(id, sueldo);
   }
-  const integrantes: Integrante[] = s.integrantes.map((i) => ({ ...i, sueldo: null }));
+  const integrantes: Integrante[] = s.integrantes;
   const permisos = s.permisos ?? [];
   // Quien usa la app: sin decirlo, el admin de la semilla.
   const yo = opciones.yo ?? integrantes.find((i) => i.admin)?.id ?? null;
@@ -143,8 +140,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
   const quitarPermisosDe = (id: string) => {
     for (let k = permisos.length - 1; k >= 0; k--) if (permisos[k].integrante_id === id) permisos.splice(k, 1);
   };
-  // Transición: el sueldo sigue saliendo en la fila del integrante, pero solo para quien puede leerlo.
-  const conSueldo = (i: Integrante): Integrante => ({ ...i, sueldo: tienePermiso('sueldos') ? (sueldos.get(i.id) ?? null) : null });
+  const copiaDe = (i: Integrante): Integrante => ({ ...i });
   const validarSueldo = (sueldo: number | null) => {
     if (sueldo !== null && !(Number.isInteger(sueldo) && sueldo >= 0)) throw violaCheck('sueldos', 'sueldo');
   };
@@ -171,11 +167,11 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
 
   return {
     async miIntegrante(email) {
-      const fila = integrantes.find((i) => i.email === email.toLowerCase());
-      return fila ? conSueldo(fila) : null;
+      const suya = integrantes.find((i) => i.email === email.toLowerCase());
+      return suya ? copiaDe(suya) : null;
     },
     async integrantes() {
-      return [...integrantes].sort(porNombre).map(conSueldo);
+      return [...integrantes].sort(porNombre).map(copiaDe);
     },
     async categorias() {
       return copia([...categorias].sort(porNombre));
@@ -440,16 +436,10 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
     },
 
     // Políticas y disparador de integrantes: altas y cambios piden «altas y bajas» (el admin pasa todo); el alta nace
-    // sin admin; la columna admin no se toca. Mientras dura la transición el sueldo llega también por acá y va a su
-    // tabla, pero pide el permiso «sueldos» mande el valor que mande (así nadie averigua un sueldo probando valores).
+    // sin admin; la columna admin no se toca. El sueldo no va por acá: tiene su tabla (fijarSueldo).
     async guardarIntegrante(i) {
       exigirPermiso('altas_bajas');
-      const { sueldo, ...resto } = i;
-      if (sueldo !== undefined) {
-        exigirPermiso('sueldos');
-        validarSueldo(sueldo);
-      }
-      const cambios: Partial<Omit<Integrante, 'creado'>> = Object.fromEntries(Object.entries(resto).filter(([, v]) => v !== undefined));
+      const cambios: Partial<Omit<Integrante, 'creado'>> = Object.fromEntries(Object.entries(i).filter(([, v]) => v !== undefined));
       if (cambios.email) cambios.email = cambios.email.toLowerCase();
       const antes = i.id ? integrantes.find((x) => x.id === i.id) : undefined;
       if (antes) protegerCambio(antes, { ...antes, ...cambios });
@@ -467,7 +457,6 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
       } else {
         fila = {
           nombre: '',
-          sueldo: null,
           email: '',
           activo: true,
           baja_desde: null,
@@ -480,9 +469,8 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
         };
         integrantes.push(fila);
       }
-      if (sueldo !== undefined) guardarSueldo(fila.id, sueldo);
       avisar();
-      return conSueldo(fila);
+      return copiaDe(fila);
     },
 
     async guardarCategoria(c) {
@@ -625,7 +613,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
       f.nombre = nombre;
       f.color = color;
       avisar();
-      return conSueldo(f);
+      return copiaDe(f);
     },
 
     escucharCambios(alCambiar) {
@@ -649,7 +637,6 @@ const haceDias = (n: number, hoy: Date) => new Date(hoy.getTime() - n * UN_DIA).
 const persona = (id: string, nombre: string, admin = false): Integrante => ({
   id,
   nombre,
-  sueldo: null,
   email: `${nombre.toLowerCase()}@example.com`,
   activo: true,
   baja_desde: null,

@@ -1,0 +1,65 @@
+/* Mi perfil y Permisos (Ajustes). Lo común (rótulo, sub, fuerte) está en Ajustes.module.css. */
+
+.perfil {
+  display: grid;
+  gap: var(--espacio-m);
+}
+
+.cabecera {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--espacio-m);
+}
+
+.nombre {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.colores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-s);
+}
+
+.color {
+  display: grid;
+  place-items: center;
+  width: var(--medida-tactil);
+  height: var(--medida-tactil);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--color-sobre-perfil);
+  cursor: pointer;
+  transition: transform var(--mov-rapido) ease-out;
+}
+
+.color:active {
+  transform: scale(0.94);
+}
+
+/* Elegido: tilde y un anillo (forma además de color). */
+.color[aria-checked='true'] {
+  box-shadow:
+    0 0 0 var(--medida-borde-fuerte) var(--color-superficie),
+    0 0 0 calc(var(--medida-borde-fuerte) * 2) var(--color-texto);
+}
+
+.persona {
+  display: grid;
+  gap: var(--espacio-xs);
+}
+
+.quien {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-m);
+  margin-bottom: var(--espacio-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .color {
+    transition: none;
+  }
+}

@@ -1,0 +1,66 @@
+.interruptor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espacio-m);
+  width: 100%;
+  min-height: var(--medida-tactil);
+  padding: var(--espacio-xs) 0;
+  border: 0;
+  background: none;
+  color: var(--color-texto);
+  font: inherit;
+  font-size: var(--tamano-m);
+  text-align: left;
+  cursor: pointer;
+}
+
+.interruptor:disabled {
+  cursor: progress;
+}
+
+.texto {
+  min-width: 0;
+  line-height: var(--interlineado-texto);
+}
+
+.llave {
+  display: flex;
+  flex: none;
+  align-items: center;
+  width: var(--medida-interruptor-ancho);
+  height: var(--medida-interruptor-alto);
+  padding-inline: calc((var(--medida-interruptor-alto) - var(--medida-interruptor-perilla)) / 2 - var(--medida-borde-fuerte));
+  border: var(--medida-borde-fuerte) solid var(--color-borde);
+  border-radius: var(--radio-chip);
+  background: var(--color-superficie);
+}
+
+.perilla {
+  display: grid;
+  place-items: center;
+  width: var(--medida-interruptor-perilla);
+  height: var(--medida-interruptor-perilla);
+  border-radius: 50%;
+  background: var(--color-borde);
+  color: var(--color-acento);
+  transition: transform var(--mov-rapido) ease-out;
+}
+
+.prendida {
+  border-color: var(--color-acento);
+  background: var(--color-acento);
+}
+
+.prendida .perilla {
+  background: var(--color-sobre-acento);
+  transform: translateX(
+    calc(var(--medida-interruptor-ancho) - var(--medida-interruptor-alto))
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .perilla {
+    transition: none;
+  }
+}

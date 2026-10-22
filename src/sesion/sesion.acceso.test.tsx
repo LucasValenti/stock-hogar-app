@@ -9,7 +9,6 @@ import type { Acceso, Integrante } from '@/logica/tipos';
 const ana: Integrante = {
   id: 'ejemplo-ana',
   nombre: 'Ana',
-  sueldo: null,
   email: 'ana@example.com',
   activo: true,
   baja_desde: null,

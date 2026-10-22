@@ -46,10 +46,9 @@ vi.mock('@/datos', () => ({
   escucharDescartes: () => () => undefined,
 }));
 
-const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
+const persona = (id: string, nombre: string): Integrante => ({
   id,
   nombre,
-  sueldo,
   email: `${id}@example.com`,
   activo: true,
   baja_desde: null,
@@ -59,7 +58,7 @@ const persona = (id: string, nombre: string, sueldo: number): Integrante => ({
   color: null,
 });
 
-const casa = [persona('a', 'Ana', 600), persona('b', 'Bruno', 400)];
+const casa = [persona('a', 'Ana'), persona('b', 'Bruno')];
 const gasto = (pagado_por: string, total: number) => ({ pagado_por, total, fecha: '2026-10-05', id: `${pagado_por}${total}` });
 
 const DIA = 24 * 60 * 60 * 1000;

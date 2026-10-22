@@ -1,7 +1,7 @@
-// Ajustes: integrantes (nombre, tipo, sueldo, email, activo), categorías (nombre, tipo y a los cuántos días
-// pregunta «¿Todavía hay?») y la cuenta (de quién es la sesión, dónde están los datos y Cerrar sesión).
-// Cada fila abre su hoja; desactivar a alguien, cambiarle el tipo y borrar una categoría se confirman en la
-// misma hoja. Se actualiza en vivo. Permisos (altas y bajas, sueldos) son F7: hoy cualquiera de la casa edita.
+// Ajustes: perfil propio, integrantes (nombre, tipo, sueldo, email y activo), permisos de la casa, categorías
+// (nombre, tipo y a los cuántos días pregunta «¿Todavía hay?») y la cuenta (de quién es la sesión, dónde están los
+// datos y Cerrar sesión). Cada fila abre su hoja; desactivar a alguien, cambiarle el tipo y borrar una categoría
+// se confirman en la misma hoja. Se actualiza en vivo. Quien no tiene permiso ve la casa sin sueldos ni acciones.
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { datos, esModoMemoria } from '@/datos';
@@ -9,8 +9,15 @@ import { esCorte } from '@/datos/cola';
 import { centavosATexto, formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, mesSiguiente, nombreMes } from '@/logica/meses';
-import type { Categoria, Integrante, TipoCategoria, TipoIntegrante } from '@/logica/tipos';
-import { avisoCambioTipo, validarCategoria, validarIntegrante, type ErroresCategoria, type ErroresIntegrante } from '@/logica/validar';
+import type { Categoria, Integrante, Permiso, TipoCategoria, TipoIntegrante } from '@/logica/tipos';
+import {
+  avisoCambioTipo,
+  validarCategoria,
+  validarIntegrante,
+  validarSueldo,
+  type ErroresCategoria,
+  type ErroresIntegrante,
+} from '@/logica/validar';
 import { useSesion } from '@/sesion/sesion';
 import { Aviso } from '@/ui/Aviso';
 import { Boton } from '@/ui/Boton';
@@ -28,18 +35,29 @@ import { Tarjeta } from '@/ui/Tarjeta';
 import { useEnVivo } from '@/ui/useEnVivo';
 
 import estilos from './Ajustes.module.css';
+import { MiPerfil } from './ajustes/MiPerfil';
+import { Permisos } from './ajustes/Permisos';
 import { CerrarSesion } from './Sesion';
 
-type Casa = { integrantes: Integrante[]; categorias: Categoria[] };
-type Seccion = 'integrantes' | 'categorias';
+type Casa = {
+  integrantes: Integrante[];
+  categorias: Categoria[];
+  sueldos: Record<string, number | null>;
+  permisos: Record<string, Permiso[]>;
+};
+type Seccion = 'perfil' | 'integrantes' | 'categorias' | 'permisos';
 /** Una pregunta antes de guardar: título, qué pasa y el botón que acepta. */
 type Paso = { titulo: string; texto: string; accion: string };
 
 const DIAS_POR_DEFECTO = 20;
 const esExterno = (t: TipoIntegrante) => t === 'pagador_externo';
 
-function pedirCasa(): Promise<Casa> {
-  return Promise.all([datos.integrantes(), datos.categorias()]).then(([integrantes, categorias]) => ({ integrantes, categorias }));
+/** Pide solo lo que el acceso permite: sin permiso, los sueldos y los permisos ni siquiera viajan. */
+async function pedirCasa(verSueldos: boolean, verPermisos: boolean): Promise<Casa> {
+  const [integrantes, categorias] = await Promise.all([datos.integrantes(), datos.categorias()]);
+  const sueldos = verSueldos ? await datos.sueldos() : {};
+  const permisos = verPermisos ? await datos.permisosDeLaCasa() : {};
+  return { integrantes, categorias, sueldos, permisos };
 }
 
 /** «Integrante · Activo», «Pagador externo · Inactivo desde marzo de 2026». */
@@ -55,8 +73,14 @@ const textoTipoCategoria = (t: TipoCategoria) => (t === 'servicio' ? 'Servicio' 
 const textoDias = (n: number) => (n === 1 ? 'pregunta al día' : `pregunta a los ${n} días`);
 
 export function Ajustes() {
-  const { demo } = useSesion();
-  const { carga, reintentar } = useEnVivo(pedirCasa, 'ajustes');
+  const { demo, yo, acceso } = useSesion();
+  const esAdmin = acceso?.admin === true;
+  const puedeSueldos = esAdmin || (acceso?.permisos.includes('sueldos') ?? false);
+  const puedeAltas = esAdmin || (acceso?.permisos.includes('altas_bajas') ?? false);
+  const { carga, reintentar } = useEnVivo(
+    () => pedirCasa(puedeSueldos, esAdmin),
+    `${puedeSueldos ? 'sueldos' : 'sin-sueldos'}:${esAdmin ? 'admin' : 'comun'}`,
+  );
   const [integrante, setIntegrante] = useState<Integrante | 'nuevo' | null>(null);
   const [categoria, setCategoria] = useState<Categoria | 'nueva' | null>(null);
   // `vez` cambia con cada guardado: el aviso se vuelve a montar y se anuncia aunque el texto sea el mismo.
@@ -95,26 +119,59 @@ export function Ajustes() {
         />
       ) : (
         <>
+          {yo ? (
+            <Apartado titulo="Mi perfil" aviso={avisoDe('perfil')}>
+              <MiPerfil yo={yo} alGuardar={(texto) => avisar('perfil', texto)} />
+            </Apartado>
+          ) : null}
+
           <Apartado titulo="Integrantes" aviso={avisoDe('integrantes')}>
-            <p className={estilos.sub}>
-              El sueldo define qué parte del gasto del mes le toca a cada uno. Un pagador externo carga gastos pero no entra al
-              reparto: se le devuelve lo que pagó.
-            </p>
-            <p className={estilos.sub}>
-              Para que alguien nuevo pueda entrar, además de sumarlo acá hay que invitar su email desde Supabase (Authentication →
-              Users → Invite user).
-            </p>
+            {puedeSueldos ? (
+              <p className={estilos.sub}>
+                El sueldo define qué parte del gasto del mes le toca a cada uno. Un pagador externo carga gastos pero no entra al
+                reparto: se le devuelve lo que pagó.
+              </p>
+            ) : null}
+            {puedeAltas ? (
+              <p className={estilos.sub}>
+                Para que alguien nuevo pueda entrar, además de sumarlo acá hay que invitar su email desde Supabase (Authentication →
+                Users → Invite user).
+              </p>
+            ) : null}
             <Tarjeta className={estilos.lista}>
               {carga.valor.integrantes.length ? (
-                carga.valor.integrantes.map((i, n) => (
-                  <FilaIntegrante key={i.id} integrante={i} separador={n > 0} alTocar={() => abrirIntegrante(i)} />
-                ))
+                carga.valor.integrantes.map((i, n) => {
+                  const puedeTocar = puedeAltas || (puedeSueldos && !esExterno(i.tipo));
+                  return (
+                    <FilaIntegrante
+                      key={i.id}
+                      integrante={i}
+                      sueldo={carga.valor.sueldos[i.id] ?? null}
+                      verSueldo={puedeSueldos}
+                      puedeTocar={puedeTocar}
+                      separador={n > 0}
+                      alTocar={() => abrirIntegrante(i)}
+                    />
+                  );
+                })
               ) : (
                 <EstadoVacio icono="casa" titulo="Todavía no hay nadie en la casa." />
               )}
             </Tarjeta>
-            <Boton texto="Agregar integrante" variante="borde" icono="mas" onClick={() => abrirIntegrante('nuevo')} />
+            {puedeAltas ? (
+              <Boton texto="Agregar integrante" variante="borde" icono="mas" onClick={() => abrirIntegrante('nuevo')} />
+            ) : null}
           </Apartado>
+
+          {esAdmin ? (
+            <Apartado titulo="Permisos" aviso={avisoDe('permisos')}>
+              <Permisos
+                integrantes={carga.valor.integrantes}
+                permisos={carga.valor.permisos}
+                alCeder={(texto) => avisar('permisos', texto)}
+              />
+            </Apartado>
+          ) : null}
 
           <Apartado titulo="Categorías" aviso={avisoDe('categorias')}>
             <p className={estilos.sub}>Cada categoría dice a los cuántos días sin cambios en el stock Inicio pregunta «¿Todavía hay?».</p>
@@ -146,6 +203,14 @@ export function Ajustes() {
 
       <HojaIntegrante
         integrante={integrante}
+        sueldo={
+          integrante && integrante !== 'nuevo' && carga.estado === 'listo'
+            ? (carga.valor.sueldos[integrante.id] ?? null)
+            : null
+        }
+        puedeDatos={puedeAltas}
+        puedeSueldo={puedeSueldos}
+        esAdmin={esAdmin}
         alCerrar={() => setIntegrante(null)}
         alGuardar={(texto) => {
           setIntegrante(null);
@@ -191,17 +256,39 @@ function Apartado({ titulo, aviso, children }: { titulo: string; aviso?: { texto
   );
 }
 
-function FilaIntegrante({ integrante: i, separador, alTocar }: { integrante: Integrante; separador: boolean; alTocar(): void }) {
+function FilaIntegrante({
+  integrante: i,
+  sueldo,
+  verSueldo,
+  puedeTocar,
+  separador,
+  alTocar,
+}: {
+  integrante: Integrante;
+  sueldo: number | null;
+  verSueldo: boolean;
+  puedeTocar: boolean;
+  separador: boolean;
+  alTocar(): void;
+}) {
   const linea = lineaIntegrante(i);
-  const sinMonto = esExterno(i.tipo) ? 'No participa' : i.sueldo === null ? 'Sin sueldo' : null;
+  const sinMonto = esExterno(i.tipo) ? 'No participa' : sueldo === null ? 'Sin sueldo' : null;
   return (
     <Fila
       nombre={i.nombre}
-      descripcion={`${linea}, ${sinMonto ?? formatear(i.sueldo as number)}`}
+      descripcion={verSueldo ? `${linea}, ${sinMonto ?? formatear(sueldo as number)}` : linea}
       detalle={<span className={estilos.sub}>{linea}</span>}
-      alTocar={alTocar}
+      alTocar={puedeTocar ? alTocar : undefined}
       separador={separador}
-      derecha={sinMonto ? <span className={estilos.sub}>{sinMonto}</span> : <Monto centavos={i.sueldo as number} tamano="fila" />}
+      derecha={
+        verSueldo ? (
+          sinMonto ? (
+            <span className={estilos.sub}>{sinMonto}</span>
+          ) : (
+            <Monto centavos={sueldo as number} tamano="fila" />
+          )
+        ) : undefined
+      }
     />
   );
 }
@@ -221,18 +308,26 @@ function Cuenta() {
 }
 
 /** «Tipo» con sus dos opciones y, debajo, qué significa la elegida. */
-function ElegirTipo<T extends string>({ opciones, activa, alElegir, explicacion }: {
+function ElegirTipo<T extends string>({ opciones, activa, alElegir, explicacion, bloqueado = false }: {
   opciones: Array<{ clave: T; texto: string }>;
   activa: T;
   alElegir(t: T): void;
   explicacion: string;
+  bloqueado?: boolean;
 }) {
   return (
     <div className={estilos.tipo}>
       <p className={estilos.rotulo}>Tipo</p>
       <div role="radiogroup" aria-label="Tipo" className={estilos.chips}>
         {opciones.map((o) => (
-          <Chip key={o.clave} texto={o.texto} rol="radio" activo={o.clave === activa} onClick={() => alElegir(o.clave)} />
+          <Chip
+            key={o.clave}
+            texto={o.texto}
+            rol="radio"
+            activo={o.clave === activa}
+            bloqueado={bloqueado}
+            onClick={() => alElegir(o.clave)}
+          />
         ))}
       </div>
       <p className={estilos.sub}>{explicacion}</p>
@@ -242,52 +337,77 @@ function ElegirTipo<T extends string>({ opciones, activa, alElegir, explicacion 
 
 // ——— Hoja de integrante ———
 
-type PropsHojaIntegrante = { integrante: Integrante | 'nuevo' | null; alCerrar(): void; alGuardar(aviso: string): void };
+type PropsHojaIntegrante = {
+  integrante: Integrante | 'nuevo' | null;
+  /** El sueldo actual, aparte del integrante: solo llega si quien abre tiene el permiso. */
+  sueldo: number | null;
+  /** Admin o «altas y bajas»: nombre, tipo, email y activo. */
+  puedeDatos: boolean;
+  /** Admin o «sueldos»: el monto mensual. */
+  puedeSueldo: boolean;
+  esAdmin: boolean;
+  alCerrar(): void;
+  alGuardar(aviso: string): void;
+};
 
-function HojaIntegrante({ integrante, alCerrar, alGuardar }: PropsHojaIntegrante) {
+function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, alCerrar, alGuardar }: PropsHojaIntegrante) {
   const existente = integrante && integrante !== 'nuevo' ? integrante : null;
   const [nombre, setNombre] = useState('');
   const [tipo, setTipo] = useState<TipoIntegrante>('integrante');
-  const [sueldo, setSueldo] = useState('');
+  const [sueldoTexto, setSueldoTexto] = useState('');
+  const [sueldoInicial, setSueldoInicial] = useState<number | null>(null);
   const [email, setEmail] = useState('');
   const [activo, setActivo] = useState(true);
   const [errores, setErrores] = useState<ErroresIntegrante>({});
+  const [errorSueldo, setErrorSueldo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [pasos, setPasos] = useState<Paso[]>([]);
 
-  // Cada vez que se abre: lo de esa persona, o vacío para una nueva.
+  // Cada vez que se abre: lo de esa persona, o vacío para una nueva. El sueldo llega aparte de `integrante`.
   useEffect(() => {
     const i = integrante && integrante !== 'nuevo' ? integrante : null;
     setNombre(i?.nombre ?? '');
     setTipo(i?.tipo ?? 'integrante');
-    setSueldo(i?.sueldo != null ? centavosATexto(i.sueldo) : '');
+    setSueldoTexto(sueldo != null ? centavosATexto(sueldo) : '');
+    setSueldoInicial(sueldo);
     setEmail(i?.email ?? '');
     setActivo(i?.activo ?? true);
     setErrores({});
+    setErrorSueldo(null);
     setError(null);
     setPasos([]);
   }, [integrante]);
 
   const externo = esExterno(tipo);
+  const haySueldo = puedeSueldo && !externo;
   const consecuenciaBaja = externo ? 'pierde el acceso desde el mes que viene' : 'sale del reparto desde el mes que viene';
-  const validar = () => validarIntegrante({ nombre, sueldo, email, tipo });
+  const soloAdmin = !!existente?.admin && !esAdmin;
+  const razonAdmin = soloAdmin ? `Solo el admin puede cambiar el email, el tipo o la baja de ${existente?.nombre ?? ''}.` : null;
+
+  function validar() {
+    const datos = puedeDatos ? validarIntegrante({ nombre, email, tipo }) : null;
+    const monto = haySueldo ? validarSueldo(sueldoTexto) : null;
+    setErrores(datos?.errores ?? {});
+    setErrorSueldo(monto && !monto.ok ? monto.error : null);
+    return { datos, monto };
+  }
 
   function guardar() {
     setError(null);
     const r = validar();
-    setErrores(r.errores);
-    if (!r.ok) return;
+    if (!(r.datos?.ok ?? true) || !(r.monto?.ok ?? true)) return;
+    const nombreFinal = r.datos?.valor.nombre ?? existente?.nombre ?? '';
     const preguntas: Paso[] = [];
-    if (existente?.activo && !activo) {
+    if (puedeDatos && existente?.activo && !activo) {
       preguntas.push({
-        titulo: `¿Desactivar a ${r.valor.nombre}?`,
+        titulo: `¿Desactivar a ${nombreFinal}?`,
         texto: externo ? 'Pierde el acceso desde el mes que viene.' : 'Sigue en el reparto de este mes y sale desde el que viene.',
         accion: 'Desactivar',
       });
     }
-    const cambio = avisoCambioTipo(existente, r.valor.tipo);
-    if (cambio) preguntas.push({ titulo: `¿Cambiar el tipo de ${r.valor.nombre}?`, texto: cambio, accion: 'Cambiar tipo' });
+    const cambio = puedeDatos ? avisoCambioTipo(existente, r.datos?.valor.tipo ?? tipo) : null;
+    if (cambio) preguntas.push({ titulo: `¿Cambiar el tipo de ${nombreFinal}?`, texto: cambio, accion: 'Cambiar tipo' });
     if (preguntas.length) setPasos(preguntas);
     else void enviar();
   }
@@ -299,13 +419,29 @@ function HojaIntegrante({ integrante, alCerrar, alGuardar }: PropsHojaIntegrante
 
   async function enviar() {
     const r = validar();
-    if (!r.ok) return;
+    if (!(r.datos?.ok ?? true) || !(r.monto?.ok ?? true)) return;
+    const nombreFinal = r.datos?.valor.nombre ?? existente?.nombre ?? '';
     // Quien ya estaba inactivo conserva su baja; quien se desactiva ahora sale desde el mes que viene.
     const baja_desde = activo ? null : existente && !existente.activo ? existente.baja_desde : mesSiguiente(mesActual());
+    const sueldoFinal = externo ? null : r.monto?.ok ? r.monto.valor : null;
     setOcupado(true);
     try {
-      await datos.guardarIntegrante({ ...(existente ? { id: existente.id } : {}), ...r.valor, activo, baja_desde });
-      alGuardar(existente ? 'Cambios guardados.' : `${r.valor.nombre} se agregó a la casa.`);
+      let id = existente?.id ?? null;
+      if (puedeDatos && r.datos) {
+        const guardado = await datos.guardarIntegrante({
+          ...(existente ? { id: existente.id } : {}),
+          ...r.datos.valor,
+          activo,
+          baja_desde,
+        });
+        id = guardado.id;
+      }
+      if (puedeSueldo && id) {
+        // Si no cambió, no se manda; el alta sí fija el sueldo que se cargó.
+        const cambioSueldo = existente ? sueldoFinal !== sueldoInicial : sueldoFinal !== null;
+        if (cambioSueldo) await datos.fijarSueldo(id, sueldoFinal);
+      }
+      alGuardar(existente ? 'Cambios guardados.' : `${nombreFinal} se agregó a la casa.`);
     } catch (e) {
       // El error se ve en el formulario, con todo lo que se escribió.
       setPasos([]);
@@ -346,45 +482,69 @@ function HojaIntegrante({ integrante, alCerrar, alGuardar }: PropsHojaIntegrante
       }
     >
       <div className={estilos.formulario}>
-        <Campo etiqueta="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} error={errores.nombre} />
-        <ElegirTipo<TipoIntegrante>
-          opciones={[
-            { clave: 'integrante', texto: 'Integrante' },
-            { clave: 'pagador_externo', texto: 'Pagador externo' },
-          ]}
-          activa={tipo}
-          alElegir={setTipo}
-          explicacion={externo ? 'Paga gastos y se le devuelve lo que pagó: no participa del reparto.' : 'Participa del reparto según su sueldo.'}
-        />
-        {externo ? null : (
-          <Campo
-            etiqueta="Sueldo mensual"
-            value={sueldo}
-            onChange={(e) => setSueldo(e.target.value)}
-            placeholder="Ej.: 1.500.000"
-            ayuda="Sin sueldo no se puede repartir el mes."
-            error={errores.sueldo}
-            inputMode="decimal"
-          />
+        {puedeDatos ? (
+          <>
+            <Campo etiqueta="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} error={errores.nombre} />
+            <ElegirTipo<TipoIntegrante>
+              opciones={[
+                { clave: 'integrante', texto: 'Integrante' },
+                { clave: 'pagador_externo', texto: 'Pagador externo' },
+              ]}
+              activa={tipo}
+              alElegir={setTipo}
+              bloqueado={soloAdmin}
+              explicacion={externo ? 'Paga gastos y se le devuelve lo que pagó: no participa del reparto.' : 'Participa del reparto según su sueldo.'}
+            />
+            {razonAdmin ? <p className={estilos.sub}>{razonAdmin}</p> : null}
+            {haySueldo ? (
+              <Campo
+                etiqueta="Sueldo mensual"
+                value={sueldoTexto}
+                onChange={(e) => setSueldoTexto(e.target.value)}
+                placeholder="Ej.: 1.500.000"
+                ayuda="Sin sueldo no se puede repartir el mes."
+                error={errorSueldo}
+                inputMode="decimal"
+              />
+            ) : null}
+            <Campo
+              etiqueta="Email de su cuenta"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              error={errores.email}
+              ayuda={razonAdmin ?? undefined}
+              bloqueado={soloAdmin}
+              type="email"
+              autoComplete="email"
+              autoCorrect="off"
+            />
+            {existente ? (
+              <Fila
+                nombre="Activo"
+                descripcion={`si lo desactivás, ${consecuenciaBaja}`}
+                detalle={<span className={estilos.sub}>{`Si lo desactivás, ${consecuenciaBaja}.`}</span>}
+                tildado={activo}
+                alTildar={() => setActivo((a) => !a)}
+                bloqueado={soloAdmin}
+              />
+            ) : null}
+          </>
+        ) : (
+          <>
+            {haySueldo ? (
+              <Campo
+                etiqueta="Sueldo mensual"
+                value={sueldoTexto}
+                onChange={(e) => setSueldoTexto(e.target.value)}
+                placeholder="Ej.: 1.500.000"
+                ayuda="Sin sueldo no se puede repartir el mes."
+                error={errorSueldo}
+                inputMode="decimal"
+              />
+            ) : null}
+            <p className={estilos.sub}>Los demás datos los cambia quien tiene el permiso de altas y bajas.</p>
+          </>
         )}
-        <Campo
-          etiqueta="Email de su cuenta"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          error={errores.email}
-          type="email"
-          autoComplete="email"
-          autoCorrect="off"
-        />
-        {existente ? (
-          <Fila
-            nombre="Activo"
-            descripcion={`si lo desactivás, ${consecuenciaBaja}`}
-            detalle={<span className={estilos.sub}>{`Si lo desactivás, ${consecuenciaBaja}.`}</span>}
-            tildado={activo}
-            alTildar={() => setActivo((a) => !a)}
-          />
-        ) : null}
       </div>
     </Hoja>
   );
