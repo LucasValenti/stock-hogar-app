@@ -385,6 +385,8 @@ function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, acceso, p
     setError(null);
     setPasos([]);
     setAltaId(null);
+    // Solo al abrir otra hoja: con `sueldo` en la lista, cada recarga en vivo borraría lo que se está escribiendo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [integrante]);
 
   const externo = esExterno(tipo);

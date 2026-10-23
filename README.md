@@ -50,11 +50,16 @@ Las variables `VITE_*` quedan dentro de la app: nunca pongas claves secretas. `.
 ## Tests
 
 ```bash
+npm run verificar      # lint, tipos, tests, build, pruebas de la base y npm audit; lo mismo que la CI
+npm run lint           # ESLint
 npm test               # Vitest
 npm run typecheck      # tsc --noEmit
 npm run db:probar             # pruebas de la base (supabase/tests/db.sql) sobre schema.sql, en un Postgres en memoria
-npm run db:probar:migracion   # las mismas, sobre schema-pre-007.sql + la migración 007 (el camino de producción)
+npm run db:probar:migracion   # las mismas, sobre schema-pre-008.sql con datos previos + la migración 008 (el camino de producción)
+npm run db:probar:con-datos   # las mismas, sobre una casa ya en uso (supabase/tests/casa-existente.sql)
 ```
+
+La CI (`.github/workflows/verificar.yml`) corre `npm run verificar` en cada push a `main` y en cada pull request. Dependabot propone actualizaciones semanales de dependencias y acciones, con 7 días de espera desde que sale cada versión. El `.npmrc` del proyecto no deja correr scripts de instalación (`ignore-scripts=true`).
 
 Las pruebas de la base corren en un Postgres en memoria (PGlite) y nunca se conectan a Supabase.
 
