@@ -698,7 +698,7 @@ begin
      is distinct from ('Prueba B2'::text, 'verde'::text, 'prueba-b@example.com'::text, 'integrante'::text, true, false) then
     raise exception 'FALLA: editar_perfil no cambió solo nombre y color';
   end if;
-  if exists (select 1 from integrantes where id <> '00000000-0000-0000-0000-0000000000a2' and (color is not null or nombre = 'Prueba B2')) then
+  if exists (select 1 from integrantes where id::text like '00000000-0000-0000-0000-0000000000a%' and id <> '00000000-0000-0000-0000-0000000000a2' and (color is not null or nombre = 'Prueba B2')) then
     raise exception 'FALLA: editar_perfil tocó a otro integrante';
   end if;
   begin

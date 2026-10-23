@@ -1,12 +1,12 @@
 -- Una casa que ya está en uso, para probar que db.sql también corre sobre la base de producción
 -- (herramientas/pg/correr.mjs --antes, script db:probar:con-datos). Todo inventado, con emails @example.com.
 --
--- Se parece a producción: un admin y otro integrante con sueldo y un permiso, un pagador externo sin sueldo,
+-- Se parece a producción: un admin (con color de perfil) y otro integrante con sueldo y un permiso, un pagador externo sin sueldo,
 -- gastos de este mes, una anotación y el mes en curso ya cerrado. db.sql no tiene que depender de que la base esté vacía.
-insert into integrantes (id, nombre, email, tipo, creado) values
-  ('00000000-0000-0000-0000-000000000ca1', 'Admin Existente', 'admin-existente@example.com', 'integrante', '2025-01-01 12:00:00+00'),
-  ('00000000-0000-0000-0000-000000000ca2', 'Otro Existente', 'otro-existente@example.com', 'integrante', '2025-02-01 12:00:00+00'),
-  ('00000000-0000-0000-0000-000000000ca3', 'Externo Existente', 'externo-existente@example.com', 'pagador_externo', '2025-03-01 12:00:00+00');
+insert into integrantes (id, nombre, email, tipo, creado, color) values
+  ('00000000-0000-0000-0000-000000000ca1', 'Admin Existente', 'admin-existente@example.com', 'integrante', '2025-01-01 12:00:00+00', 'naranja'),
+  ('00000000-0000-0000-0000-000000000ca2', 'Otro Existente', 'otro-existente@example.com', 'integrante', '2025-02-01 12:00:00+00', null),
+  ('00000000-0000-0000-0000-000000000ca3', 'Externo Existente', 'externo-existente@example.com', 'pagador_externo', '2025-03-01 12:00:00+00', 'verde');
 insert into sueldos (integrante_id, sueldo) values
   ('00000000-0000-0000-0000-000000000ca1', 90000000),
   ('00000000-0000-0000-0000-000000000ca2', 60000000);
