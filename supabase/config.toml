@@ -1,0 +1,10 @@
+# Configuración de la CLI de Supabase para este repo. Solo lo que usan las Edge Functions.
+# project_id es un nombre local (no es el id del proyecto en Supabase).
+project_id = "stock-hogar-app"
+
+# La llama solo el cron de los domingos (migración 009), que se identifica con la cabecera x-cron-secret.
+# Sin esto, el gateway de Supabase pide un JWT y rechaza al cron antes de llegar a la función.
+# Se despliega con la CLI (`npx supabase functions deploy resumen-semanal`): el editor del panel no resuelve
+# el import de ../_compartido/.
+[functions.resumen-semanal]
+verify_jwt = false

@@ -1,6 +1,6 @@
 import { formatear } from '@/logica/dinero';
 
-import { enviarResumen, type DatosSemana, type Suscripcion } from './enviar';
+import { autorizado, codigoHttp, enviarResumen, type DatosSemana, type Suscripcion } from './enviar';
 
 const sub = (n: number): Suscripcion => ({ endpoint: `https://push.example.com/${n}`, p256dh: 'p'.repeat(87), auth: 'a'.repeat(22) });
 const datos = (extra: Partial<DatosSemana> = {}): DatosSemana => ({
@@ -68,4 +68,33 @@ test('si no se pueden pedir los datos, el error sube (la ejecución del cron que
     throw new Error('sin base');
   });
   await expect(enviarResumen({ ahora: AHORA, pedirDatos, mandar: vi.fn(), borrar: vi.fn() })).rejects.toThrow('sin base');
+});
+
+describe('autorizado', () => {
+  test('solo con la cabecera igual al secreto configurado', () => {
+    expect(autorizado('secreto-largo', 'secreto-largo')).toBe(true);
+    expect(autorizado('secreto-larga', 'secreto-largo')).toBe(false);
+    expect(autorizado('secreto', 'secreto-largo')).toBe(false);
+    expect(autorizado(null, 'secreto-largo')).toBe(false);
+  });
+
+  test('sin secreto configurado no deja pasar a nadie, ni con la cabecera vacía', () => {
+    expect(autorizado('', undefined)).toBe(false);
+    expect(autorizado('', '')).toBe(false);
+    expect(autorizado('algo', '')).toBe(false);
+  });
+});
+
+describe('codigoHttp', () => {
+  const r = (enviados: number, borrados: number, fallidos: number) => ({ semana: { desde: 'x', hasta: 'y' }, enviados, borrados, fallidos });
+
+  test('200 si salió algo, si no había a quién o si la semana estaba vacía', () => {
+    expect(codigoHttp(r(2, 0, 1))).toBe(200);
+    expect(codigoHttp(r(0, 1, 0))).toBe(200);
+    expect(codigoHttp(r(0, 0, 0))).toBe(200);
+  });
+
+  test('502 si fallaron todos los envíos (queda marcado en el historial del cron)', () => {
+    expect(codigoHttp(r(0, 0, 3))).toBe(502);
+  });
 });

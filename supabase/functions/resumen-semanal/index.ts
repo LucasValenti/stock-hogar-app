@@ -1,14 +1,14 @@
 // Edge Function resumen-semanal (Deno, en Supabase): la llama pg_cron los domingos a las 20 de Argentina
 // (migración 009) y manda el resumen a cada suscripción. La lógica está en enviar.ts (probada con Vitest).
 //
-// Se despliega SIN verificación de JWT (supabase functions deploy resumen-semanal --no-verify-jwt): el único
-// que la llama es el cron, que se identifica con la cabecera x-cron-secret.
+// Se despliega SIN verificación de JWT (supabase/config.toml, verify_jwt = false): el único que la llama es el
+// cron, que se identifica con la cabecera x-cron-secret. Con la CLI, no desde el editor del panel.
 // Secretos de la función: CRON_SECRET, VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY (los carga Lucas en el panel).
 // SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY los pone Supabase.
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { sendNotification, WebPushError } from 'npm:web-push-neo@0.1.2';
 
-import { enviarResumen, type DatosSemana } from './enviar.ts';
+import { autorizado, codigoHttp, enviarResumen, type DatosSemana } from './enviar.ts';
 
 const REMITENTE = 'https://kusak.dev';
 const ESPERA_MS = 10_000;
@@ -19,18 +19,9 @@ function variable(nombre: string): string {
   return valor;
 }
 
-/** Compara sin cortar en la primera diferencia (no da pistas del secreto por el tiempo de respuesta). */
-function iguales(a: string, b: string): boolean {
-  const x = new TextEncoder().encode(a);
-  const y = new TextEncoder().encode(b);
-  let distinto = x.length ^ y.length;
-  for (let i = 0; i < Math.max(x.length, y.length); i++) distinto |= (x[i] ?? 0) ^ (y[i] ?? 0);
-  return distinto === 0;
-}
-
 Deno.serve(async (pedido) => {
   if (pedido.method !== 'POST') return new Response('Método no permitido', { status: 405 });
-  if (!iguales(pedido.headers.get('x-cron-secret') ?? '', variable('CRON_SECRET'))) {
+  if (!autorizado(pedido.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) {
     return new Response('No autorizado', { status: 401 });
   }
 
@@ -59,6 +50,8 @@ Deno.serve(async (pedido) => {
           return r.statusCode;
         } catch (e) {
           if (e instanceof WebPushError) return e.statusCode;
+          // Red, tiempo agotado o clave VAPID mal cargada: solo el tipo de error, sin el endpoint.
+          console.error('resumen-semanal: envío fallido', e instanceof Error ? e.name : typeof e);
           throw e;
         }
       },
@@ -69,7 +62,7 @@ Deno.serve(async (pedido) => {
     });
     // Solo cantidades: ni endpoints ni el texto del aviso.
     console.log('resumen-semanal', JSON.stringify(resultado));
-    return Response.json(resultado);
+    return Response.json(resultado, { status: codigoHttp(resultado) });
   } catch (e) {
     console.error('resumen-semanal falló', e instanceof Error ? e.message : String(e));
     return new Response('No se pudo mandar el resumen', { status: 500 });

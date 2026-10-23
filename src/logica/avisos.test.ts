@@ -1,4 +1,5 @@
-import { aSuscripcion, claveAplicacion, estadoAvisos, textoEstado, type Entorno } from './avisos';
+import { aSuscripcion, claveAplicacion, conPlazo, estadoAvisos, textoEstado, type Entorno } from './avisos';
+import { mensajeError } from './errores';
 
 const entorno = (extra: Partial<Entorno> = {}): Entorno => ({
   demo: false,
@@ -63,5 +64,23 @@ describe('aSuscripcion', () => {
     expect(aSuscripcion({ keys: { p256dh: 'p', auth: 'a' } })).toBeNull();
     expect(aSuscripcion({ endpoint: 'https://push.example.com/x', keys: { p256dh: 'p' } })).toBeNull();
     expect(aSuscripcion({ endpoint: 'https://push.example.com/x' })).toBeNull();
+  });
+});
+
+describe('conPlazo', () => {
+  test('devuelve lo que resuelve la promesa a tiempo', async () => {
+    await expect(conPlazo(Promise.resolve(3), 1000, 'tarde')).resolves.toBe(3);
+  });
+
+  test('si no resuelve en el plazo, rechaza con el mensaje (no queda esperando para siempre)', async () => {
+    vi.useFakeTimers();
+    const nunca = new Promise<number>(() => undefined);
+    const r = conPlazo(nunca, 5000, 'No se pudo preparar la app para los avisos.');
+    vi.advanceTimersByTime(5000);
+    const error = await r.catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'PLAZO', message: 'No se pudo preparar la app para los avisos.' });
+    // Con conexión, la pantalla muestra el texto tal cual (no «Algo salió mal»).
+    expect(mensajeError(error, true)).toBe('No se pudo preparar la app para los avisos.');
+    vi.useRealTimers();
   });
 });

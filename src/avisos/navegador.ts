@@ -1,6 +1,6 @@
 // Lo que los avisos de los domingos necesitan del navegador: Push API, permiso de notificaciones y si la app
 // está instalada. Aparte para que la pantalla se pruebe sin navegador (los tests lo reemplazan).
-import { claveAplicacion, type Entorno } from '@/logica/avisos';
+import { claveAplicacion, conPlazo, type Entorno } from '@/logica/avisos';
 
 /** Clave pública VAPID: no es secreta (la privada vive solo en los secretos de la Edge Function). */
 export const CLAVE_PUBLICA: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '';
@@ -26,8 +26,12 @@ export function entornoAvisos(demo: boolean): Entorno {
 }
 
 /** La suscripción de este navegador, si hay. */
+// Si el service worker no se registró (ventana privada, etc.), `ready` no resuelve nunca: se corta a los 5 segundos.
+const SIN_SW = 'No se pudo preparar la app para los avisos. Recargá la página y probá de nuevo.'; // [PENDIENTE: validar con Lucas]
+const registroListo = () => conPlazo(navigator.serviceWorker.ready, 5000, SIN_SW);
+
 export async function suscripcionDelNavegador(): Promise<PushSubscription | null> {
-  const registro = await navigator.serviceWorker.ready;
+  const registro = await registroListo();
   return registro.pushManager.getSubscription();
 }
 
@@ -37,6 +41,6 @@ export function pedirPermiso(): Promise<NotificationPermission> {
 }
 
 export async function suscribir(clavePublica: string): Promise<PushSubscription> {
-  const registro = await navigator.serviceWorker.ready;
+  const registro = await registroListo();
   return registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: claveAplicacion(clavePublica) });
 }

@@ -89,6 +89,10 @@ begin
       body := '{}'::jsonb,
       timeout_milliseconds := 30000)
   $cron$);
+  -- Sin los dos secretos, el trabajo falla cada domingo y solo se ve en cron.job_run_details: se avisa ahora.
+  if (select count(*) from vault.decrypted_secrets where name in ('resumen_semanal_url', 'resumen_semanal_secreto')) < 2 then
+    raise warning 'Faltan en Vault resumen_semanal_url o resumen_semanal_secreto: el resumen de los domingos no va a salir hasta cargarlos';
+  end if;
 end $$;
 
 commit;

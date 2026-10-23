@@ -116,3 +116,27 @@ test('en iPhone sin instalar, explica que primero hay que agregarla a la pantall
   render(<Avisos />);
   expect(screen.getByText('En iPhone, primero agregá la app a la pantalla de inicio (Compartir → Agregar a inicio).')).toBeInTheDocument();
 });
+
+test('si el navegador ya tenía una suscripción (de otra cuenta) y falla la base, no la borra', async () => {
+  const ajena = suscripcion('https://push.example.com/de-otra-cuenta');
+  m.sub = ajena;
+  m.datos.misSuscripciones.mockResolvedValue([]);
+  m.suscribir.mockImplementation(async () => ajena);
+  m.datos.guardarSuscripcion.mockRejectedValue(new Error('sin red'));
+  render(<Avisos />);
+  await waitFor(() => expect(interruptor()).toBeEnabled());
+  await userEvent.click(interruptor());
+  await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+  expect(ajena.unsubscribe).not.toHaveBeenCalled();
+  expect(interruptor()).toHaveAttribute('aria-checked', 'false');
+});
+
+test('si cierra el diálogo de permiso sin elegir, se lo explica y no suscribe', async () => {
+  m.permiso = 'default';
+  render(<Avisos />);
+  await waitFor(() => expect(interruptor()).toBeEnabled());
+  await userEvent.click(interruptor());
+  expect(await screen.findByText('Para recibir el resumen, aceptá el permiso de avisos que pide el navegador.')).toBeInTheDocument();
+  expect(m.suscribir).not.toHaveBeenCalled();
+  expect(interruptor()).toHaveAttribute('aria-checked', 'false');
+});

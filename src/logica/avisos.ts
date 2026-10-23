@@ -53,3 +53,23 @@ export function aSuscripcion(json: { endpoint?: string; keys?: Record<string, st
   if (!endpoint || !keys?.p256dh || !keys.auth) return null;
   return { endpoint, p256dh: keys.p256dh, auth: keys.auth };
 }
+
+/**
+ * La promesa, o un error con `mensaje` si no resuelve en `ms` (para no dejar la pantalla esperando para siempre).
+ * El error lleva el código PLAZO: `mensaje` ya está redactado para la persona y mensajeError lo muestra tal cual.
+ */
+export function conPlazo<T>(promesa: Promise<T>, ms: number, mensaje: string): Promise<T> {
+  return new Promise<T>((resolver, rechazar) => {
+    const reloj = setTimeout(() => rechazar(Object.assign(new Error(mensaje), { code: 'PLAZO' })), ms);
+    promesa.then(
+      (v) => {
+        clearTimeout(reloj);
+        resolver(v);
+      },
+      (e: unknown) => {
+        clearTimeout(reloj);
+        rechazar(e);
+      },
+    );
+  });
+}

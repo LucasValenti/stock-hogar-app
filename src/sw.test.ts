@@ -74,7 +74,7 @@ describe('notificationclick', () => {
   });
 
   test('solo abre rutas de la app: una dirección de afuera o sin ruta va a Inicio', async () => {
-    for (const url of ['https://malo.example.com/', '//malo.example.com', undefined]) {
+    for (const url of ['https://malo.example.com/', '//malo.example.com', '/\\malo.example.com', '/\\/malo.example.com', undefined]) {
       const { self, disparar } = cargarSw();
       await disparar('notificationclick', aviso(url));
       expect(self.clients.openWindow).toHaveBeenCalledWith('https://stock-hogar.pages.dev/');

@@ -16,7 +16,7 @@ $$;
 grant execute on function auth.jwt() to authenticated, anon;
 
 -- Permisos por defecto de Supabase: las dos cuentas ven el esquema y el RLS decide qué filas.
-grant usage on schema public to authenticated, anon;
+grant usage on schema public to authenticated, anon, service_role;
 alter default privileges in schema public grant all on tables to authenticated, anon;
 alter default privileges in schema public grant all on sequences to authenticated, anon;
 alter default privileges in schema public grant execute on functions to authenticated, anon;

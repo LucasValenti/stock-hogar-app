@@ -47,18 +47,23 @@ export function Avisos() {
     setError(null);
     setOcupado(true);
     let sub: PushSubscription | null = null;
+    // Solo se deshace la suscripción que crea este toque: una que ya estaba (de otra cuenta, o de antes) sigue.
+    let creadaAhora = false;
     try {
       const respuesta = await pedirPermiso();
       setPermiso(respuesta);
+      if (respuesta === 'default') setError('Para recibir el resumen, aceptá el permiso de avisos que pide el navegador.'); // [PENDIENTE: validar con Lucas]
       if (respuesta !== 'granted') return;
-      sub = await suscribir(CLAVE_PUBLICA);
+      const previa = await suscripcionDelNavegador();
+      sub = previa ?? (await suscribir(CLAVE_PUBLICA));
+      creadaAhora = !previa;
       const suscripcion = aSuscripcion(sub.toJSON());
       if (!suscripcion) throw new Error('El navegador no dio una suscripción para los avisos.'); // [PENDIENTE: validar con Lucas]
       await datos.guardarSuscripcion(suscripcion);
       setActivo(true);
     } catch (e) {
       // Sin la base no hay avisos: el navegador no queda suscripto a medias.
-      await sub?.unsubscribe().catch(() => undefined);
+      if (creadaAhora) await sub?.unsubscribe().catch(() => undefined);
       setActivo(false);
       setError(mensajeError(e));
     } finally {

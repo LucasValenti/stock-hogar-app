@@ -1366,5 +1366,32 @@ begin
   end if;
 end $$;
 
+-- El servidor (la clave de servicio de la Edge Function) sí puede pedir los datos del resumen.
+set local role service_role;
+do $$
+begin
+  if datos_resumen_semanal('1999-03-01', '1999-03-07') ->> 'gastos' is null then raise exception 'FALLA: service_role no recibió los datos del resumen'; end if;
+end $$;
+reset role;
+
+-- En Supabase (con pg_cron): el trabajo de los domingos existe, a las 23 UTC, y lee la URL y el secreto de Vault
+-- sin tenerlos escritos. En PGlite no hay pg_cron: se avisa y se sigue.
+do $$
+declare
+  v_horario text;
+  v_comando text;
+begin
+  if not exists (select 1 from pg_extension where extname = 'pg_cron') then
+    raise notice 'Sin pg_cron: no se revisa el trabajo programado del resumen';
+    return;
+  end if;
+  execute 'select schedule, command from cron.job where jobname = $1' into v_horario, v_comando using 'resumen-semanal';
+  if v_horario is null then raise exception 'FALLA: no está programado el resumen de los domingos'; end if;
+  if v_horario <> '0 23 * * 0' then raise exception 'FALLA: el resumen está programado con %', v_horario; end if;
+  if v_comando not like '%vault.decrypted_secrets%' or v_comando ~* '(eyJ|sb_secret_|bearer )' then
+    raise exception 'FALLA: el trabajo del resumen no lee los secretos de Vault o tiene uno escrito';
+  end if;
+end $$;
+
 rollback;
 select 'OK: todas las pruebas de la base pasaron' as resultado;

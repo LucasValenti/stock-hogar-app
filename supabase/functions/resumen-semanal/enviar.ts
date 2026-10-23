@@ -55,3 +55,21 @@ export async function enviarResumen({ ahora, pedirDatos, mandar, borrar }: Depen
     fallidos: resultados.length - cuantos('enviado') - cuantos('borrado'),
   };
 }
+
+/**
+ * La cabecera x-cron-secret coincide con el secreto de la función. Sin secreto configurado no pasa nadie.
+ * Compara sin cortar en la primera diferencia, para no dar pistas del secreto por el tiempo de respuesta.
+ */
+export function autorizado(cabecera: string | null, secreto: string | undefined): boolean {
+  if (!secreto) return false;
+  const x = new TextEncoder().encode(cabecera ?? '');
+  const y = new TextEncoder().encode(secreto);
+  let distinto = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) distinto |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return distinto === 0;
+}
+
+/** Si fallaron todos los envíos, 502: así la corrida queda marcada como fallida en net._http_response. */
+export function codigoHttp(r: Resultado): number {
+  return r.fallidos > 0 && r.enviados + r.borrados === 0 ? 502 : 200;
+}

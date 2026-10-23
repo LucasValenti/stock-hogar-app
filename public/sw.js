@@ -82,8 +82,14 @@ self.addEventListener('notificationclick', (evento) => {
 
 // Trae al frente la app si ya está abierta; si no, la abre. Solo rutas de la app: cualquier otra cosa va a Inicio.
 async function abrirApp(ruta) {
-  const destino = typeof ruta === 'string' && ruta.startsWith('/') && !ruta.startsWith('//') ? ruta : '/';
-  const url = new URL(destino, self.location.origin).href;
+  // Se mira el origen ya resuelto: «//otro» o «/\otro» parecen rutas pero llevan a otro sitio.
+  let url = new URL('/', self.location.origin).href;
+  try {
+    const pedida = typeof ruta === 'string' && ruta.startsWith('/') ? new URL(ruta, self.location.origin) : null;
+    if (pedida && pedida.origin === self.location.origin) url = pedida.href;
+  } catch {
+    // Ruta inválida: Inicio.
+  }
   const ventanas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
   const abierta = ventanas.find((v) => new URL(v.url).origin === self.location.origin);
   if (abierta) return abierta.focus();

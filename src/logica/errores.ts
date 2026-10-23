@@ -13,8 +13,9 @@ function estaEnLinea(): boolean {
 export function mensajeError(e: unknown, enLinea: boolean = estaEnLinea()): string {
   const err = e as ErrorConocido | null | undefined;
   const texto = String(err?.message ?? '');
-  // Los errores de la capa de datos (SIN_CONFIG, SIN_CONEXION, SIN_SESION) ya vienen redactados para la persona.
-  if (err?.code === 'SIN_CONFIG' || err?.code === 'SIN_CONEXION' || err?.code === 'SIN_SESION') return texto;
+  // Los errores de la capa de datos (SIN_CONFIG, SIN_CONEXION, SIN_SESION) y los de conPlazo (PLAZO) ya vienen
+  // redactados para la persona.
+  if (err?.code === 'SIN_CONFIG' || err?.code === 'SIN_CONEXION' || err?.code === 'SIN_SESION' || err?.code === 'PLAZO') return texto;
   if (!enLinea || e instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(texto)) {
     return 'Sin conexión. Revisá internet y probá de nuevo: lo que cargaste sigue acá.';
   }
