@@ -24,6 +24,14 @@ export default tseslint.config(
     },
   },
   {
+    // Edge Functions de Supabase (Deno).
+    files: ['supabase/functions/**/*.ts'],
+    languageOptions: { globals: { Deno: 'readonly' } },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
+  },
+  {
     files: ['herramientas/**/*.mjs', 'eslint.config.js'],
     languageOptions: { globals: { ...globals.node } },
   },
