@@ -3,6 +3,8 @@
 
 create role authenticated nologin noinherit;
 create role anon nologin noinherit;
+-- La clave de servicio de Supabase entra con este rol (la usan las Edge Functions).
+create role service_role nologin noinherit;
 
 create schema auth;
 grant usage on schema auth to authenticated, anon;

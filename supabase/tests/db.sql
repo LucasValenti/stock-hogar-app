@@ -1223,5 +1223,148 @@ begin
   if exists (select 1 from sueldos) then raise exception 'FALLA: borrar a alguien no borró su sueldo'; end if;
 end $$;
 
+-- 20. Avisos de los domingos (migración 009): cada cuenta maneja solo sus suscripciones, y los datos del
+-- resumen los pide solo el servidor (clave de servicio). Todo mira datos de prueba: corre también sobre producción.
+set local role authenticated;
+do $$
+declare
+  v_a constant text := '{"email":"prueba-a@example.com","role":"authenticated"}';
+  v_b constant text := '{"email":"prueba-b@example.com","role":"authenticated"}';
+  v_ep constant text := 'https://push.example.com/prueba-compartida';
+begin
+  perform set_config('request.jwt.claims', v_a, true);
+  perform guardar_suscripcion(v_ep, repeat('p', 87), repeat('a', 22));
+  if (select integrante_id from suscripciones_push where endpoint = v_ep) is distinct from '00000000-0000-0000-0000-0000000000a1' then
+    raise exception 'FALLA: la suscripción de A no quedó a su nombre';
+  end if;
+  -- Guardar otra vez el mismo endpoint no duplica: actualiza las claves.
+  perform guardar_suscripcion(v_ep, repeat('q', 87), repeat('b', 22));
+  if (select count(*) from suscripciones_push where endpoint = v_ep) <> 1
+     or (select p256dh from suscripciones_push where endpoint = v_ep) <> repeat('q', 87) then
+    raise exception 'FALLA: guardar dos veces la misma suscripción duplicó o no actualizó';
+  end if;
+  -- Solo por guardar_suscripcion: un insert directo no pasa.
+  begin
+    insert into suscripciones_push (integrante_id, endpoint, p256dh, auth)
+    values ('00000000-0000-0000-0000-0000000000a2', 'https://push.example.com/directo', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: A insertó una suscripción directo (y a nombre de B)';
+  exception when insufficient_privilege then null;
+  end;
+  -- El servicio de push siempre es https.
+  begin
+    perform guardar_suscripcion('http://push.example.com/inseguro', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: se guardó un endpoint sin https';
+  exception when check_violation then null;
+  end;
+  -- Los datos del resumen no son para las cuentas de la casa.
+  begin
+    perform datos_resumen_semanal('2026-10-19', '2026-10-25');
+    raise exception 'FALLA: una cuenta de la casa pidió los datos del resumen';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- B no ve ni borra la de A.
+  perform set_config('request.jwt.claims', v_b, true);
+  if exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: B ve la suscripción de A'; end if;
+  delete from suscripciones_push where endpoint = v_ep;
+  perform set_config('request.jwt.claims', v_a, true);
+  if not exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: B borró la suscripción de A'; end if;
+
+  -- Si B activa los avisos en el mismo navegador, la suscripción pasa a B (y A deja de verla).
+  perform set_config('request.jwt.claims', v_b, true);
+  perform guardar_suscripcion(v_ep, repeat('r', 87), repeat('c', 22));
+  if (select integrante_id from suscripciones_push where endpoint = v_ep) is distinct from '00000000-0000-0000-0000-0000000000a2' then
+    raise exception 'FALLA: la suscripción del navegador compartido no pasó a B';
+  end if;
+  perform set_config('request.jwt.claims', v_a, true);
+  if exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: A sigue viendo la suscripción que pasó a B'; end if;
+
+  -- B apaga los avisos.
+  perform set_config('request.jwt.claims', v_b, true);
+  delete from suscripciones_push where endpoint = v_ep;
+  if exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: B no pudo borrar su suscripción'; end if;
+end $$;
+
+-- Una cuenta ajena no guarda ni ve suscripciones.
+select set_config('request.jwt.claims', '{"email":"intruso@example.com","role":"authenticated"}', true);
+do $$
+begin
+  begin
+    perform guardar_suscripcion('https://push.example.com/intruso', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: un intruso guardó una suscripción';
+  exception when insufficient_privilege then null;
+  end;
+  if exists (select 1 from suscripciones_push) then raise exception 'FALLA: un intruso ve suscripciones'; end if;
+end $$;
+reset role;
+
+-- anon: nada.
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+set local role anon;
+do $$
+begin
+  begin
+    perform guardar_suscripcion('https://push.example.com/anon', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: anon guardó una suscripción';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform datos_resumen_semanal('2026-10-19', '2026-10-25');
+    raise exception 'FALLA: anon pidió los datos del resumen';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- datos_resumen_semanal, como la pide el servidor (sin sesión): gastos de la semana, lo que falta y a quién mandar.
+select set_config('request.jwt.claims', '', true);
+do $$
+declare
+  v jsonb;
+begin
+  insert into categorias (id, nombre, tipo) values ('00000000-0000-0000-0000-0000000000c9', 'Categoría del resumen', 'servicio');
+  insert into gastos (fecha, pagado_por, total, modo, categoria_id) values
+    ('1999-02-28', '00000000-0000-0000-0000-0000000000a1', 7000, 'total', '00000000-0000-0000-0000-0000000000c9'),
+    ('1999-03-01', '00000000-0000-0000-0000-0000000000a1', 1000, 'total', '00000000-0000-0000-0000-0000000000c9'),
+    ('1999-03-07', '00000000-0000-0000-0000-0000000000a2', 2000, 'total', '00000000-0000-0000-0000-0000000000c9'),
+    ('1999-03-08', '00000000-0000-0000-0000-0000000000a1', 5000, 'total', '00000000-0000-0000-0000-0000000000c9');
+  insert into productos (nombre, categoria_id, stock, oculto) values
+    ('Falta del resumen', '00000000-0000-0000-0000-0000000000c9', 0, false),
+    ('Oculto del resumen', '00000000-0000-0000-0000-0000000000c9', 0, true),
+    ('Hay del resumen', '00000000-0000-0000-0000-0000000000c9', 3, false);
+  insert into anotaciones (texto) values ('Anotación del resumen');
+  -- Una suscripción de alguien vigente (A) y otra de alguien que ya no es de la casa.
+  insert into integrantes (id, nombre, email, activo, baja_desde)
+  values ('00000000-0000-0000-0000-0000000000a8', 'Baja vieja', 'baja-vieja@example.com', false, '2000-01');
+  insert into suscripciones_push (integrante_id, endpoint, p256dh, auth) values
+    ('00000000-0000-0000-0000-0000000000a1', 'https://push.example.com/resumen-a', repeat('p', 87), repeat('a', 22)),
+    ('00000000-0000-0000-0000-0000000000a8', 'https://push.example.com/resumen-baja', repeat('p', 87), repeat('a', 22));
+
+  v := datos_resumen_semanal('1999-03-01', '1999-03-07');
+  -- Los gastos de esa semana, de lunes a domingo inclusive (en producción no hay gastos de 1999).
+  if (select array_agg(x::bigint order by x::bigint) from jsonb_array_elements_text(v -> 'gastos') x) is distinct from array[1000, 2000]::bigint[] then
+    raise exception 'FALLA: los gastos de la semana dieron %', v -> 'gastos';
+  end if;
+  if not (v -> 'productos') @> '["Falta del resumen"]' then raise exception 'FALLA: no figura un producto sin stock'; end if;
+  if (v -> 'productos') @> '["Oculto del resumen"]' then raise exception 'FALLA: figura un producto oculto'; end if;
+  if (v -> 'productos') @> '["Hay del resumen"]' then raise exception 'FALLA: figura un producto con stock'; end if;
+  if not exists (select 1 from jsonb_array_elements(v -> 'anotaciones') a where a ->> 'texto' = 'Anotación del resumen' and a ? 'creado') then
+    raise exception 'FALLA: no figura la anotación con su fecha';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s
+                 where s ->> 'endpoint' = 'https://push.example.com/resumen-a' and s ? 'p256dh' and s ? 'auth') then
+    raise exception 'FALLA: falta la suscripción de A';
+  end if;
+  if exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s where s ->> 'endpoint' = 'https://push.example.com/resumen-baja') then
+    raise exception 'FALLA: se le manda el aviso a alguien que ya no es de la casa';
+  end if;
+
+  -- Al borrar a alguien se van sus suscripciones.
+  delete from integrantes where id = '00000000-0000-0000-0000-0000000000a8';
+  if exists (select 1 from suscripciones_push where endpoint = 'https://push.example.com/resumen-baja') then
+    raise exception 'FALLA: borrar a alguien no borró sus suscripciones';
+  end if;
+end $$;
+
 rollback;
 select 'OK: todas las pruebas de la base pasaron' as resultado;
