@@ -44,3 +44,21 @@ export async function suscribir(clavePublica: string): Promise<PushSubscription>
   const registro = await registroListo();
   return registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: claveAplicacion(clavePublica) });
 }
+
+/**
+ * Al cerrar sesión: este navegador deja de recibir el resumen (se borra en la base, con la sesión todavía abierta,
+ * y en el navegador). Hace lo que puede y nunca tira: no tiene que frenar el cierre de sesión.
+ */
+export async function apagarAvisosDeEsteNavegador(borrar: (endpoint: string) => Promise<void>): Promise<void> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    // getRegistration responde enseguida aunque no haya service worker (ready esperaría para siempre).
+    const registro = await navigator.serviceWorker.getRegistration();
+    const sub = await registro?.pushManager.getSubscription();
+    if (!sub) return;
+    await borrar(sub.endpoint).catch(() => undefined);
+    await sub.unsubscribe().catch(() => undefined);
+  } catch {
+    // Sin service worker o sin permiso: no hay nada que apagar.
+  }
+}

@@ -1230,7 +1230,7 @@ do $$
 declare
   v_a constant text := '{"email":"prueba-a@example.com","role":"authenticated"}';
   v_b constant text := '{"email":"prueba-b@example.com","role":"authenticated"}';
-  v_ep constant text := 'https://push.example.com/prueba-compartida';
+  v_ep constant text := 'https://fcm.googleapis.com/fcm/send/prueba-compartida';
 begin
   perform set_config('request.jwt.claims', v_a, true);
   perform guardar_suscripcion(v_ep, repeat('p', 87), repeat('a', 22));
@@ -1246,22 +1246,56 @@ begin
   -- Solo por guardar_suscripcion: un insert directo no pasa.
   begin
     insert into suscripciones_push (integrante_id, endpoint, p256dh, auth)
-    values ('00000000-0000-0000-0000-0000000000a2', 'https://push.example.com/directo', repeat('p', 87), repeat('a', 22));
+    values ('00000000-0000-0000-0000-0000000000a2', 'https://fcm.googleapis.com/fcm/send/directo', repeat('p', 87), repeat('a', 22));
     raise exception 'FALLA: A insertó una suscripción directo (y a nombre de B)';
   exception when insufficient_privilege then null;
   end;
   -- El servicio de push siempre es https.
   begin
-    perform guardar_suscripcion('http://push.example.com/inseguro', repeat('p', 87), repeat('a', 22));
+    perform guardar_suscripcion('http://fcm.googleapis.com/fcm/send/inseguro', repeat('p', 87), repeat('a', 22));
     raise exception 'FALLA: se guardó un endpoint sin https';
   exception when check_violation then null;
   end;
+  -- Solo servicios de push de los navegadores: ni otro sitio ni uno que imite el nombre.
+  begin
+    perform guardar_suscripcion('https://push.example.com/otro-sitio', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: se guardó un endpoint que no es de un servicio de push';
+  exception when check_violation then null;
+  end;
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com.example.com/imita', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: se guardó un endpoint que imita a un servicio de push';
+  exception when check_violation then null;
+  end;
+  -- A lo sumo 10 por cuenta: con la 11.ª se va la más vieja.
+  for i in 1..11 loop
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/tope-' || i, repeat('p', 87), repeat('a', 22));
+    perform pg_sleep(0.005); -- que cada alta tenga su hora: el tope borra la más vieja
+
+  end loop;
+  if (select count(*) from suscripciones_push where endpoint like 'https://fcm.googleapis.com/fcm/send/tope-%') <> 10
+     or exists (select 1 from suscripciones_push where endpoint = 'https://fcm.googleapis.com/fcm/send/tope-1') then
+    raise exception 'FALLA: el tope de 10 suscripciones por cuenta no se respetó';
+  end if;
+  delete from suscripciones_push where endpoint like 'https://fcm.googleapis.com/fcm/send/tope-%';
+  -- El tope se llevó también la suscripción compartida de A (era la más vieja): se vuelve a guardar.
+  perform guardar_suscripcion(v_ep, repeat('q', 87), repeat('b', 22));
   -- Los datos del resumen no son para las cuentas de la casa.
   begin
     perform datos_resumen_semanal('2026-10-19', '2026-10-25');
     raise exception 'FALLA: una cuenta de la casa pidió los datos del resumen';
   exception when insufficient_privilege then null;
   end;
+
+  -- Las claves con un largo que no es el de una suscripción real no pasan.
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/claves-raras', 'corta', repeat('a', 22));
+    raise exception 'FALLA: se guardó una suscripción con p256dh de largo raro';
+  exception when check_violation then null;
+  end;
+  -- Sin update directo: ni siquiera sobre la propia (se renueva con guardar_suscripcion).
+  update suscripciones_push set auth = repeat('z', 22) where endpoint = v_ep;
+  if (select auth from suscripciones_push where endpoint = v_ep) = repeat('z', 22) then raise exception 'FALLA: un update directo cambió una suscripción'; end if;
 
   -- B no ve ni borra la de A.
   perform set_config('request.jwt.claims', v_b, true);
@@ -1290,11 +1324,26 @@ select set_config('request.jwt.claims', '{"email":"intruso@example.com","role":"
 do $$
 begin
   begin
-    perform guardar_suscripcion('https://push.example.com/intruso', repeat('p', 87), repeat('a', 22));
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/intruso', repeat('p', 87), repeat('a', 22));
     raise exception 'FALLA: un intruso guardó una suscripción';
   exception when insufficient_privilege then null;
   end;
   if exists (select 1 from suscripciones_push) then raise exception 'FALLA: un intruso ve suscripciones'; end if;
+end $$;
+reset role;
+
+-- Quien ya se dio de baja no activa avisos.
+insert into integrantes (id, nombre, email, activo, baja_desde)
+values ('00000000-0000-0000-0000-0000000000a9', 'Baja pasada', 'baja-pasada@example.com', false, '2000-01');
+select set_config('request.jwt.claims', '{"email":"baja-pasada@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/baja', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: alguien dado de baja guardó una suscripción';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 reset role;
 
@@ -1304,10 +1353,11 @@ set local role anon;
 do $$
 begin
   begin
-    perform guardar_suscripcion('https://push.example.com/anon', repeat('p', 87), repeat('a', 22));
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/anon', repeat('p', 87), repeat('a', 22));
     raise exception 'FALLA: anon guardó una suscripción';
   exception when insufficient_privilege then null;
   end;
+  if exists (select 1 from suscripciones_push) then raise exception 'FALLA: anon ve suscripciones'; end if;
   begin
     perform datos_resumen_semanal('2026-10-19', '2026-10-25');
     raise exception 'FALLA: anon pidió los datos del resumen';
@@ -1336,9 +1386,14 @@ begin
   -- Una suscripción de alguien vigente (A) y otra de alguien que ya no es de la casa.
   insert into integrantes (id, nombre, email, activo, baja_desde)
   values ('00000000-0000-0000-0000-0000000000a8', 'Baja vieja', 'baja-vieja@example.com', false, '2000-01');
+  -- Alguien con la baja recién el mes que viene (o más adelante) sigue siendo de la casa: le llega.
+  insert into integrantes (id, nombre, email, activo, baja_desde)
+  values ('00000000-0000-0000-0000-0000000000aa', 'Baja futura', 'baja-futura@example.com', false, '2999-12');
+  insert into suscripciones_push (integrante_id, endpoint, p256dh, auth)
+  values ('00000000-0000-0000-0000-0000000000aa', 'https://fcm.googleapis.com/fcm/send/resumen-baja-futura', repeat('p', 87), repeat('a', 22));
   insert into suscripciones_push (integrante_id, endpoint, p256dh, auth) values
-    ('00000000-0000-0000-0000-0000000000a1', 'https://push.example.com/resumen-a', repeat('p', 87), repeat('a', 22)),
-    ('00000000-0000-0000-0000-0000000000a8', 'https://push.example.com/resumen-baja', repeat('p', 87), repeat('a', 22));
+    ('00000000-0000-0000-0000-0000000000a1', 'https://fcm.googleapis.com/fcm/send/resumen-a', repeat('p', 87), repeat('a', 22)),
+    ('00000000-0000-0000-0000-0000000000a8', 'https://fcm.googleapis.com/fcm/send/resumen-baja', repeat('p', 87), repeat('a', 22));
 
   v := datos_resumen_semanal('1999-03-01', '1999-03-07');
   -- Los gastos de esa semana, de lunes a domingo inclusive (en producción no hay gastos de 1999).
@@ -1352,16 +1407,21 @@ begin
     raise exception 'FALLA: no figura la anotación con su fecha';
   end if;
   if not exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s
-                 where s ->> 'endpoint' = 'https://push.example.com/resumen-a' and s ? 'p256dh' and s ? 'auth') then
+                 where s ->> 'endpoint' = 'https://fcm.googleapis.com/fcm/send/resumen-a' and s ? 'p256dh' and s ? 'auth') then
     raise exception 'FALLA: falta la suscripción de A';
   end if;
-  if exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s where s ->> 'endpoint' = 'https://push.example.com/resumen-baja') then
+  if exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s where s ->> 'endpoint' = 'https://fcm.googleapis.com/fcm/send/resumen-baja') then
     raise exception 'FALLA: se le manda el aviso a alguien que ya no es de la casa';
+  end if;
+
+  if not exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s
+                 where s ->> 'endpoint' = 'https://fcm.googleapis.com/fcm/send/resumen-baja-futura') then
+    raise exception 'FALLA: no le llega el aviso a alguien con la baja recién más adelante';
   end if;
 
   -- Al borrar a alguien se van sus suscripciones.
   delete from integrantes where id = '00000000-0000-0000-0000-0000000000a8';
-  if exists (select 1 from suscripciones_push where endpoint = 'https://push.example.com/resumen-baja') then
+  if exists (select 1 from suscripciones_push where endpoint = 'https://fcm.googleapis.com/fcm/send/resumen-baja') then
     raise exception 'FALLA: borrar a alguien no borró sus suscripciones';
   end if;
 end $$;

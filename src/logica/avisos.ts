@@ -73,3 +73,15 @@ export function conPlazo<T>(promesa: Promise<T>, ms: number, mensaje: string): P
     );
   });
 }
+
+/** Hasta cuántas suscripciones guarda cada cuenta (al pasarse, se van las más viejas). Igual que guardar_suscripcion. */
+export const MAX_SUSCRIPCIONES = 10;
+
+// Los servicios de push de los navegadores (Google, Mozilla, Apple, Microsoft); igual que el check de suscripciones_push.
+const SERVICIO_DE_PUSH =
+  /^https:\/\/(fcm\.googleapis\.com|[a-z0-9.-]+\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)\//;
+
+/** El endpoint es de un servicio de push de navegador (la Edge Function no tiene que poder apuntarse a otro sitio). */
+export function esEndpointDePush(endpoint: string): boolean {
+  return endpoint.length <= 1000 && SERVICIO_DE_PUSH.test(endpoint);
+}

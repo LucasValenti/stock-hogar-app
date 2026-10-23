@@ -1,4 +1,4 @@
-import { aSuscripcion, claveAplicacion, conPlazo, estadoAvisos, textoEstado, type Entorno } from './avisos';
+import { aSuscripcion, claveAplicacion, conPlazo, esEndpointDePush, estadoAvisos, textoEstado, type Entorno } from './avisos';
 import { mensajeError } from './errores';
 
 const entorno = (extra: Partial<Entorno> = {}): Entorno => ({
@@ -83,4 +83,22 @@ describe('conPlazo', () => {
     expect(mensajeError(error, true)).toBe('No se pudo preparar la app para los avisos.');
     vi.useRealTimers();
   });
+});
+
+describe('esEndpointDePush', () => {
+  test.each([
+    'https://fcm.googleapis.com/fcm/send/abc',
+    'https://updates.push.services.mozilla.com/wpush/v2/abc',
+    'https://web.push.apple.com/QGx',
+    'https://wns2-par02p.notify.windows.com/w/?token=abc',
+  ])('acepta %s', (e) => expect(esEndpointDePush(e)).toBe(true));
+
+  test.each([
+    'http://fcm.googleapis.com/fcm/send/abc',
+    'https://push.example.com/abc',
+    'https://fcm.googleapis.com.example.com/abc',
+    'https://fcmXgoogleapis.com/abc',
+    'https://example.com/?u=https://fcm.googleapis.com/',
+    `https://fcm.googleapis.com/${'x'.repeat(1000)}`,
+  ])('rechaza %s', (e) => expect(esEndpointDePush(e)).toBe(false));
 });

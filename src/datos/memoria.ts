@@ -1,6 +1,7 @@
 // Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 008:
 // para las pruebas y para ver la app sin cuenta (VITE_DATOS=memoria). No guarda nada.
 
+import { esEndpointDePush, MAX_SUSCRIPCIONES } from '@/logica/avisos';
 import { mesActual, mesAnterior, mesDe } from '@/logica/meses';
 import { COLORES_PERFIL } from '@/logica/perfil';
 import { integrantesConPeso, participantesDelMes, repartoDelMes } from '@/logica/reparto';
@@ -630,13 +631,15 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
     async guardarSuscripcion({ endpoint, p256dh, auth }) {
       const f = filaYo();
       if (!f) throw sinPermiso();
-      if (!endpoint.startsWith('https://') || endpoint.length > 1000) throw violaCheck('suscripciones_push', 'endpoint');
+      if (!esEndpointDePush(endpoint)) throw violaCheck('suscripciones_push', 'endpoint');
       if (p256dh.length < 80 || p256dh.length > 100) throw violaCheck('suscripciones_push', 'p256dh');
       if (auth.length < 16 || auth.length > 40) throw violaCheck('suscripciones_push', 'auth');
-      const fila = { integrante_id: f.id, endpoint, p256dh, auth };
+      // La renovada queda al final, como la más nueva; con más de MAX_SUSCRIPCIONES se van las más viejas.
       const k = suscripciones.findIndex((s) => s.endpoint === endpoint);
-      if (k >= 0) suscripciones[k] = fila;
-      else suscripciones.push(fila);
+      if (k >= 0) suscripciones.splice(k, 1);
+      suscripciones.push({ integrante_id: f.id, endpoint, p256dh, auth });
+      const mias = suscripciones.filter((s) => s.integrante_id === f.id);
+      for (const vieja of mias.slice(0, Math.max(0, mias.length - MAX_SUSCRIPCIONES))) suscripciones.splice(suscripciones.indexOf(vieja), 1);
     },
 
     async borrarSuscripcion(endpoint) {

@@ -14,7 +14,12 @@ begin;
 create table if not exists suscripciones_push (
   id uuid primary key default gen_random_uuid(),
   integrante_id uuid not null references integrantes on delete cascade,
-  endpoint text not null unique check (endpoint ~ '^https://' and length(endpoint) <= 1000),
+  -- Solo los servicios de push de los navegadores (Google, Mozilla, Apple, Microsoft): la Edge Function le hace
+  -- un POST a cada endpoint y no tiene que poder apuntarse a cualquier sitio.
+  endpoint text not null unique check (
+    length(endpoint) <= 1000
+    and endpoint ~ '^https://(fcm\.googleapis\.com|[a-z0-9.-]+\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)/'
+  ),
   p256dh text not null check (length(p256dh) between 80 and 100),
   auth text not null check (length(auth) between 16 and 40),
   creado timestamptz not null default now()
@@ -35,10 +40,16 @@ create or replace function guardar_suscripcion(p_endpoint text, p_p256dh text, p
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if not public.es_de_la_casa() then raise exception 'SIN_PERMISO' using errcode = '42501'; end if;
-  insert into public.suscripciones_push (integrante_id, endpoint, p256dh, auth)
-  values (public.yo_integrante(), p_endpoint, p_p256dh, p_auth)
+  -- clock_timestamp y no now(): el orden por creado vale también dentro de una misma transacción.
+  insert into public.suscripciones_push (integrante_id, endpoint, p256dh, auth, creado)
+  values (public.yo_integrante(), p_endpoint, p_p256dh, p_auth, clock_timestamp())
   on conflict (endpoint) do update
-    set integrante_id = excluded.integrante_id, p256dh = excluded.p256dh, auth = excluded.auth, creado = now();
+    set integrante_id = excluded.integrante_id, p256dh = excluded.p256dh, auth = excluded.auth, creado = clock_timestamp();
+  -- A lo sumo 10 por cuenta: se van las más viejas (celulares que ya no se usan).
+  delete from public.suscripciones_push
+  where integrante_id = public.yo_integrante()
+    and id not in (select id from public.suscripciones_push where integrante_id = public.yo_integrante()
+                   order by creado desc, id limit 10);
 end $$;
 
 revoke execute on function guardar_suscripcion(text, text, text) from public, anon;
