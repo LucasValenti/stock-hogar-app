@@ -5,6 +5,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { apagarAvisosDeEsteNavegador } from '@/avisos/navegador';
 import { datos, entrarDemo as entrarEnDemo, esModoMemoria, fijarIntegrante, salirDemo } from '@/datos';
 import { obtenerCliente } from '@/datos/cliente';
 import { semillaDeEjemplo, yoDeLaSemilla } from '@/datos/memoria';
@@ -157,6 +158,8 @@ export function SesionProvider({ children }: { children: ReactNode }) {
       setDemo(false);
       return;
     }
+    // Antes de cerrar (borrar la suscripción pide la sesión): este navegador deja de recibir el resumen de los domingos.
+    await apagarAvisosDeEsteNavegador((endpoint) => datos.borrarSuscripcion(endpoint));
     await salirSinCola(cerrarSesion, fijarIntegrante, idEnCola.current);
   }, [demo]);
 

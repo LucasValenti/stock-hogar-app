@@ -12,7 +12,7 @@ npm test               # Vitest (jsdom)
 npm run typecheck      # tsc --noEmit
 npm run build          # typecheck + vite build → dist/
 npm run db:probar             # pruebas de la base (supabase/tests/db.sql) sobre schema.sql, en un Postgres en memoria
-npm run db:probar:migracion   # las mismas, sobre schema-pre-008.sql con datos previos + la migración 008
+npm run db:probar:migracion   # las mismas, sobre schema-pre-009.sql con una casa en uso + la migración 009
 npm run db:probar:con-datos   # las mismas, sobre una casa ya en uso (como producción)
 npm run audit          # npm audit: falla con vulnerabilidades altas o críticas
 ```

@@ -698,7 +698,7 @@ begin
      is distinct from ('Prueba B2'::text, 'verde'::text, 'prueba-b@example.com'::text, 'integrante'::text, true, false) then
     raise exception 'FALLA: editar_perfil no cambió solo nombre y color';
   end if;
-  if exists (select 1 from integrantes where id <> '00000000-0000-0000-0000-0000000000a2' and (color is not null or nombre = 'Prueba B2')) then
+  if exists (select 1 from integrantes where id::text like '00000000-0000-0000-0000-0000000000a%' and id <> '00000000-0000-0000-0000-0000000000a2' and (color is not null or nombre = 'Prueba B2')) then
     raise exception 'FALLA: editar_perfil tocó a otro integrante';
   end if;
   begin
@@ -1221,6 +1221,281 @@ do $$
 begin
   if exists (select 1 from integrantes where id = '00000000-0000-0000-0000-0000000000a7') then raise exception 'FALLA: C no borró a F'; end if;
   if exists (select 1 from sueldos) then raise exception 'FALLA: borrar a alguien no borró su sueldo'; end if;
+end $$;
+
+-- 20. Avisos de los domingos (migración 009): cada cuenta maneja solo sus suscripciones, y los datos del
+-- resumen los pide solo el servidor (clave de servicio). Todo mira datos de prueba: corre también sobre producción.
+set local role authenticated;
+do $$
+declare
+  v_a constant text := '{"email":"prueba-a@example.com","role":"authenticated"}';
+  v_b constant text := '{"email":"prueba-b@example.com","role":"authenticated"}';
+  v_ep constant text := 'https://fcm.googleapis.com/fcm/send/prueba-compartida';
+begin
+  perform set_config('request.jwt.claims', v_a, true);
+  perform guardar_suscripcion(v_ep, repeat('p', 87), repeat('a', 22));
+  if (select integrante_id from suscripciones_push where endpoint = v_ep) is distinct from '00000000-0000-0000-0000-0000000000a1' then
+    raise exception 'FALLA: la suscripción de A no quedó a su nombre';
+  end if;
+  -- Guardar otra vez el mismo endpoint no duplica: actualiza las claves.
+  perform guardar_suscripcion(v_ep, repeat('q', 87), repeat('b', 22));
+  if (select count(*) from suscripciones_push where endpoint = v_ep) <> 1
+     or (select p256dh from suscripciones_push where endpoint = v_ep) <> repeat('q', 87) then
+    raise exception 'FALLA: guardar dos veces la misma suscripción duplicó o no actualizó';
+  end if;
+  -- Solo por guardar_suscripcion: un insert directo no pasa.
+  begin
+    insert into suscripciones_push (integrante_id, endpoint, p256dh, auth)
+    values ('00000000-0000-0000-0000-0000000000a2', 'https://fcm.googleapis.com/fcm/send/directo', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: A insertó una suscripción directo (y a nombre de B)';
+  exception when insufficient_privilege then null;
+  end;
+  -- El servicio de push siempre es https.
+  begin
+    perform guardar_suscripcion('http://fcm.googleapis.com/fcm/send/inseguro', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: se guardó un endpoint sin https';
+  exception when check_violation then null;
+  end;
+  -- Solo servicios de push de los navegadores: ni otro sitio ni uno que imite el nombre.
+  begin
+    perform guardar_suscripcion('https://push.example.com/otro-sitio', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: se guardó un endpoint que no es de un servicio de push';
+  exception when check_violation then null;
+  end;
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com.example.com/imita', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: se guardó un endpoint que imita a un servicio de push';
+  exception when check_violation then null;
+  end;
+  -- A lo sumo 10 por cuenta: con la 11.ª se va la más vieja.
+  for i in 1..11 loop
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/tope-' || i, repeat('p', 87), repeat('a', 22));
+    perform pg_sleep(0.005); -- que cada alta tenga su hora: el tope borra la más vieja
+
+  end loop;
+  if (select count(*) from suscripciones_push where endpoint like 'https://fcm.googleapis.com/fcm/send/tope-%') <> 10
+     or exists (select 1 from suscripciones_push where endpoint = 'https://fcm.googleapis.com/fcm/send/tope-1') then
+    raise exception 'FALLA: el tope de 10 suscripciones por cuenta no se respetó';
+  end if;
+  delete from suscripciones_push where endpoint like 'https://fcm.googleapis.com/fcm/send/tope-%';
+  -- El tope se llevó también la suscripción compartida de A (era la más vieja): se vuelve a guardar.
+  perform guardar_suscripcion(v_ep, repeat('q', 87), repeat('b', 22));
+  -- Los datos del resumen no son para las cuentas de la casa.
+  begin
+    perform datos_resumen_semanal('2026-10-19', '2026-10-25');
+    raise exception 'FALLA: una cuenta de la casa pidió los datos del resumen';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- Las claves con un largo que no es el de una suscripción real no pasan.
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/claves-raras', 'corta', repeat('a', 22));
+    raise exception 'FALLA: se guardó una suscripción con p256dh de largo raro';
+  exception when check_violation then null;
+  end;
+  -- Sin update directo: ni siquiera sobre la propia (se renueva con guardar_suscripcion).
+  update suscripciones_push set auth = repeat('z', 22) where endpoint = v_ep;
+  if (select auth from suscripciones_push where endpoint = v_ep) = repeat('z', 22) then raise exception 'FALLA: un update directo cambió una suscripción'; end if;
+
+  -- B no ve ni borra la de A.
+  perform set_config('request.jwt.claims', v_b, true);
+  if exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: B ve la suscripción de A'; end if;
+  delete from suscripciones_push where endpoint = v_ep;
+  perform set_config('request.jwt.claims', v_a, true);
+  if not exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: B borró la suscripción de A'; end if;
+
+  -- Si B activa los avisos en el mismo navegador, la suscripción pasa a B (y A deja de verla).
+  perform set_config('request.jwt.claims', v_b, true);
+  perform guardar_suscripcion(v_ep, repeat('r', 87), repeat('c', 22));
+  if (select integrante_id from suscripciones_push where endpoint = v_ep) is distinct from '00000000-0000-0000-0000-0000000000a2' then
+    raise exception 'FALLA: la suscripción del navegador compartido no pasó a B';
+  end if;
+  perform set_config('request.jwt.claims', v_a, true);
+  if exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: A sigue viendo la suscripción que pasó a B'; end if;
+
+  -- B apaga los avisos.
+  perform set_config('request.jwt.claims', v_b, true);
+  delete from suscripciones_push where endpoint = v_ep;
+  if exists (select 1 from suscripciones_push where endpoint = v_ep) then raise exception 'FALLA: B no pudo borrar su suscripción'; end if;
+end $$;
+
+-- Una cuenta ajena no guarda ni ve suscripciones.
+select set_config('request.jwt.claims', '{"email":"intruso@example.com","role":"authenticated"}', true);
+do $$
+begin
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/intruso', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: un intruso guardó una suscripción';
+  exception when insufficient_privilege then null;
+  end;
+  if exists (select 1 from suscripciones_push) then raise exception 'FALLA: un intruso ve suscripciones'; end if;
+end $$;
+reset role;
+
+-- Quien ya se dio de baja no activa avisos.
+insert into integrantes (id, nombre, email, activo, baja_desde)
+values ('00000000-0000-0000-0000-0000000000a9', 'Baja pasada', 'baja-pasada@example.com', false, '2000-01');
+select set_config('request.jwt.claims', '{"email":"baja-pasada@example.com","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+begin
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/baja', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: alguien dado de baja guardó una suscripción';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- anon: nada.
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+set local role anon;
+do $$
+begin
+  begin
+    perform guardar_suscripcion('https://fcm.googleapis.com/fcm/send/anon', repeat('p', 87), repeat('a', 22));
+    raise exception 'FALLA: anon guardó una suscripción';
+  exception when insufficient_privilege then null;
+  end;
+  if exists (select 1 from suscripciones_push) then raise exception 'FALLA: anon ve suscripciones'; end if;
+  begin
+    perform datos_resumen_semanal('2026-10-19', '2026-10-25');
+    raise exception 'FALLA: anon pidió los datos del resumen';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- datos_resumen_semanal, como la pide el servidor (sin sesión): gastos de la semana, lo que falta y a quién mandar.
+select set_config('request.jwt.claims', '', true);
+do $$
+declare
+  v jsonb;
+begin
+  insert into categorias (id, nombre, tipo) values ('00000000-0000-0000-0000-0000000000c9', 'Categoría del resumen', 'servicio');
+  insert into gastos (fecha, pagado_por, total, modo, categoria_id) values
+    ('1999-02-28', '00000000-0000-0000-0000-0000000000a1', 7000, 'total', '00000000-0000-0000-0000-0000000000c9'),
+    ('1999-03-01', '00000000-0000-0000-0000-0000000000a1', 1000, 'total', '00000000-0000-0000-0000-0000000000c9'),
+    ('1999-03-07', '00000000-0000-0000-0000-0000000000a2', 2000, 'total', '00000000-0000-0000-0000-0000000000c9'),
+    ('1999-03-08', '00000000-0000-0000-0000-0000000000a1', 5000, 'total', '00000000-0000-0000-0000-0000000000c9');
+  insert into productos (nombre, categoria_id, stock, oculto) values
+    ('Falta del resumen', '00000000-0000-0000-0000-0000000000c9', 0, false),
+    ('Oculto del resumen', '00000000-0000-0000-0000-0000000000c9', 0, true),
+    ('Hay del resumen', '00000000-0000-0000-0000-0000000000c9', 3, false);
+  insert into anotaciones (texto) values ('Anotación del resumen');
+  -- Una suscripción de alguien vigente (A) y otra de alguien que ya no es de la casa.
+  insert into integrantes (id, nombre, email, activo, baja_desde)
+  values ('00000000-0000-0000-0000-0000000000a8', 'Baja vieja', 'baja-vieja@example.com', false, '2000-01');
+  -- Alguien con la baja recién el mes que viene (o más adelante) sigue siendo de la casa: le llega.
+  insert into integrantes (id, nombre, email, activo, baja_desde)
+  values ('00000000-0000-0000-0000-0000000000aa', 'Baja futura', 'baja-futura@example.com', false, '2999-12');
+  insert into suscripciones_push (integrante_id, endpoint, p256dh, auth)
+  values ('00000000-0000-0000-0000-0000000000aa', 'https://fcm.googleapis.com/fcm/send/resumen-baja-futura', repeat('p', 87), repeat('a', 22));
+  insert into suscripciones_push (integrante_id, endpoint, p256dh, auth) values
+    ('00000000-0000-0000-0000-0000000000a1', 'https://fcm.googleapis.com/fcm/send/resumen-a', repeat('p', 87), repeat('a', 22)),
+    ('00000000-0000-0000-0000-0000000000a8', 'https://fcm.googleapis.com/fcm/send/resumen-baja', repeat('p', 87), repeat('a', 22));
+
+  v := datos_resumen_semanal('1999-03-01', '1999-03-07');
+  -- Los gastos de esa semana, de lunes a domingo inclusive (en producción no hay gastos de 1999).
+  if (select array_agg(x::bigint order by x::bigint) from jsonb_array_elements_text(v -> 'gastos') x) is distinct from array[1000, 2000]::bigint[] then
+    raise exception 'FALLA: los gastos de la semana dieron %', v -> 'gastos';
+  end if;
+  if not (v -> 'productos') @> '["Falta del resumen"]' then raise exception 'FALLA: no figura un producto sin stock'; end if;
+  if (v -> 'productos') @> '["Oculto del resumen"]' then raise exception 'FALLA: figura un producto oculto'; end if;
+  if (v -> 'productos') @> '["Hay del resumen"]' then raise exception 'FALLA: figura un producto con stock'; end if;
+  if not exists (select 1 from jsonb_array_elements(v -> 'anotaciones') a where a ->> 'texto' = 'Anotación del resumen' and a ? 'creado') then
+    raise exception 'FALLA: no figura la anotación con su fecha';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s
+                 where s ->> 'endpoint' = 'https://fcm.googleapis.com/fcm/send/resumen-a' and s ? 'p256dh' and s ? 'auth') then
+    raise exception 'FALLA: falta la suscripción de A';
+  end if;
+  if exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s where s ->> 'endpoint' = 'https://fcm.googleapis.com/fcm/send/resumen-baja') then
+    raise exception 'FALLA: se le manda el aviso a alguien que ya no es de la casa';
+  end if;
+
+  if not exists (select 1 from jsonb_array_elements(v -> 'suscripciones') s
+                 where s ->> 'endpoint' = 'https://fcm.googleapis.com/fcm/send/resumen-baja-futura') then
+    raise exception 'FALLA: no le llega el aviso a alguien con la baja recién más adelante';
+  end if;
+
+  -- Al borrar a alguien se van sus suscripciones.
+  delete from integrantes where id = '00000000-0000-0000-0000-0000000000a8';
+  if exists (select 1 from suscripciones_push where endpoint = 'https://fcm.googleapis.com/fcm/send/resumen-baja') then
+    raise exception 'FALLA: borrar a alguien no borró sus suscripciones';
+  end if;
+end $$;
+
+-- Claves de los avisos: la pública la pide cualquier cuenta de la casa; los secretos y guardar claves, solo el servidor.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"email":"prueba-a@example.com","role":"authenticated"}', true);
+do $$
+begin
+  -- En PGlite no hay Vault: no hay clave todavía, pero la función responde.
+  if clave_publica_avisos() is not null and to_regclass('vault.decrypted_secrets') is null then
+    raise exception 'FALLA: clave_publica_avisos inventó una clave';
+  end if;
+  begin
+    perform secretos_avisos();
+    raise exception 'FALLA: una cuenta de la casa leyó los secretos de los avisos';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform guardar_claves_vapid('x', 'y');
+    raise exception 'FALLA: una cuenta de la casa guardó claves VAPID';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+set local role anon;
+do $$
+begin
+  begin
+    perform clave_publica_avisos();
+    raise exception 'FALLA: anon pidió la clave pública de los avisos';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform secretos_avisos();
+    raise exception 'FALLA: anon leyó los secretos de los avisos';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '', true);
+set local role service_role;
+do $$
+begin
+  if secretos_avisos() is null then raise exception 'FALLA: service_role no pudo leer los secretos de los avisos'; end if;
+end $$;
+reset role;
+
+-- El servidor (la clave de servicio de la Edge Function) sí puede pedir los datos del resumen.
+set local role service_role;
+do $$
+begin
+  if datos_resumen_semanal('1999-03-01', '1999-03-07') ->> 'gastos' is null then raise exception 'FALLA: service_role no recibió los datos del resumen'; end if;
+end $$;
+reset role;
+
+-- En Supabase (con pg_cron): el trabajo de los domingos existe, a las 23 UTC, y lee la URL y el secreto de Vault
+-- sin tenerlos escritos. En PGlite no hay pg_cron: se avisa y se sigue.
+do $$
+declare
+  v_horario text;
+  v_comando text;
+begin
+  if not exists (select 1 from pg_extension where extname = 'pg_cron') then
+    raise notice 'Sin pg_cron: no se revisa el trabajo programado del resumen';
+    return;
+  end if;
+  execute 'select schedule, command from cron.job where jobname = $1' into v_horario, v_comando using 'resumen-semanal';
+  if v_horario is null then raise exception 'FALLA: no está programado el resumen de los domingos'; end if;
+  if v_horario <> '0 23 * * 0' then raise exception 'FALLA: el resumen está programado con %', v_horario; end if;
+  if v_comando not like '%vault.decrypted_secrets%' or v_comando ~* '(eyJ|sb_secret_|bearer )' then
+    raise exception 'FALLA: el trabajo del resumen no lee los secretos de Vault o tiene uno escrito';
+  end if;
 end $$;
 
 rollback;

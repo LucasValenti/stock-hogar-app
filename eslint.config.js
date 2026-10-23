@@ -6,7 +6,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'dist-demo', 'referencia-expo', 'node_modules', 'public', '.encargos'] },
+  { ignores: ['dist', 'dist-demo', 'dist-funciones', 'referencia-expo', 'node_modules', 'public', '.encargos'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -20,6 +20,14 @@ export default tseslint.config(
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/refs': 'off',
       // Un `_` adelante marca a propósito un parámetro o variable que no se usa.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    // Edge Functions de Supabase (Deno).
+    files: ['supabase/functions/**/*.ts'],
+    languageOptions: { globals: { Deno: 'readonly' } },
+    rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },

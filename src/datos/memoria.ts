@@ -1,6 +1,7 @@
 // Base en memoria con las mismas reglas que supabase/schema.sql y las migraciones 002 a 008:
 // para las pruebas y para ver la app sin cuenta (VITE_DATOS=memoria). No guarda nada.
 
+import { esEndpointDePush, MAX_SUSCRIPCIONES } from '@/logica/avisos';
 import { mesActual, mesAnterior, mesDe } from '@/logica/meses';
 import { COLORES_PERFIL } from '@/logica/perfil';
 import { integrantesConPeso, participantesDelMes, repartoDelMes } from '@/logica/reparto';
@@ -18,7 +19,7 @@ import type {
 } from '@/logica/tipos';
 
 import { nuevoId } from './id';
-import type { Datos, GastoConItems, IntegranteDelCalculo } from './tipos';
+import type { Datos, GastoConItems, IntegranteDelCalculo, SuscripcionPush } from './tipos';
 
 export type Semilla = {
   integrantes: Integrante[];
@@ -34,6 +35,8 @@ export type Semilla = {
   permisos?: Array<{ integrante_id: string; permiso: Permiso }>;
   /** Sueldos en centavos, aparte de los integrantes (como la tabla sueldos); sin entrada o con `null`, sin sueldo. */
   sueldos?: Record<string, number | null>;
+  /** Suscripciones de avisos de cada integrante (como la tabla suscripciones_push). */
+  suscripciones?: Array<SuscripcionPush & { integrante_id: string }>;
 };
 
 export type OpcionesMemoria = {
@@ -83,6 +86,7 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
   }
   const integrantes: Integrante[] = s.integrantes;
   const permisos = s.permisos ?? [];
+  const suscripciones = s.suscripciones ?? [];
   // Quien usa la app: sin decirlo, el admin de la semilla.
   const yo = opciones.yo ?? integrantes.find((i) => i.admin)?.id ?? null;
   const categorias = s.categorias;
@@ -621,6 +625,35 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
       f.color = color;
       avisar();
       return copiaDe(f);
+    },
+
+    // Como guardar_suscripcion y el RLS de suscripciones_push: cada uno maneja las suyas.
+    async guardarSuscripcion({ endpoint, p256dh, auth }) {
+      const f = filaYo();
+      if (!f) throw sinPermiso();
+      if (!esEndpointDePush(endpoint)) throw violaCheck('suscripciones_push', 'endpoint');
+      if (p256dh.length < 80 || p256dh.length > 100) throw violaCheck('suscripciones_push', 'p256dh');
+      if (auth.length < 16 || auth.length > 40) throw violaCheck('suscripciones_push', 'auth');
+      // La renovada queda al final, como la más nueva; con más de MAX_SUSCRIPCIONES se van las más viejas.
+      const k = suscripciones.findIndex((s) => s.endpoint === endpoint);
+      if (k >= 0) suscripciones.splice(k, 1);
+      suscripciones.push({ integrante_id: f.id, endpoint, p256dh, auth });
+      const mias = suscripciones.filter((s) => s.integrante_id === f.id);
+      for (const vieja of mias.slice(0, Math.max(0, mias.length - MAX_SUSCRIPCIONES))) suscripciones.splice(suscripciones.indexOf(vieja), 1);
+    },
+
+    async borrarSuscripcion(endpoint) {
+      const k = suscripciones.findIndex((s) => s.endpoint === endpoint && s.integrante_id === yo);
+      if (k >= 0) suscripciones.splice(k, 1);
+    },
+
+    async misSuscripciones() {
+      return suscripciones.filter((s) => s.integrante_id === yo).map((s) => s.endpoint);
+    },
+
+    // Sin servidor de avisos: la casa de ejemplo no tiene clave.
+    async clavePublicaAvisos() {
+      return null;
     },
 
     escucharCambios(alCambiar) {

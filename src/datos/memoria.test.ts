@@ -1270,3 +1270,68 @@ describe('la casa de ejemplo con acceso', () => {
     expect((await b.sueldos())[ANA]).toBe(900_000_00);
   });
 });
+
+describe('suscripciones de avisos', () => {
+  const clave = (n: string) => ({ p256dh: n.repeat(87), auth: n.repeat(22) });
+  const de = (integrante_id: string, endpoint: string) => ({ integrante_id, endpoint, ...clave('x') });
+
+  test('guardar activa los avisos de ese navegador para quien usa la app; dos veces no duplica', async () => {
+    const bruno = casa({ yo: BRUNO });
+    expect(await bruno.misSuscripciones()).toEqual([]);
+    await bruno.guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/b', ...clave('p') });
+    await bruno.guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/b', ...clave('q') });
+    expect(await bruno.misSuscripciones()).toEqual(['https://fcm.googleapis.com/fcm/send/b']);
+  });
+
+  test('misSuscripciones trae solo las propias, y un navegador que estaba a nombre de otro pasa a quien lo activa', async () => {
+    const base = semillaDeEjemplo(HOY_EJEMPLO);
+    const semilla: Semilla = { ...base, suscripciones: [de(ANA, 'https://fcm.googleapis.com/fcm/send/ana'), de(ANA, 'https://fcm.googleapis.com/fcm/send/compartido')] };
+    const bruno = crearDatosEnMemoria(semilla, { yo: BRUNO });
+    expect(await bruno.misSuscripciones()).toEqual([]);
+    await bruno.guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/compartido', ...clave('p') });
+    expect(await bruno.misSuscripciones()).toEqual(['https://fcm.googleapis.com/fcm/send/compartido']);
+  });
+
+  test('borrar apaga solo la propia; una ajena o inexistente no cambia nada', async () => {
+    const base = semillaDeEjemplo(HOY_EJEMPLO);
+    const bruno = crearDatosEnMemoria({ ...base, suscripciones: [de(ANA, 'https://fcm.googleapis.com/fcm/send/ana')] }, { yo: BRUNO });
+    await bruno.guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/b', ...clave('p') });
+    await bruno.borrarSuscripcion('https://fcm.googleapis.com/fcm/send/ana');
+    await bruno.borrarSuscripcion('https://fcm.googleapis.com/fcm/send/no-existe');
+    expect(await bruno.misSuscripciones()).toEqual(['https://fcm.googleapis.com/fcm/send/b']);
+    await bruno.borrarSuscripcion('https://fcm.googleapis.com/fcm/send/b');
+    expect(await bruno.misSuscripciones()).toEqual([]);
+    const ana = crearDatosEnMemoria({ ...base, suscripciones: [de(ANA, 'https://fcm.googleapis.com/fcm/send/ana')] }, { yo: ANA });
+    expect(await ana.misSuscripciones()).toEqual(['https://fcm.googleapis.com/fcm/send/ana']);
+  });
+
+  test('sin https, o con claves de largo raro, rechaza como check', async () => {
+    const bruno = casa({ yo: BRUNO });
+    await expect(bruno.guardarSuscripcion({ endpoint: 'http://fcm.googleapis.com/fcm/send/b', ...clave('p') })).rejects.toMatchObject({ code: '23514' });
+    await expect(bruno.guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/b', p256dh: 'corta', auth: 'a'.repeat(22) })).rejects.toMatchObject({
+      code: '23514',
+    });
+    expect(await bruno.misSuscripciones()).toEqual([]);
+  });
+
+  test('solo endpoints de servicios de push: otro sitio rechaza como check', async () => {
+    await expect(casa({ yo: BRUNO }).guardarSuscripcion({ endpoint: 'https://push.example.com/b', ...clave('p') })).rejects.toMatchObject({
+      code: '23514',
+    });
+  });
+
+  test('a lo sumo 10 por cuenta: con la 11.ª se va la más vieja; renovar una la vuelve la más nueva', async () => {
+    const bruno = casa({ yo: BRUNO });
+    for (let i = 1; i <= 10; i++) await bruno.guardarSuscripcion({ endpoint: `https://fcm.googleapis.com/fcm/send/${i}`, ...clave('p') });
+    await bruno.guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/1', ...clave('q') });
+    await bruno.guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/11', ...clave('p') });
+    const mias = await bruno.misSuscripciones();
+    expect(mias).toHaveLength(10);
+    expect(mias).not.toContain('https://fcm.googleapis.com/fcm/send/2');
+    expect(mias).toContain('https://fcm.googleapis.com/fcm/send/1');
+  });
+
+  test('quien no está en la casa no guarda avisos: 42501', async () => {
+    await expect(casa({ yo: 'nadie' }).guardarSuscripcion({ endpoint: 'https://fcm.googleapis.com/fcm/send/x', ...clave('p') })).rejects.toMatchObject(SIN_PERMISO);
+  });
+});

@@ -55,13 +55,22 @@ npm run lint           # ESLint
 npm test               # Vitest
 npm run typecheck      # tsc --noEmit
 npm run db:probar             # pruebas de la base (supabase/tests/db.sql) sobre schema.sql, en un Postgres en memoria
-npm run db:probar:migracion   # las mismas, sobre schema-pre-008.sql con datos previos + la migración 008 (el camino de producción)
+npm run db:probar:migracion   # las mismas, sobre schema-pre-009.sql con una casa en uso + la migración 009 (el camino de producción)
 npm run db:probar:con-datos   # las mismas, sobre una casa ya en uso (supabase/tests/casa-existente.sql)
 ```
 
 La CI (`.github/workflows/verificar.yml`) corre `npm run verificar` en cada push a `main` y en cada pull request. Dependabot propone actualizaciones semanales de dependencias y acciones, con 7 días de espera desde que sale cada versión. El `.npmrc` del proyecto no deja correr scripts de instalación (`ignore-scripts=true`).
 
 Las pruebas de la base corren en un Postgres en memoria (PGlite) y nunca se conectan a Supabase.
+
+## Avisos de los domingos
+
+Cada uno los prende en Ajustes → Avisos. Los domingos a las 20 (hora de Argentina) pg_cron llama a la Edge Function `resumen-semanal`, que manda por web push el total de la semana y lo que falta del stock. En iPhone solo andan con la app instalada.
+
+- **Nadie escribe claves:** el secreto del cron lo genera la migración en Vault, y el par VAPID lo genera la función la primera vez que corre y lo guarda en Vault. La función los lee con la clave de servicio (`secretos_avisos`); la app pide la clave pública a la base (`clave_publica_avisos`).
+- **Base:** migración `supabase/migraciones/009-avisos.sql` (tabla `suscripciones_push`, funciones de suscripción, de claves y de datos del resumen, y el trabajo de pg_cron). Antes de correrla, en Vault tiene que estar `resumen_semanal_url` (la URL de la función; no es secreta).
+- **Función:** `supabase/functions/resumen-semanal/` (Deno), sin verificación de JWT. Con la CLI: `npx supabase functions deploy resumen-semanal` (toma `supabase/config.toml`). Desde el editor del panel: `npm run empaquetar:funcion` arma `dist-funciones/resumen-semanal/index.ts` en un solo archivo para pegar, y en la función hay que apagar «Verify JWT».
+- **Pruebas:** el texto, la semana, las claves y el envío (`supabase/functions/**/*.test.ts`), la pantalla y el service worker con Vitest; las reglas de la base en `db.sql`; el empaquetado con `npm run test:herramientas`. El push real se prueba disparando la función a mano después de desplegarla.
 
 ## Publicar la web
 

@@ -1,0 +1,133 @@
+import { formatear } from '@/logica/dinero';
+
+import { autorizado, codigoHttp, enviarResumen, prepararClaves, type DatosSemana, type Suscripcion } from './enviar';
+
+const sub = (n: number): Suscripcion => ({ endpoint: `https://push.example.com/${n}`, p256dh: 'p'.repeat(87), auth: 'a'.repeat(22) });
+const datos = (extra: Partial<DatosSemana> = {}): DatosSemana => ({
+  gastos: [1000000, 500000],
+  productos: ['Leche'],
+  anotaciones: [{ texto: 'Pan', creado: '2026-10-20T12:00:00Z' }],
+  suscripciones: [sub(1), sub(2)],
+  ...extra,
+});
+// Domingo 25/10/2026 a las 20:00 de Argentina.
+const AHORA = new Date('2026-10-25T23:00:00Z');
+
+function preparar(d: DatosSemana, estados: Record<string, number | Error> = {}) {
+  const pedirDatos = vi.fn(async () => d);
+  const mandar = vi.fn(async (s: Suscripcion, _cuerpo: string) => {
+    const r = estados[s.endpoint] ?? 201;
+    if (r instanceof Error) throw r;
+    return r;
+  });
+  const borrar = vi.fn(async (_endpoint: string) => undefined);
+  return { pedirDatos, mandar, borrar, correr: () => enviarResumen({ ahora: AHORA, pedirDatos, mandar, borrar }) };
+}
+
+test('pide los datos de lunes a domingo de esta semana y manda el mismo aviso a cada suscripción', async () => {
+  const p = preparar(datos());
+  const r = await p.correr();
+  expect(p.pedirDatos).toHaveBeenCalledWith('2026-10-19', '2026-10-25');
+  expect(p.mandar).toHaveBeenCalledTimes(2);
+  const cuerpo = JSON.parse(p.mandar.mock.calls[0][1]);
+  expect(cuerpo).toEqual({ titulo: 'Stock del hogar', cuerpo: `Tu semana en la casa: ${formatear(1500000)} en 2 gastos. Faltan Leche y Pan.` });
+  expect(p.mandar.mock.calls[1][1]).toBe(p.mandar.mock.calls[0][1]);
+  expect(r).toEqual({ semana: { desde: '2026-10-19', hasta: '2026-10-25' }, enviados: 2, borrados: 0, fallidos: 0 });
+});
+
+test('una suscripción vencida (404 o 410) se borra; las demás se mandan igual', async () => {
+  const p = preparar(datos({ suscripciones: [sub(1), sub(2), sub(3)] }), { [sub(1).endpoint]: 410, [sub(2).endpoint]: 404 });
+  const r = await p.correr();
+  expect(p.borrar.mock.calls.map((c) => c[0])).toEqual([sub(1).endpoint, sub(2).endpoint]);
+  expect(r).toMatchObject({ enviados: 1, borrados: 2, fallidos: 0 });
+});
+
+test('un error o una respuesta rara en una no corta las demás ni borra nada', async () => {
+  const p = preparar(datos({ suscripciones: [sub(1), sub(2), sub(3)] }), { [sub(1).endpoint]: new Error('sin red'), [sub(2).endpoint]: 500 });
+  const r = await p.correr();
+  expect(p.mandar).toHaveBeenCalledTimes(3);
+  expect(p.borrar).not.toHaveBeenCalled();
+  expect(r).toMatchObject({ enviados: 1, borrados: 0, fallidos: 2 });
+});
+
+test('semana vacía: no manda nada', async () => {
+  const p = preparar(datos({ gastos: [], productos: [], anotaciones: [] }));
+  const r = await p.correr();
+  expect(p.mandar).not.toHaveBeenCalled();
+  expect(r).toEqual({ semana: { desde: '2026-10-19', hasta: '2026-10-25' }, enviados: 0, borrados: 0, fallidos: 0, semanaVacia: true });
+});
+
+test('sin suscripciones no manda nada y no falla', async () => {
+  const p = preparar(datos({ suscripciones: [] }));
+  expect(await p.correr()).toMatchObject({ enviados: 0, borrados: 0, fallidos: 0 });
+  expect(p.mandar).not.toHaveBeenCalled();
+});
+
+test('si no se pueden pedir los datos, el error sube (la ejecución del cron queda marcada como fallida)', async () => {
+  const pedirDatos = vi.fn(async (): Promise<DatosSemana> => {
+    throw new Error('sin base');
+  });
+  await expect(enviarResumen({ ahora: AHORA, pedirDatos, mandar: vi.fn(), borrar: vi.fn() })).rejects.toThrow('sin base');
+});
+
+describe('autorizado', () => {
+  test('solo con la cabecera igual al secreto configurado', () => {
+    expect(autorizado('secreto-largo', 'secreto-largo')).toBe(true);
+    expect(autorizado('secreto-larga', 'secreto-largo')).toBe(false);
+    expect(autorizado('secreto', 'secreto-largo')).toBe(false);
+    expect(autorizado(null, 'secreto-largo')).toBe(false);
+  });
+
+  test('sin secreto configurado no deja pasar a nadie, ni con la cabecera vacía', () => {
+    expect(autorizado('', undefined)).toBe(false);
+    expect(autorizado('', '')).toBe(false);
+    expect(autorizado('algo', '')).toBe(false);
+  });
+});
+
+describe('codigoHttp', () => {
+  const r = (enviados: number, borrados: number, fallidos: number) => ({ semana: { desde: 'x', hasta: 'y' }, enviados, borrados, fallidos });
+
+  test('200 si salió algo, si no había a quién o si la semana estaba vacía', () => {
+    expect(codigoHttp(r(2, 0, 1))).toBe(200);
+    expect(codigoHttp(r(0, 1, 0))).toBe(200);
+    expect(codigoHttp(r(0, 0, 0))).toBe(200);
+  });
+
+  test('502 si fallaron todos los envíos (queda marcado en el historial del cron)', () => {
+    expect(codigoHttp(r(0, 0, 3))).toBe(502);
+  });
+});
+
+describe('prepararClaves', () => {
+  const conClaves = { resumen_semanal_secreto: 'cron', avisos_vapid_publica: 'pub', avisos_vapid_privada: 'priv' };
+
+  test('si ya hay par VAPID, lo usa sin generar otro', async () => {
+    const generar = vi.fn();
+    const guardar = vi.fn();
+    expect(await prepararClaves({ leer: async () => conClaves, generar, guardar })).toEqual({ cron: 'cron', publica: 'pub', privada: 'priv' });
+    expect(generar).not.toHaveBeenCalled();
+    expect(guardar).not.toHaveBeenCalled();
+  });
+
+  test('la primera vez genera el par, lo guarda y usa el que quedó guardado', async () => {
+    const leidas = [{ resumen_semanal_secreto: 'cron' }, conClaves];
+    const leer = vi.fn(async () => leidas.shift() ?? {});
+    const guardar = vi.fn(async () => undefined);
+    const r = await prepararClaves({ leer, generar: async () => ({ publicKey: 'nueva-pub', privateKey: 'nueva-priv' }), guardar });
+    expect(guardar).toHaveBeenCalledWith('nueva-pub', 'nueva-priv');
+    // Gana lo guardado (otra corrida pudo guardar antes): por eso se vuelve a leer.
+    expect(r).toEqual({ cron: 'cron', publica: 'pub', privada: 'priv' });
+  });
+
+  test('sin secreto del cron o si no quedó el par guardado, falla (no manda nada a medias)', async () => {
+    await expect(prepararClaves({ leer: async () => ({}), generar: vi.fn(), guardar: vi.fn() })).rejects.toThrow('resumen_semanal_secreto');
+    await expect(
+      prepararClaves({
+        leer: async () => ({ resumen_semanal_secreto: 'cron' }),
+        generar: async () => ({ publicKey: 'p', privateKey: 'q' }),
+        guardar: async () => undefined,
+      }),
+    ).rejects.toThrow('VAPID');
+  });
+});
