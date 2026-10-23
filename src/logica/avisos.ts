@@ -1,0 +1,55 @@
+// Avisos de los domingos (F9): qué se puede hacer en este navegador y cómo se pasa lo que da la Push API a
+// lo que guarda la base. Funciones puras; lo que toca el navegador está en src/avisos/navegador.ts.
+import type { SuscripcionPush } from '@/datos/tipos';
+
+export type Entorno = {
+  /** La demo o el build solo-memoria: no hay cuenta a la que avisar. */
+  demo: boolean;
+  /** Hay service worker y Push API. */
+  soportado: boolean;
+  permiso: NotificationPermission;
+  esIOS: boolean;
+  /** Abierta como app instalada (pantalla de inicio), no en una pestaña. */
+  instalada: boolean;
+  /** Hay clave pública VAPID (VITE_VAPID_PUBLIC_KEY). */
+  configurada: boolean;
+};
+
+export type EstadoAvisos = 'disponible' | 'demo' | 'instalar-ios' | 'sin-soporte' | 'bloqueados';
+
+export function estadoAvisos(e: Entorno): EstadoAvisos {
+  if (e.demo) return 'demo';
+  // En iPhone la Push API solo aparece con la app instalada: antes de eso no es que no se pueda, falta instalar.
+  if (e.esIOS && !e.instalada) return 'instalar-ios';
+  if (!e.soportado || !e.configurada) return 'sin-soporte';
+  if (e.permiso === 'denied') return 'bloqueados';
+  return 'disponible';
+}
+
+// [PENDIENTE: validar con Lucas]
+const TEXTOS: Record<Exclude<EstadoAvisos, 'disponible'>, string> = {
+  demo: 'En la demo no hay avisos.',
+  'instalar-ios': 'En iPhone, primero agregá la app a la pantalla de inicio (Compartir → Agregar a inicio).',
+  'sin-soporte': 'Este navegador no permite avisos.',
+  bloqueados: 'Bloqueaste los avisos para esta app. Se habilitan desde los ajustes del navegador.',
+};
+
+export function textoEstado(estado: EstadoAvisos): string | null {
+  return estado === 'disponible' ? null : TEXTOS[estado];
+}
+
+/** La clave pública VAPID (base64url) como bytes, que es lo que acepta pushManager.subscribe en todos los navegadores. */
+export function claveAplicacion(base64url: string): Uint8Array<ArrayBuffer> {
+  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(base64url.length / 4) * 4, '=');
+  const binario = atob(base64);
+  const bytes = new Uint8Array(new ArrayBuffer(binario.length));
+  for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+  return bytes;
+}
+
+/** Lo que guarda la base, a partir de PushSubscription.toJSON(). */
+export function aSuscripcion(json: { endpoint?: string; keys?: Record<string, string> }): SuscripcionPush | null {
+  const { endpoint, keys } = json;
+  if (!endpoint || !keys?.p256dh || !keys.auth) return null;
+  return { endpoint, p256dh: keys.p256dh, auth: keys.auth };
+}

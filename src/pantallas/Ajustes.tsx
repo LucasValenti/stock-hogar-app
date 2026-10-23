@@ -36,6 +36,7 @@ import { Tarjeta } from '@/ui/Tarjeta';
 import { useEnVivo } from '@/ui/useEnVivo';
 
 import estilos from './Ajustes.module.css';
+import { Avisos } from './ajustes/Avisos';
 import { MiPerfil } from './ajustes/MiPerfil';
 import { Permisos } from './ajustes/Permisos';
 import { CerrarSesion } from './Sesion';
@@ -124,6 +125,12 @@ export function Ajustes() {
           {yo ? (
             <Apartado titulo="Mi perfil" aviso={avisoDe('perfil')}>
               <MiPerfil yo={yo} alGuardar={(texto) => avisar('perfil', texto)} />
+            </Apartado>
+          ) : null}
+
+          {yo ? (
+            <Apartado titulo="Avisos">
+              <Avisos />
             </Apartado>
           ) : null}
 
