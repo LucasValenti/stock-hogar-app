@@ -568,6 +568,24 @@ describe('según el acceso', () => {
     expect(hoja().getByRole('checkbox', { name: /^Activo/ })).toBeEnabled();
   });
 
+  test('con «altas y bajas» no cambia el email, el tipo ni la baja de quien tiene permisos', async () => {
+    await abrirComo(BRUNO, [
+      { integrante_id: BRUNO, permiso: 'altas_bajas' },
+      { integrante_id: CARO, permiso: 'sueldos' },
+    ]);
+    await tocar('button', /^Caro, /);
+    const razon = 'Solo el admin puede cambiar el email, el tipo o la baja de Caro.';
+    const email = hoja().getByLabelText('Email de su cuenta');
+    expect(email).toHaveAttribute('aria-disabled', 'true');
+    expect(email).toHaveAttribute('readonly');
+    expect(email).toHaveAccessibleDescription(razon);
+    expect(hoja().getByRole('radio', { name: 'Pagador externo' })).toBeDisabled();
+    expect(hoja().getByRole('checkbox', { name: /^Activo/ })).toBeDisabled();
+    expect(hoja().getAllByText(razon).length).toBeGreaterThan(0);
+    // El nombre sí: la base lo permite y no es lo que puedeTocarIntegrante niega.
+    expect(hoja().getByLabelText('Nombre')).not.toHaveAttribute('readonly');
+  });
+
   test('el admin ve todo: da y quita permisos a Bruno, y cede el rol con confirmación', async () => {
     const datos = await abrirComo(ANA);
     expect(screen.getByRole('button', { name: `Bruno, Integrante · Activo, ${formatear(600_000_00)}` })).toBeInTheDocument();

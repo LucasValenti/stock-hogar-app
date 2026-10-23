@@ -9,7 +9,8 @@ import { esCorte } from '@/datos/cola';
 import { centavosATexto, formatear } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, mesSiguiente, nombreMes } from '@/logica/meses';
-import type { Categoria, Integrante, Permiso, TipoCategoria, TipoIntegrante } from '@/logica/tipos';
+import { puedeTocarIntegrante } from '@/logica/permisos';
+import type { Acceso, Categoria, Integrante, Permiso, TipoCategoria, TipoIntegrante } from '@/logica/tipos';
 import {
   avisoCambioTipo,
   validarCategoria,
@@ -52,7 +53,8 @@ type Paso = { titulo: string; texto: string; accion: string };
 const DIAS_POR_DEFECTO = 20;
 const esExterno = (t: TipoIntegrante) => t === 'pagador_externo';
 
-/** Pide solo lo que el acceso permite: sin permiso, los sueldos y los permisos ni siquiera viajan. */
+/** Pide solo lo que el acceso permite: sin «sueldos», los montos no viajan. Los permisos de la casa sí,
+ *  si hay que saber a quién no se le puede cambiar el email (quien tiene altas y bajas, o el admin). */
 async function pedirCasa(verSueldos: boolean, verPermisos: boolean): Promise<Casa> {
   const [integrantes, categorias] = await Promise.all([datos.integrantes(), datos.categorias()]);
   const sueldos = verSueldos ? await datos.sueldos() : {};
@@ -78,8 +80,8 @@ export function Ajustes() {
   const puedeSueldos = esAdmin || (acceso?.permisos.includes('sueldos') ?? false);
   const puedeAltas = esAdmin || (acceso?.permisos.includes('altas_bajas') ?? false);
   const { carga, reintentar } = useEnVivo(
-    () => pedirCasa(puedeSueldos, esAdmin),
-    `${puedeSueldos ? 'sueldos' : 'sin-sueldos'}:${esAdmin ? 'admin' : 'comun'}`,
+    () => pedirCasa(puedeSueldos, puedeAltas),
+    `${puedeSueldos ? 'sueldos' : 'sin-sueldos'}:${puedeAltas ? 'permisos' : 'sin-permisos'}`,
   );
   const [integrante, setIntegrante] = useState<Integrante | 'nuevo' | null>(null);
   const [categoria, setCategoria] = useState<Categoria | 'nueva' | null>(null);
@@ -210,7 +212,8 @@ export function Ajustes() {
         }
         puedeDatos={puedeAltas}
         puedeSueldo={puedeSueldos}
-        esAdmin={esAdmin}
+        acceso={acceso}
+        permisos={carga.estado === 'listo' ? carga.valor.permisos : {}}
         alCerrar={() => setIntegrante(null)}
         alGuardar={(texto) => {
           setIntegrante(null);
@@ -345,12 +348,14 @@ type PropsHojaIntegrante = {
   puedeDatos: boolean;
   /** Admin o «sueldos»: el monto mensual. */
   puedeSueldo: boolean;
-  esAdmin: boolean;
+  acceso: Acceso | null;
+  /** Permisos de la casa: para no ofrecer cambiar el email, el tipo o la baja de quien los tiene. */
+  permisos: Record<string, Permiso[]>;
   alCerrar(): void;
   alGuardar(aviso: string): void;
 };
 
-function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, alCerrar, alGuardar }: PropsHojaIntegrante) {
+function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, acceso, permisos, alCerrar, alGuardar }: PropsHojaIntegrante) {
   const existente = integrante && integrante !== 'nuevo' ? integrante : null;
   const [nombre, setNombre] = useState('');
   const [tipo, setTipo] = useState<TipoIntegrante>('integrante');
@@ -363,6 +368,8 @@ function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, 
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [pasos, setPasos] = useState<Paso[]>([]);
+  // Si el alta se guardó y falló el sueldo, el reintento actualiza a esa persona en vez de crear otra.
+  const [altaId, setAltaId] = useState<string | null>(null);
 
   // Cada vez que se abre: lo de esa persona, o vacío para una nueva. El sueldo llega aparte de `integrante`.
   useEffect(() => {
@@ -377,13 +384,18 @@ function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, 
     setErrorSueldo(null);
     setError(null);
     setPasos([]);
+    setAltaId(null);
   }, [integrante]);
 
   const externo = esExterno(tipo);
   const haySueldo = puedeSueldo && !externo;
   const consecuenciaBaja = externo ? 'pierde el acceso desde el mes que viene' : 'sale del reparto desde el mes que viene';
-  const soloAdmin = !!existente?.admin && !esAdmin;
-  const razonAdmin = soloAdmin ? `Solo el admin puede cambiar el email, el tipo o la baja de ${existente?.nombre ?? ''}.` : null;
+  // La base no deja cambiar email, tipo ni baja del admin ni de quien tiene permisos, salvo al admin.
+  const protegido =
+    !!existente && !puedeTocarIntegrante(acceso, { admin: existente.admin, permisos: permisos[existente.id] ?? [] });
+  const razonProtegido = protegido
+    ? `Solo el admin puede cambiar el email, el tipo o la baja de ${existente?.nombre ?? ''}.`
+    : null;
 
   function validar() {
     const datos = puedeDatos ? validarIntegrante({ nombre, email, tipo }) : null;
@@ -426,15 +438,16 @@ function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, 
     const sueldoFinal = externo ? null : r.monto?.ok ? r.monto.valor : null;
     setOcupado(true);
     try {
-      let id = existente?.id ?? null;
+      let id = existente?.id ?? altaId;
       if (puedeDatos && r.datos) {
         const guardado = await datos.guardarIntegrante({
-          ...(existente ? { id: existente.id } : {}),
+          ...(id ? { id } : {}),
           ...r.datos.valor,
           activo,
           baja_desde,
         });
         id = guardado.id;
+        setAltaId(guardado.id);
       }
       if (puedeSueldo && id) {
         // Si no cambió, no se manda; el alta sí fija el sueldo que se cargó.
@@ -492,10 +505,10 @@ function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, 
               ]}
               activa={tipo}
               alElegir={setTipo}
-              bloqueado={soloAdmin}
+              bloqueado={protegido}
               explicacion={externo ? 'Paga gastos y se le devuelve lo que pagó: no participa del reparto.' : 'Participa del reparto según su sueldo.'}
             />
-            {razonAdmin ? <p className={estilos.sub}>{razonAdmin}</p> : null}
+            {razonProtegido ? <p className={estilos.sub}>{razonProtegido}</p> : null}
             {haySueldo ? (
               <Campo
                 etiqueta="Sueldo mensual"
@@ -512,8 +525,8 @@ function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               error={errores.email}
-              ayuda={razonAdmin ?? undefined}
-              bloqueado={soloAdmin}
+              ayuda={razonProtegido ?? undefined}
+              bloqueado={protegido}
               type="email"
               autoComplete="email"
               autoCorrect="off"
@@ -525,7 +538,7 @@ function HojaIntegrante({ integrante, sueldo, puedeDatos, puedeSueldo, esAdmin, 
                 detalle={<span className={estilos.sub}>{`Si lo desactivás, ${consecuenciaBaja}.`}</span>}
                 tildado={activo}
                 alTildar={() => setActivo((a) => !a)}
-                bloqueado={soloAdmin}
+                bloqueado={protegido}
               />
             ) : null}
           </>

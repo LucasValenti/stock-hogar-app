@@ -67,6 +67,13 @@ const violaCheck = (tabla: string, regla: string) =>
 const violaClave = (tabla: string) =>
   errorDeBase(`insert or update on table "${tabla}" violates foreign key constraint`, '23503');
 
+/** Id de quien usa la casa de ejemplo. Un id que no está en la semilla se ignora y queda el admin. */
+export function yoDeLaSemilla(semilla: Semilla, pedido?: string | null): string {
+  const id = pedido?.trim() ?? '';
+  if (id && semilla.integrantes.some((i) => i.id === id)) return id;
+  return semilla.integrantes.find((i) => i.admin)?.id ?? semilla.integrantes[0]?.id ?? 'ejemplo-ana';
+}
+
 export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opciones: OpcionesMemoria = {}): Datos {
   const s = copia(semilla);
   // Los sueldos viven aparte (como la tabla sueldos).
