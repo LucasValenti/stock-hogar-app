@@ -475,3 +475,32 @@ describe('acceso, permisos, sueldos y perfil (migración 008)', () => {
     });
   });
 });
+
+describe('suscripciones de avisos', () => {
+  const sub = { endpoint: 'https://push.example.com/b', p256dh: 'p'.repeat(87), auth: 'a'.repeat(22) };
+
+  test('guardarSuscripcion llama a guardar_suscripcion con el endpoint y las claves', async () => {
+    const { datos, llamadas } = clienteGrabador();
+    await datos.guardarSuscripcion(sub);
+    expect(llamadas).toEqual([
+      { via: 'rpc', nombre: 'guardar_suscripcion', params: { p_endpoint: sub.endpoint, p_p256dh: sub.p256dh, p_auth: sub.auth }, pasos: [] },
+    ]);
+  });
+
+  test('borrarSuscripcion borra por endpoint (el RLS deja borrar solo la propia)', async () => {
+    const { datos, llamadas } = clienteGrabador();
+    await datos.borrarSuscripcion(sub.endpoint);
+    expect(llamadas).toEqual([{ via: 'from', nombre: 'suscripciones_push', pasos: [['delete'], ['eq', 'endpoint', sub.endpoint]] }]);
+  });
+
+  test('misSuscripciones lee los endpoints (el RLS trae solo los propios)', async () => {
+    const { datos, llamadas } = clienteGrabador(() => ({ data: [{ endpoint: 'https://a' }, { endpoint: 'https://b' }] }));
+    expect(await datos.misSuscripciones()).toEqual(['https://a', 'https://b']);
+    expect(llamadas).toEqual([{ via: 'from', nombre: 'suscripciones_push', pasos: [['select', 'endpoint']] }]);
+  });
+
+  test('un error de la base sube tal cual', async () => {
+    const falla = { code: '42501', message: 'SIN_PERMISO' };
+    await expect(clienteGrabador(() => ({ data: null, error: falla })).datos.guardarSuscripcion(sub)).rejects.toBe(falla);
+  });
+});

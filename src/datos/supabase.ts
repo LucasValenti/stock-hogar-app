@@ -241,6 +241,18 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
       return fila;
     },
 
+    async guardarSuscripcion({ endpoint, p256dh, auth }) {
+      ok(await supabase.rpc('guardar_suscripcion', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth }));
+    },
+
+    async borrarSuscripcion(endpoint) {
+      ok(await supabase.from('suscripciones_push').delete().eq('endpoint', endpoint));
+    },
+
+    async misSuscripciones() {
+      return ok<Array<{ endpoint: string }>>(await supabase.from('suscripciones_push').select('endpoint')).map((s) => s.endpoint);
+    },
+
     escucharCambios: (alCambiar) => escucharCambios(supabase, alCambiar),
   };
 }

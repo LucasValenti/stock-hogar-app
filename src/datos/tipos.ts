@@ -71,6 +71,9 @@ export type GastoDelCalculo = Pick<Gasto, 'id' | 'total' | 'pagado_por'>;
 /** El sueldo real (de `sueldos()`): solo lo tiene quien puede cerrar. */
 export type IntegranteDelCalculo = Pick<Integrante, 'id' | 'tipo' | 'activo' | 'baja_desde'> & { sueldo: number | null };
 
+/** La suscripción de web push de un navegador (lo que da `PushSubscription.toJSON()`). */
+export type SuscripcionPush = { endpoint: string; p256dh: string; auth: string };
+
 export interface Datos {
   miIntegrante(email: string): Promise<Integrante | null>;
   integrantes(): Promise<Integrante[]>;
@@ -139,6 +142,15 @@ export interface Datos {
   partesDelMes(mes: string): Promise<Record<string, number>>;
   /** Cambia solo el nombre y el color de quien usa la app; devuelve su fila. */
   editarPerfil(nombre: string, color: ColorPerfil | null): Promise<Integrante>;
+  /**
+   * Activa los avisos de los domingos en este navegador para quien usa la app. Guardarla otra vez no duplica;
+   * si el navegador estaba a nombre de otra cuenta de la casa, pasa a esta.
+   */
+  guardarSuscripcion(suscripcion: SuscripcionPush): Promise<void>;
+  /** Apaga los avisos de este navegador. Solo borra la propia; si no existe, no hace nada. */
+  borrarSuscripcion(endpoint: string): Promise<void>;
+  /** Endpoints con avisos activos de quien usa la app. */
+  misSuscripciones(): Promise<string[]>;
   /** Avisa ante cualquier cambio (también de anotaciones); devuelve la función para dejar de escuchar. */
   escucharCambios(alCambiar: () => void): () => void;
 }

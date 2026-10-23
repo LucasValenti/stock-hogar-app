@@ -1270,3 +1270,51 @@ describe('la casa de ejemplo con acceso', () => {
     expect((await b.sueldos())[ANA]).toBe(900_000_00);
   });
 });
+
+describe('suscripciones de avisos', () => {
+  const clave = (n: string) => ({ p256dh: n.repeat(87), auth: n.repeat(22) });
+  const de = (integrante_id: string, endpoint: string) => ({ integrante_id, endpoint, ...clave('x') });
+
+  test('guardar activa los avisos de ese navegador para quien usa la app; dos veces no duplica', async () => {
+    const bruno = casa({ yo: BRUNO });
+    expect(await bruno.misSuscripciones()).toEqual([]);
+    await bruno.guardarSuscripcion({ endpoint: 'https://push.example.com/b', ...clave('p') });
+    await bruno.guardarSuscripcion({ endpoint: 'https://push.example.com/b', ...clave('q') });
+    expect(await bruno.misSuscripciones()).toEqual(['https://push.example.com/b']);
+  });
+
+  test('misSuscripciones trae solo las propias, y un navegador que estaba a nombre de otro pasa a quien lo activa', async () => {
+    const base = semillaDeEjemplo(HOY_EJEMPLO);
+    const semilla: Semilla = { ...base, suscripciones: [de(ANA, 'https://push.example.com/ana'), de(ANA, 'https://push.example.com/compartido')] };
+    const bruno = crearDatosEnMemoria(semilla, { yo: BRUNO });
+    expect(await bruno.misSuscripciones()).toEqual([]);
+    await bruno.guardarSuscripcion({ endpoint: 'https://push.example.com/compartido', ...clave('p') });
+    expect(await bruno.misSuscripciones()).toEqual(['https://push.example.com/compartido']);
+  });
+
+  test('borrar apaga solo la propia; una ajena o inexistente no cambia nada', async () => {
+    const base = semillaDeEjemplo(HOY_EJEMPLO);
+    const bruno = crearDatosEnMemoria({ ...base, suscripciones: [de(ANA, 'https://push.example.com/ana')] }, { yo: BRUNO });
+    await bruno.guardarSuscripcion({ endpoint: 'https://push.example.com/b', ...clave('p') });
+    await bruno.borrarSuscripcion('https://push.example.com/ana');
+    await bruno.borrarSuscripcion('https://push.example.com/no-existe');
+    expect(await bruno.misSuscripciones()).toEqual(['https://push.example.com/b']);
+    await bruno.borrarSuscripcion('https://push.example.com/b');
+    expect(await bruno.misSuscripciones()).toEqual([]);
+    const ana = crearDatosEnMemoria({ ...base, suscripciones: [de(ANA, 'https://push.example.com/ana')] }, { yo: ANA });
+    expect(await ana.misSuscripciones()).toEqual(['https://push.example.com/ana']);
+  });
+
+  test('sin https, o con claves de largo raro, rechaza como check', async () => {
+    const bruno = casa({ yo: BRUNO });
+    await expect(bruno.guardarSuscripcion({ endpoint: 'http://push.example.com/b', ...clave('p') })).rejects.toMatchObject({ code: '23514' });
+    await expect(bruno.guardarSuscripcion({ endpoint: 'https://push.example.com/b', p256dh: 'corta', auth: 'a'.repeat(22) })).rejects.toMatchObject({
+      code: '23514',
+    });
+    expect(await bruno.misSuscripciones()).toEqual([]);
+  });
+
+  test('quien no está en la casa no guarda avisos: 42501', async () => {
+    await expect(casa({ yo: 'nadie' }).guardarSuscripcion({ endpoint: 'https://push.example.com/x', ...clave('p') })).rejects.toMatchObject(SIN_PERMISO);
+  });
+});
