@@ -26,7 +26,11 @@ Abrí la dirección que muestra Vite. Si cambiás `.env`, reiniciá `npm run dev
 
 ## Modo memoria
 
-Con `VITE_DATOS=memoria` en `.env` la app no necesita cuenta ni red: arranca como Ana, de una casa de ejemplo con tres integrantes ficticios (Ana, Bruno y Caro), y no guarda nada. Los datos de ejemplo están en `src/datos/memoria.ts`.
+Con `VITE_DATOS=memoria` en `.env` la app no necesita cuenta ni red: arranca en una casa de ejemplo con tres integrantes ficticios (Ana, Bruno y Caro) y no guarda nada. Los datos de ejemplo están en `src/datos/memoria.ts`.
+
+Por defecto entra Ana, que es la admin. `VITE_YO` elige a otro de la semilla (`ejemplo-bruno` o `ejemplo-caro`); un id que no está se ignora y vuelve a Ana. Sirve para ver la misma casa con menos permisos: Bruno y Caro no ven sueldos, no dan altas y no ven la sección Permisos.
+
+Ana administra la casa: ve sueldos, altas y bajas, y puede dar esos dos permisos o ceder el rol. Quien no es admin solo hace lo que le dieron. El reparto se ve igual; los montos de sueldo, no.
 
 ## Modo Supabase
 

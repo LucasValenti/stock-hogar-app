@@ -10,16 +10,21 @@ import type { Integrante } from '@/logica/tipos';
 const ana: Integrante = {
   id: 'ejemplo-ana',
   nombre: 'Ana',
-  sueldo: null,
   email: 'ana@example.com',
   activo: true,
   baja_desde: null,
   tipo: 'integrante',
   creado: '2026-01-01T12:00:00.000Z',
+  admin: true,
+  color: null,
 };
 
 const m = vi.hoisted(() => ({
-  datos: { miIntegrante: vi.fn() },
+  datos: {
+    miIntegrante: vi.fn(),
+    miAcceso: vi.fn(async () => ({ admin: true, permisos: [] })),
+    escucharCambios: vi.fn(() => () => undefined),
+  },
   entrarDemo: vi.fn(),
   salirDemo: vi.fn(),
   fijarIntegrante: vi.fn(),

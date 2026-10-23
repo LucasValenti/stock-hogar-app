@@ -13,7 +13,7 @@ vi.mock('./cliente', async () => {
   };
 });
 
-const ENV = ['VITE_DATOS', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'] as const;
+const ENV = ['VITE_DATOS', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_YO'] as const;
 const original = Object.fromEntries(ENV.map((k) => [k, import.meta.env[k]]));
 
 async function importar(env: Partial<Record<(typeof ENV)[number], string>>): Promise<typeof import('./index')> {
@@ -44,6 +44,15 @@ describe('@/datos', () => {
   test('el proxy no parece una promesa', async () => {
     const m = await importar({});
     expect((m.datos as unknown as { then?: unknown }).then).toBeUndefined();
+  });
+
+  test('en modo memoria VITE_YO elige quién usa la casa; un id desconocido vuelve a Ana', async () => {
+    const bruno = await importar({ VITE_DATOS: 'memoria', VITE_YO: 'ejemplo-bruno' });
+    expect(await bruno.datos.miAcceso()).toEqual({ admin: false, permisos: [] });
+    expect((await bruno.datos.miIntegrante('bruno@example.com'))?.nombre).toBe('Bruno');
+
+    const nadie = await importar({ VITE_DATOS: 'memoria', VITE_YO: 'nadie' });
+    expect(await nadie.datos.miAcceso()).toEqual({ admin: true, permisos: [] });
   });
 
   test('en modo memoria anda con la casa de ejemplo', async () => {

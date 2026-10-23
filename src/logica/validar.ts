@@ -26,17 +26,15 @@ export type ResultadoGasto = { ok: boolean; errores: ErroresGasto; total: number
 
 export type DatosIntegrante = {
   nombre?: string | null;
-  sueldo?: string | number | null;
   email?: string | null;
   /** Cualquier valor que no sea 'pagador_externo' cuenta como integrante. */
   tipo?: string | null;
 };
-export type ErroresIntegrante = Partial<Record<'nombre' | 'sueldo' | 'email', string>>;
+export type ErroresIntegrante = Partial<Record<'nombre' | 'email', string>>;
 export type ResultadoIntegrante = {
   ok: boolean;
   errores: ErroresIntegrante;
-  /** `sueldo` falta cuando es pagador externo: no se envía, así el que ya tuviera guardado queda como está. */
-  valor: { nombre: string; tipo: TipoIntegrante; email: string; sueldo?: number | null };
+  valor: { nombre: string; tipo: TipoIntegrante; email: string };
 };
 
 const UNIDADES: readonly Unidad[] = ['unidad', 'paquete', 'kg', 'litro'];
@@ -164,25 +162,23 @@ export function validarGasto(g: GastoFormulario, { mesesCerrados = new Set<strin
   return { ok: Object.keys(errores).length === 0, errores, total };
 }
 
-export function validarIntegrante({ nombre, sueldo, email, tipo }: DatosIntegrante): ResultadoIntegrante {
+export function validarIntegrante({ nombre, email, tipo }: DatosIntegrante): ResultadoIntegrante {
   const errores: ErroresIntegrante = {};
-  const externo = tipo === 'pagador_externo';
   const valor: ResultadoIntegrante['valor'] = {
     nombre: String(nombre ?? '').trim(),
-    tipo: externo ? 'pagador_externo' : 'integrante',
+    tipo: tipo === 'pagador_externo' ? 'pagador_externo' : 'integrante',
     email: String(email ?? '').trim().toLowerCase(),
   };
   if (!valor.nombre) errores.nombre = 'Escribí un nombre.';
-  // El externo no tiene cuota: ni se valida ni se envía el sueldo, así que el que ya hubiera guardado queda como está.
-  if (!externo) {
-    valor.sueldo = null;
-    if (String(sueldo ?? '').trim()) {
-      valor.sueldo = aCentavos(sueldo);
-      if (valor.sueldo === null) errores.sueldo = 'Ingresá un monto válido, por ejemplo 1.500.000.';
-    }
-  }
   if (!EMAIL.test(valor.email)) errores.email = 'Escribí un email válido.';
   return { ok: Object.keys(errores).length === 0, errores, valor };
+}
+
+/** Sueldo tipeado («1.500.000»): vacío es sin sueldo (`null`); si no, centavos. Se guarda aparte (`fijarSueldo`). */
+export function validarSueldo(texto: string): { ok: true; valor: number | null } | { ok: false; error: string } {
+  if (!texto.trim()) return { ok: true, valor: null };
+  const valor = aCentavos(texto);
+  return valor === null ? { ok: false, error: 'Ingresá un monto válido, por ejemplo 1.500.000.' } : { ok: true, valor };
 }
 
 // Al cambiar el tipo de alguien que ya existe, el reparto de los meses abiertos se recalcula.

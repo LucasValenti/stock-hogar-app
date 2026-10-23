@@ -2,7 +2,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { Anotacion, Categoria, Cierre, Gasto, GastoItem, Integrante, Producto } from '@/logica/tipos';
+import type { Acceso, Anotacion, Categoria, Cierre, Gasto, GastoItem, Integrante, Permiso, Producto } from '@/logica/tipos';
 
 import { normalizarTimestamp } from './fechas';
 import type { Datos, GastoConItems, GastoDeOperacion } from './tipos';
@@ -25,6 +25,10 @@ const aProducto = (p: Producto): Producto => ({
 });
 const aAnotacion = (a: Anotacion): Anotacion => ({ ...a, creado: normalizarTimestamp(a.creado) });
 
+// Bajo RLS, un update o delete sin permiso no falla: la política lo descarta y afecta cero filas.
+// Quien lo detecta lanza el mismo error que la base en memoria y que las funciones de la base.
+const sinPermiso = (): Error & { code: string } => Object.assign(new Error('SIN_PERMISO'), { code: '42501' });
+
 export function crearDatosSupabase(supabase: SupabaseClient): Datos {
   async function guardar<T>(tabla: string, fila: { id?: string | null }): Promise<T> {
     const { id, ...campos } = fila;
@@ -32,12 +36,15 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
     return ok<T>(await consulta.select().single());
   }
 
+  async function miIntegrante(email: string) {
+    return ok<Integrante | null>(await supabase.from('integrantes').select('*').eq('email', email.toLowerCase()).maybeSingle());
+  }
+  async function miAcceso() {
+    return ok<Acceso>(await supabase.rpc('mi_acceso'));
+  }
+
   return {
-    async miIntegrante(email) {
-      return ok<Integrante | null>(
-        await supabase.from('integrantes').select('*').eq('email', email.toLowerCase()).maybeSingle(),
-      );
-    },
+    miIntegrante,
     async integrantes() {
       return ok<Integrante[]>(await supabase.from('integrantes').select('*').order('nombre'));
     },
@@ -165,6 +172,73 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
     },
     async reabrirMes(mes) {
       ok(await supabase.rpc('reabrir_mes', { p_mes: mes }));
+    },
+
+    miAcceso,
+    async permisosDeLaCasa() {
+      const filas =
+        ok<Array<{ integrante_id: string; permiso: Permiso }> | null>(
+          await supabase.from('permisos').select('integrante_id, permiso'),
+        ) ?? [];
+      const porIntegrante: Record<string, Permiso[]> = {};
+      for (const { integrante_id, permiso } of filas) (porIntegrante[integrante_id] ??= []).push(permiso);
+      for (const lista of Object.values(porIntegrante)) lista.sort();
+      return porIntegrante;
+    },
+    // Darlo dos veces no duplica ni falla (ignoreDuplicates); si no es admin, o no es un integrante, la base rechaza.
+    async darPermiso(integranteId, permiso) {
+      ok(
+        await supabase
+          .from('permisos')
+          .upsert({ integrante_id: integranteId, permiso }, { onConflict: 'integrante_id,permiso', ignoreDuplicates: true }),
+      );
+    },
+    // Cero filas borradas son «no había nada que borrar» si quien llama es admin (como en memoria);
+    // si no lo es, la política de borrado las descartó.
+    async quitarPermiso(integranteId, permiso) {
+      const borradas = ok<unknown[] | null>(
+        await supabase.from('permisos').delete().eq('integrante_id', integranteId).eq('permiso', permiso).select(),
+      );
+      if (!borradas?.length && !(await miAcceso()).admin) throw sinPermiso();
+    },
+    async cederAdmin(aIntegranteId) {
+      ok(await supabase.rpc('ceder_admin', { p_a: aIntegranteId }));
+    },
+    // Sin el permiso «sueldos» la política devuelve cero filas, no un error: queda {}.
+    async sueldos() {
+      const filas =
+        ok<Array<{ integrante_id: string; sueldo: number }> | null>(
+          await supabase.from('sueldos').select('integrante_id, sueldo'),
+        ) ?? [];
+      return Object.fromEntries(filas.map((f) => [f.integrante_id, Number(f.sueldo)]));
+    },
+    async fijarSueldo(integranteId, sueldo) {
+      if (sueldo === null) {
+        // Como quitarPermiso: cero filas borradas son un «no había» solo para quien tiene el permiso.
+        const borradas = ok<unknown[] | null>(await supabase.from('sueldos').delete().eq('integrante_id', integranteId).select());
+        if (borradas?.length) return;
+        const { admin, permisos } = await miAcceso();
+        if (!admin && !permisos.includes('sueldos')) throw sinPermiso();
+        return;
+      }
+      const guardadas = ok<unknown[] | null>(
+        await supabase.from('sueldos').upsert({ integrante_id: integranteId, sueldo }, { onConflict: 'integrante_id' }).select(),
+      );
+      if (!guardadas?.length) throw sinPermiso();
+    },
+    // Los pesos son bigint (partes por 10^12): caben en un número.
+    async partesDelMes(mes) {
+      const filas =
+        ok<Array<{ integrante_id: string; peso: number }> | null>(await supabase.rpc('partes_del_mes', { p_mes: mes })) ?? [];
+      return Object.fromEntries(filas.map((f) => [f.integrante_id, Number(f.peso)]));
+    },
+    // La función no devuelve la fila: se lee la propia por el email de la sesión.
+    async editarPerfil(nombre, color) {
+      ok(await supabase.rpc('editar_perfil', { p_nombre: nombre, p_color: color }));
+      const { session } = ok<{ session: { user: { email?: string } } | null }>(await supabase.auth.getSession());
+      const fila = session?.user.email ? await miIntegrante(session.user.email) : null;
+      if (!fila) throw sinPermiso();
+      return fila;
     },
 
     escucharCambios: (alCambiar) => escucharCambios(supabase, alCambiar),

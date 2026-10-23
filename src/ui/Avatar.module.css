@@ -1,0 +1,23 @@
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--medida-avatar);
+  height: var(--medida-avatar);
+  border-radius: 50%;
+  font-family: var(--fuente-titulo);
+  font-size: var(--tamano-l);
+  font-weight: var(--peso-titulo);
+  line-height: 1;
+  user-select: none;
+}
+
+.conColor {
+  color: var(--color-sobre-perfil);
+}
+
+.neutro {
+  border: var(--medida-borde-fuerte) solid var(--color-borde);
+  background: var(--color-superficie);
+  color: var(--color-texto);
+}

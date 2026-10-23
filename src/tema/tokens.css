@@ -11,6 +11,13 @@
   --color-hay: #2b6b3c;
   --color-cerrado: #4b5563;
   --color-foco: #1c2422;
+  --color-sobre-perfil: #1c2422;
+  --color-perfil-naranja: #e46b19;
+  --color-perfil-verde: #3da05e;
+  --color-perfil-azul: #4a92d9;
+  --color-perfil-rosa: #de6497;
+  --color-perfil-violeta: #a17dd4;
+  --color-perfil-amarillo: #b1890e;
   --velo: rgba(10,12,14,0.5);
   --tamano-xxs: 11px;
   --tamano-xs: 12px;
@@ -43,6 +50,10 @@
   --medida-iman: 22px;
   --medida-iman-sobresale: 9px;
   --medida-tilde: 26px;
+  --medida-avatar: 48px;
+  --medida-interruptor-ancho: 52px;
+  --medida-interruptor-alto: 32px;
+  --medida-interruptor-perilla: 24px;
   --medida-tilde-borde: 2px;
   --medida-asa-ancho: 40px;
   --medida-asa-alto: 5px;
@@ -88,6 +99,13 @@
     --color-hay: #80d49c;
     --color-cerrado: #b9c2cf;
     --color-foco: #e6efec;
+    --color-sobre-perfil: #0f1715;
+    --color-perfil-naranja: #ee9a62;
+    --color-perfil-verde: #5dc17e;
+    --color-perfil-azul: #7fb2e4;
+    --color-perfil-rosa: #e894b7;
+    --color-perfil-violeta: #bca3e0;
+    --color-perfil-amarillo: #d8a712;
     --velo: rgba(0,0,0,0.65);
   }
 }

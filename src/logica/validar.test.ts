@@ -1,4 +1,4 @@
-import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo, admiteDecimales, validarCantidad, validarProducto, validarAnotacion, validarCategoria } from './validar';
+import { validarGasto, validarIntegrante, totalItems, avisoCambioTipo, admiteDecimales, validarCantidad, validarProducto, validarAnotacion, validarCategoria, validarSueldo } from './validar';
 import type { GastoFormulario } from './validar';
 
 const base: GastoFormulario = { fecha: '2026-10-07', pagado_por: 'a', modo: 'total', total: 850000, categoria_id: 'cat', items: [] };
@@ -43,27 +43,32 @@ test('no se carga en un mes cerrado, pero sí en un mes anterior abierto', () =>
   expect(validarGasto({ ...base, fecha: '2026-08-31' }, { mesesCerrados: cerrados }).ok).toBe(true);
 });
 
-test('validarIntegrante normaliza email y sueldo', () => {
-  expect(validarIntegrante({ nombre: ' Ana ', sueldo: '1.500.000', email: ' Ana@Example.com ' })).toStrictEqual({
-    ok: true, errores: {}, valor: { nombre: 'Ana', tipo: 'integrante', sueldo: 150000000, email: 'ana@example.com' },
+test('validarIntegrante normaliza nombre y email; el sueldo va aparte', () => {
+  expect(validarIntegrante({ nombre: ' Ana ', email: ' Ana@Example.com ' })).toStrictEqual({
+    ok: true, errores: {}, valor: { nombre: 'Ana', tipo: 'integrante', email: 'ana@example.com' },
   });
-  expect(validarIntegrante({ nombre: 'Ana', sueldo: '', email: 'ana@example.com' }).valor.sueldo).toBe(null);
 });
 
-test('validarIntegrante marca nombre vacío, sueldo inválido y email mal escrito', () => {
-  const r = validarIntegrante({ nombre: ' ', sueldo: 'mucho', email: 'ana@' });
-  expect(Object.keys(r.errores).sort()).toStrictEqual(['email', 'nombre', 'sueldo']);
+test('validarIntegrante marca nombre vacío y email mal escrito', () => {
+  const r = validarIntegrante({ nombre: ' ', email: 'ana@' });
+  expect(Object.keys(r.errores).sort()).toStrictEqual(['email', 'nombre']);
 });
 
-test('validarIntegrante: un pagador externo no pide sueldo ni lo envía', () => {
-  const r = validarIntegrante({ nombre: 'Tía', sueldo: 'mucho', email: 'tia@example.com', tipo: 'pagador_externo' });
+test('validarIntegrante: un pagador externo también', () => {
+  const r = validarIntegrante({ nombre: 'Tía', email: 'tia@example.com', tipo: 'pagador_externo' });
   expect(r).toStrictEqual({ ok: true, errores: {}, valor: { nombre: 'Tía', tipo: 'pagador_externo', email: 'tia@example.com' } });
-  expect('sueldo' in r.valor).toBe(false);
+});
+
+test('validarSueldo: vacío es sin sueldo, un monto va en centavos y lo demás es un error', () => {
+  expect(validarSueldo('1.500.000')).toStrictEqual({ ok: true, valor: 150000000 });
+  expect(validarSueldo('  ')).toStrictEqual({ ok: true, valor: null });
+  expect(validarSueldo('0')).toStrictEqual({ ok: true, valor: 0 });
+  expect(validarSueldo('mucho')).toStrictEqual({ ok: false, error: 'Ingresá un monto válido, por ejemplo 1.500.000.' });
 });
 
 test('validarIntegrante: un tipo desconocido o ausente cuenta como integrante', () => {
-  expect(validarIntegrante({ nombre: 'Ana', sueldo: '', email: 'ana@example.com' }).valor.tipo).toBe('integrante');
-  expect(validarIntegrante({ nombre: 'Ana', sueldo: '', email: 'ana@example.com', tipo: 'otro' }).valor.tipo).toBe('integrante');
+  expect(validarIntegrante({ nombre: 'Ana', email: 'ana@example.com' }).valor.tipo).toBe('integrante');
+  expect(validarIntegrante({ nombre: 'Ana', email: 'ana@example.com', tipo: 'otro' }).valor.tipo).toBe('integrante');
 });
 
 test('avisoCambioTipo: avisa al pasar a alguien de integrante a externo y al revés', () => {

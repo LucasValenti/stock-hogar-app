@@ -2,14 +2,17 @@
 // Lo implementan la base en memoria (pruebas y maquetas) y Supabase.
 
 import type {
+  Acceso,
   Anotacion,
   Categoria,
   Cierre,
+  ColorPerfil,
   FilaReparto,
   Gasto,
   GastoItem,
   Integrante,
   ModoGasto,
+  Permiso,
   Producto,
   Tildado,
   Transferencia,
@@ -65,7 +68,8 @@ export type GastoDeOperacion = Pick<Gasto, 'id' | 'fecha' | 'pagado_por'>;
 export type RepartoACerrar = { total: number; filas: FilaReparto[]; transferencias: Transferencia[] };
 /** Con lo que se calculó el reparto: la base lo compara con lo que tiene ahora. */
 export type GastoDelCalculo = Pick<Gasto, 'id' | 'total' | 'pagado_por'>;
-export type IntegranteDelCalculo = Pick<Integrante, 'id' | 'sueldo' | 'tipo' | 'activo' | 'baja_desde'>;
+/** El sueldo real (de `sueldos()`): solo lo tiene quien puede cerrar. */
+export type IntegranteDelCalculo = Pick<Integrante, 'id' | 'tipo' | 'activo' | 'baja_desde'> & { sueldo: number | null };
 
 export interface Datos {
   miIntegrante(email: string): Promise<Integrante | null>;
@@ -110,6 +114,31 @@ export interface Datos {
     integrantes: IntegranteDelCalculo[],
   ): Promise<void>;
   reabrirMes(mes: string): Promise<void>;
+
+  /** Admin y permisos de quien usa la app (el admin vuelve con la lista vacía: lo puede todo). */
+  miAcceso(): Promise<Acceso>;
+  /** Permisos de toda la casa, por id de integrante; quien no tiene ninguno no aparece. */
+  permisosDeLaCasa(): Promise<Record<string, Permiso[]>>;
+  /** Solo el admin, y solo a un integrante (no a un pagador externo). Darlo dos veces no duplica. */
+  darPermiso(integranteId: string, permiso: Permiso): Promise<void>;
+  /** Solo el admin. */
+  quitarPermiso(integranteId: string, permiso: Permiso): Promise<void>;
+  /**
+   * Solo el admin, a otro integrante activo: pasa el rol y se queda con los dos permisos registrados;
+   * al nuevo admin se le borran los suyos (ya lo puede todo).
+   */
+  cederAdmin(aIntegranteId: string): Promise<void>;
+  /** Centavos por id de integrante; quien no tiene sueldo cargado no aparece. `{}` si quien llama no tiene el permiso «sueldos». */
+  sueldos(): Promise<Record<string, number | null>>;
+  /** Con el permiso «sueldos»; `null` borra el sueldo (sin sueldo). */
+  fijarSueldo(integranteId: string, sueldo: number | null): Promise<void>;
+  /**
+   * Cuánto le toca a cada participante del mes, sin mostrar sueldos: su sueldo en partes por 10^12 del total
+   * (id → peso). Sin sueldo, 0; si nadie tiene, todos 0. Lo puede pedir cualquiera de la casa.
+   */
+  partesDelMes(mes: string): Promise<Record<string, number>>;
+  /** Cambia solo el nombre y el color de quien usa la app; devuelve su fila. */
+  editarPerfil(nombre: string, color: ColorPerfil | null): Promise<Integrante>;
   /** Avisa ante cualquier cambio (también de anotaciones); devuelve la función para dejar de escuchar. */
   escucharCambios(alCambiar: () => void): () => void;
 }

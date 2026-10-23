@@ -7,13 +7,17 @@ import { useLocation, useSearch } from 'wouter';
 
 import { datos } from '@/datos';
 import { esCorte } from '@/datos/cola';
+import { pesosDelMes } from '@/datos/pesos';
 import type { GastoConItems } from '@/datos/tipos';
 import { porCategoria, totalesPorMes } from '@/logica/analisis';
 import { formatearPorcentaje } from '@/logica/dinero';
 import { mensajeError } from '@/logica/errores';
 import { mesActual, mesAnterior, mesDe, mesSiguiente, nombreMes, rangoMes } from '@/logica/meses';
+import { capacidades } from '@/logica/permisos';
+import { integrantesConPeso } from '@/logica/reparto';
 import { enMayuscula } from '@/logica/texto';
 import type { Categoria, Cierre, Integrante } from '@/logica/tipos';
+import { useSesion } from '@/sesion/sesion';
 import { Barras } from '@/ui/analisis/Barras';
 import { CambioMes, type Periodo } from '@/ui/analisis/CambioMes';
 import { Detalle, filtrosDelMes, type FiltrosDetalle } from '@/ui/analisis/Detalle';
@@ -36,7 +40,8 @@ const mesDeRuta = (m: unknown): string => (typeof m === 'string' && /^\d{4}-(0[1
 const MESES_EVOLUCION = 6;
 
 type DelPeriodo = {
-  integrantes: Integrante[];
+  /** Con el peso del mes elegido: sueldos con el permiso, partes del mes sin él. */
+  integrantes: Array<Integrante & { peso: number | null }>;
   categorias: Categoria[];
   gastos: GastoConItems[];
   cierre: Cierre | null;
@@ -44,7 +49,7 @@ type DelPeriodo = {
   cerrados: Set<string>;
 };
 
-function pedirPeriodo(mes: string): Promise<DelPeriodo> {
+function pedirPeriodo(mes: string, verSueldos: boolean): Promise<DelPeriodo> {
   const desde = rangoMes(totalesPorMes([], mes, MESES_EVOLUCION)[0].mes).desde;
   return Promise.all([
     datos.integrantes(),
@@ -52,7 +57,14 @@ function pedirPeriodo(mes: string): Promise<DelPeriodo> {
     datos.gastosEntre(desde, rangoMes(mes).hastaExcl),
     datos.cierre(mes),
     datos.mesesCerrados(),
-  ]).then(([integrantes, categorias, gastos, cierre, cerrados]) => ({ integrantes, categorias, gastos, cierre, cerrados }));
+    pesosDelMes(mes, verSueldos),
+  ]).then(([integrantes, categorias, gastos, cierre, cerrados, pesos]) => ({
+    integrantes: integrantesConPeso(integrantes, pesos),
+    categorias,
+    gastos,
+    cierre,
+    cerrados,
+  }));
 }
 
 export function Analisis() {
@@ -72,7 +84,10 @@ export function Analisis() {
   useEffect(() => setVista(vistaDe(vistaPedida)), [vistaPedida]);
   useEffect(() => setMes(mesDeRuta(mesPedido)), [mesPedido]);
 
-  const { carga, reintentar, recargar } = useEnVivo(() => pedirPeriodo(mes), mes);
+  const { acceso } = useSesion();
+  const puede = capacidades(acceso);
+  // Si cambia el permiso, se vuelve a pedir con los pesos que corresponden.
+  const { carga, reintentar, recargar } = useEnVivo(() => pedirPeriodo(mes, puede.verSueldos), `${mes}:${puede.verSueldos}`);
 
   function elegirVista(v: Vista) {
     setVista(v);
@@ -116,6 +131,9 @@ export function Analisis() {
           key={mes}
           mes={mes}
           integrantes={carga.valor.integrantes}
+          verSueldos={puede.verSueldos}
+          cerrarMes={puede.cerrarMes}
+          accesoConocido={acceso !== null}
           categorias={carga.valor.categorias}
           gastos={delMes}
           cierre={carga.valor.cierre}

@@ -7,7 +7,7 @@ import { almacenEnMemoria } from './almacenEnMemoria';
 import { almacenLocal } from './almacenLocal';
 import { obtenerCliente } from './cliente';
 import { conCola, crearCola, ejecutorDe, esErrorDeRed, type Cola, type DatosConCola, type Op } from './cola';
-import { crearDatosEnMemoria, semillaDeEjemplo } from './memoria';
+import { crearDatosEnMemoria, semillaDeEjemplo, yoDeLaSemilla } from './memoria';
 import { vaciarAlVolver } from './reintentos';
 import { crearDatosSupabase } from './supabase';
 import type { Datos } from './tipos';
@@ -73,7 +73,9 @@ function iniciar(): { datos: DatosConCola; cola: Cola } {
   if (capa) return capa;
   // En la demo (o en el build solo-memoria) no hay cuenta ni red: la casa de ejemplo y una cola que no guarda.
   const enMemoria = esModoMemoria() || demo;
-  const base: Datos = enMemoria ? crearDatosEnMemoria(semillaDeEjemplo()) : crearDatosSupabase(obtenerCliente());
+  // VITE_YO solo en el build solo-memoria. La demo de la pantalla de ingreso sigue siendo el admin.
+  const yo = esModoMemoria() ? yoDeLaSemilla(semillaDeEjemplo(), import.meta.env.VITE_YO) : undefined;
+  const base: Datos = enMemoria ? crearDatosEnMemoria(semillaDeEjemplo(), yo ? { yo } : {}) : crearDatosSupabase(obtenerCliente());
   const cola = crearCola({
     almacen: enMemoria ? almacenEnMemoria() : almacenLocal(),
     ejecutar: ejecutorDe(base),

@@ -7,12 +7,13 @@ import { estadoDeSesion, integranteDeLaCola, salirSinCola } from './estado';
 const ana: Integrante = {
   id: 'ejemplo-ana',
   nombre: 'Ana',
-  sueldo: null,
   email: 'ana@example.com',
   activo: true,
   baja_desde: null,
   tipo: 'integrante',
   creado: '2026-01-01T12:00:00.000Z',
+  admin: true,
+  color: null,
 };
 
 describe('estadoDeSesion', () => {
