@@ -1,0 +1,21 @@
+# Actualizaciones semanales de dependencias y de las acciones de la CI.
+# El cooldown espera 7 días desde que sale una versión antes de proponerla (cadena de suministro).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      desarrollo:
+        dependency-type: development
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

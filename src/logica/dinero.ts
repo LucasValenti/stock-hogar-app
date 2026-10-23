@@ -6,7 +6,7 @@ const porcentaje = new Intl.NumberFormat('es-AR', { style: 'percent', maximumFra
 
 export function aCentavos(texto: string | number | null | undefined): number | null {
   // Se sacan el $ y todo espacio, también el duro (U+00A0) que mete Intl o el teclado.
-  const t = String(texto ?? '').replace(/[$\s ]/g, '');
+  const t = String(texto ?? '').replace(/[$\s\u00a0]/g, '');
   if (!t) return null;
   let m: RegExpMatchArray | null;
   let entero: string;

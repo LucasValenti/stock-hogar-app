@@ -71,7 +71,6 @@ export function useComprobante({ integrantes, notaActual, aplicar }: Opciones) {
           }
           return;
         }
-        r = null;
       }
       if (!vigente.current || n !== intento.current) return;
       setLeyendo(false);

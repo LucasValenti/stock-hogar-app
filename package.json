@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.10",
+    "@eslint/js": "10.0.1",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
@@ -19,9 +20,13 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
     "jsdom": "30.1.2",
     "typescript": "6.0.3",
-    "vite": "8.3.2",
+    "typescript-eslint": "8.71.2",
+    "vite": "8.3.4",
     "vitest": "5.0.3"
   },
   "scripts": {
@@ -30,12 +35,19 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "audit": "node herramientas/auditar.mjs",
     "tokens": "node herramientas/tokens-css.mjs",
     "db:probar": "node herramientas/pg/correr.mjs",
     "db:probar:migracion": "node herramientas/pg/correr.mjs --esquema supabase/schema-pre-008.sql --antes supabase/tests/pre-008-datos.sql --despues supabase/tests/post-008-migracion.sql supabase/migraciones/008-usuarios.sql",
+    "db:probar:con-datos": "node herramientas/pg/correr.mjs --antes supabase/tests/casa-existente.sql",
     "publicar:web": "node herramientas/publicar-web.mjs",
-    "publicar:demo": "node herramientas/publicar-web.mjs --demo"
+    "publicar:demo": "node herramientas/publicar-web.mjs --demo",
+    "verificar": "npm run lint && npm run typecheck && npm test && npm run build && npm run db:probar && npm run db:probar:migracion && npm run db:probar:con-datos && npm run audit"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  }
 }

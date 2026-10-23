@@ -6,14 +6,18 @@ Web app (PWA) en React + Vite + TypeScript para gastos compartidos y stock de un
 
 ```bash
 npm run dev            # servidor de desarrollo de Vite
+npm run verificar      # todo lo de abajo en orden; lo mismo que corre la CI (.github/workflows/verificar.yml)
+npm run lint           # ESLint (eslint.config.js)
 npm test               # Vitest (jsdom)
 npm run typecheck      # tsc --noEmit
 npm run build          # typecheck + vite build → dist/
 npm run db:probar             # pruebas de la base (supabase/tests/db.sql) sobre schema.sql, en un Postgres en memoria
-npm run db:probar:migracion   # las mismas, sobre schema-pre-007.sql + la migración 007
+npm run db:probar:migracion   # las mismas, sobre schema-pre-008.sql con datos previos + la migración 008
+npm run db:probar:con-datos   # las mismas, sobre una casa ya en uso (como producción)
+npm run audit          # npm audit: falla con vulnerabilidades altas o críticas
 ```
 
-No hay linter configurado. Correr tests y typecheck antes de dar algo por terminado; si se toca `supabase/`, también `db:probar` y `db:probar:migracion` (nunca se conectan a Supabase).
+Antes de dar algo por terminado, `npm run verificar` en verde (nunca se conecta a Supabase). `db.sql` también corre en el SQL Editor de producción: mira solo sus datos de prueba y se deshace al final.
 
 Instalar paquetes SIEMPRE con `npm install --ignore-scripts --save-exact <paquete>@<versión>`.
 

@@ -1,6 +1,12 @@
 -- Pruebas de la base. Correr en el SQL Editor: todo se deshace al final.
 -- Si algo falla, se corta con un error que empieza con FALLA. Si todo pasa, la última fila dice OK.
+-- También corre sobre una casa en uso (producción): las pruebas miran solo lo suyo. Se prueba en local con
+-- `npm run db:probar:con-datos` (supabase/tests/casa-existente.sql).
 begin;
+
+-- Sobre una casa en uso, su admin cede el lugar mientras duran las pruebas (el rollback del final se lo devuelve):
+-- así Prueba A queda como admin igual que en una base vacía.
+update integrantes set admin = false where admin;
 
 insert into integrantes (id, nombre, email)
 values ('00000000-0000-0000-0000-0000000000a1', 'Prueba A', 'prueba-a@example.com');
@@ -407,7 +413,10 @@ end $$;
 reset role;
 do $$
 begin
-  if (select count(*) from anotaciones) <> 2 then raise exception 'FALLA: las anotaciones cambiaron sin sesión de la casa'; end if;
+  if (select count(*) from anotaciones
+      where id in ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2')) <> 2 then
+    raise exception 'FALLA: las anotaciones cambiaron sin sesión de la casa';
+  end if;
 end $$;
 
 -- 10. guardar_gasto: lo que manda la web vieja da lo mismo; tildados y anotaciones de la app nativa.
@@ -669,14 +678,14 @@ begin
 
   if tiene_permiso('sueldos') or tiene_permiso('altas_bajas') or es_admin() then raise exception 'FALLA: B tiene permisos'; end if;
   if mi_acceso() is distinct from '{"admin": false, "permisos": []}'::jsonb then raise exception 'FALLA: mi_acceso de B dio %', mi_acceso(); end if;
-  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: B no lee los permisos de la casa'; end if;
+  if (select count(*) from permisos where integrante_id::text like '00000000-0000-0000-0000-0000000000a%') <> 2 then raise exception 'FALLA: B no lee los permisos de la casa'; end if;
   begin
     insert into permisos (integrante_id, permiso) values ('00000000-0000-0000-0000-0000000000a2', 'sueldos');
     raise exception 'FALLA: B se dio un permiso';
   exception when insufficient_privilege then null;
   end;
   delete from permisos;
-  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: B borró permisos'; end if;
+  if (select count(*) from permisos where integrante_id::text like '00000000-0000-0000-0000-0000000000a%') <> 2 then raise exception 'FALLA: B borró permisos'; end if;
   begin
     perform ceder_admin('00000000-0000-0000-0000-0000000000a2');
     raise exception 'FALLA: B cedió el admin';
@@ -775,7 +784,7 @@ begin
   exception when insufficient_privilege then null;
   end;
   delete from permisos where integrante_id = '00000000-0000-0000-0000-0000000000a3';
-  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: C borró permisos'; end if;
+  if (select count(*) from permisos where integrante_id::text like '00000000-0000-0000-0000-0000000000a%') <> 2 then raise exception 'FALLA: C borró permisos'; end if;
   begin
     perform ceder_admin('00000000-0000-0000-0000-0000000000a3');
     raise exception 'FALLA: C cedió el admin';
@@ -803,7 +812,7 @@ set local role authenticated;
 do $$
 begin
   if tiene_permiso('sueldos') or tiene_permiso('altas_bajas') or es_admin() then raise exception 'FALLA: E tiene permisos'; end if;
-  if (select count(*) from permisos) <> 2 then raise exception 'FALLA: E no lee los permisos de la casa'; end if;
+  if (select count(*) from permisos where integrante_id::text like '00000000-0000-0000-0000-0000000000a%') <> 2 then raise exception 'FALLA: E no lee los permisos de la casa'; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claims', '{"email":"intruso@example.com","role":"authenticated"}', true);
@@ -1144,12 +1153,12 @@ declare
   v_partes jsonb;
 begin
   -- Sueldos 100, 200 y 300 y D sin sueldo: D pesa 0 y no estorba. E (externo, con un sueldo suelto) y F (baja desde este mes) no figuran.
-  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10') where integrante_id::text like '00000000-0000-0000-0000-0000000000a%');
   if v_partes is distinct from jsonb_build_object(v_a, 166666666667, v_b, 333333333333, v_c, 500000000000, v_d, 0) then
     raise exception 'FALLA: partes de 2026-10 dieron %', v_partes;
   end if;
   -- F sí participa en el mes anterior a su baja.
-  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-09'));
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-09') where integrante_id::text like '00000000-0000-0000-0000-0000000000a%');
   if v_partes is distinct from jsonb_build_object(v_a, 100000000000, v_b, 200000000000, v_c, 300000000000, v_d, 0, v_f, 400000000000) then
     raise exception 'FALLA: partes de 2026-09 dieron %', v_partes;
   end if;
@@ -1162,29 +1171,29 @@ begin
 
   -- Sin el sueldo de B: A y C se reparten entre sí; B pesa 0.
   delete from sueldos where integrante_id = v_b::uuid;
-  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10') where integrante_id::text like '00000000-0000-0000-0000-0000000000a%');
   if v_partes is distinct from jsonb_build_object(v_a, 250000000000, v_b, 0, v_c, 750000000000, v_d, 0) then
     raise exception 'FALLA: partes sin el sueldo de B dieron %', v_partes;
   end if;
   -- Con un solo sueldo cargado, esa persona se lleva todo.
   delete from sueldos where integrante_id = v_c::uuid;
-  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10') where integrante_id::text like '00000000-0000-0000-0000-0000000000a%');
   if v_partes is distinct from jsonb_build_object(v_a, 1000000000000, v_b, 0, v_c, 0, v_d, 0) then
     raise exception 'FALLA: partes con un solo sueldo dieron %', v_partes;
   end if;
   -- Suma 0 (sueldos en 0): todos pesan 0 y no hay error de división.
   update sueldos set sueldo = 0;
-  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10') where integrante_id::text like '00000000-0000-0000-0000-0000000000a%');
   if v_partes is distinct from jsonb_build_object(v_a, 0, v_b, 0, v_c, 0, v_d, 0) then
     raise exception 'FALLA: partes con sueldos en 0 dieron %', v_partes;
   end if;
   -- Ningún sueldo cargado: igual.
   delete from sueldos;
-  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10'));
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-10') where integrante_id::text like '00000000-0000-0000-0000-0000000000a%');
   if v_partes is distinct from jsonb_build_object(v_a, 0, v_b, 0, v_c, 0, v_d, 0) then
     raise exception 'FALLA: partes sin ningún sueldo dieron %', v_partes;
   end if;
-  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-09'));
+  v_partes := (select jsonb_object_agg(integrante_id, peso) from partes_del_mes('2026-09') where integrante_id::text like '00000000-0000-0000-0000-0000000000a%');
   if v_partes is distinct from jsonb_build_object(v_a, 0, v_b, 0, v_c, 0, v_d, 0, v_f, 0) then
     raise exception 'FALLA: partes de 2026-09 sin ningún sueldo dieron %', v_partes;
   end if;
