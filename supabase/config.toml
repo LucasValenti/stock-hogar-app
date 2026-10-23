@@ -4,7 +4,7 @@ project_id = "stock-hogar-app"
 
 # La llama solo el cron de los domingos (migración 009), que se identifica con la cabecera x-cron-secret.
 # Sin esto, el gateway de Supabase pide un JWT y rechaza al cron antes de llegar a la función.
-# Se despliega con la CLI (`npx supabase functions deploy resumen-semanal`): el editor del panel no resuelve
-# el import de ../_compartido/.
+# Con la CLI (`npx supabase functions deploy resumen-semanal`) toma esto solo. Desde el editor del panel, pegar
+# el archivo de `npm run empaquetar:funcion` y apagar «Verify JWT» en la función.
 [functions.resumen-semanal]
 verify_jwt = false

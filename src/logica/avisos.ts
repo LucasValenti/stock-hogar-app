@@ -11,17 +11,18 @@ export type Entorno = {
   esIOS: boolean;
   /** Abierta como app instalada (pantalla de inicio), no en una pestaña. */
   instalada: boolean;
-  /** Hay clave pública VAPID (VITE_VAPID_PUBLIC_KEY). */
+  /** Hay clave pública VAPID (la genera la Edge Function la primera vez que corre). */
   configurada: boolean;
 };
 
-export type EstadoAvisos = 'disponible' | 'demo' | 'instalar-ios' | 'sin-soporte' | 'bloqueados';
+export type EstadoAvisos = 'disponible' | 'demo' | 'instalar-ios' | 'sin-soporte' | 'sin-configurar' | 'bloqueados';
 
 export function estadoAvisos(e: Entorno): EstadoAvisos {
   if (e.demo) return 'demo';
   // En iPhone la Push API solo aparece con la app instalada: antes de eso no es que no se pueda, falta instalar.
   if (e.esIOS && !e.instalada) return 'instalar-ios';
-  if (!e.soportado || !e.configurada) return 'sin-soporte';
+  if (!e.soportado) return 'sin-soporte';
+  if (!e.configurada) return 'sin-configurar';
   if (e.permiso === 'denied') return 'bloqueados';
   return 'disponible';
 }
@@ -31,6 +32,7 @@ const TEXTOS: Record<Exclude<EstadoAvisos, 'disponible'>, string> = {
   demo: 'En la demo no hay avisos.',
   'instalar-ios': 'En iPhone, primero agregá la app a la pantalla de inicio (Compartir → Agregar a inicio).',
   'sin-soporte': 'Este navegador no permite avisos.',
+  'sin-configurar': 'Los avisos todavía no están listos.',
   bloqueados: 'Bloqueaste los avisos para esta app. Se habilitan desde los ajustes del navegador.',
 };
 

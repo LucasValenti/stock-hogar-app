@@ -668,6 +668,59 @@ $$;
 revoke execute on function datos_resumen_semanal(date, date) from public, anon, authenticated;
 grant execute on function datos_resumen_semanal(date, date) to service_role;
 
+-- Secretos de los avisos, guardados en Vault y generados por la base o por la Edge Function: nadie los escribe.
+--   resumen_semanal_secreto                      lo crea esta migración (al azar); lo manda el cron y lo valida la función
+--   avisos_vapid_publica / avisos_vapid_privada  los crea la Edge Function la primera vez que corre
+-- Sin Vault (las pruebas locales) estas funciones no encuentran nada y no fallan.
+
+-- Para la Edge Function (clave de servicio): los tres secretos que conoce.
+create or replace function secretos_avisos() returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v jsonb;
+begin
+  if to_regclass('vault.decrypted_secrets') is null then return '{}'::jsonb; end if;
+  execute $q$
+    select coalesce(jsonb_object_agg(name, decrypted_secret), '{}'::jsonb) from vault.decrypted_secrets
+    where name in ('resumen_semanal_secreto', 'avisos_vapid_publica', 'avisos_vapid_privada')
+  $q$ into v;
+  return v;
+end $$;
+
+revoke execute on function secretos_avisos() from public, anon, authenticated;
+grant execute on function secretos_avisos() to service_role;
+
+-- Para la Edge Function: guarda el par VAPID solo si todavía no hay (las suscripciones dependen de la pública).
+create or replace function guardar_claves_vapid(p_publica text, p_privada text) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_hay int;
+begin
+  if to_regclass('vault.secrets') is null then raise exception 'SIN_VAULT'; end if;
+  execute $q$select count(*) from vault.secrets where name in ('avisos_vapid_publica', 'avisos_vapid_privada')$q$ into v_hay;
+  if v_hay = 0 then
+    execute $q$select vault.create_secret($1, 'avisos_vapid_publica', 'Clave pública VAPID de los avisos de los domingos')$q$ using p_publica;
+    execute $q$select vault.create_secret($1, 'avisos_vapid_privada', 'Clave privada VAPID de los avisos de los domingos')$q$ using p_privada;
+  end if;
+end $$;
+
+revoke execute on function guardar_claves_vapid(text, text) from public, anon, authenticated;
+grant execute on function guardar_claves_vapid(text, text) to service_role;
+
+-- Para la app: la clave pública VAPID (no es secreta), o null si la función todavía no la generó.
+create or replace function clave_publica_avisos() returns text
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  v text;
+begin
+  if to_regclass('vault.decrypted_secrets') is null then return null; end if;
+  execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'avisos_vapid_publica'$q$ into v;
+  return v;
+end $$;
+
+revoke execute on function clave_publica_avisos() from public, anon;
+grant execute on function clave_publica_avisos() to authenticated;
+
 -- Domingos 20:00 de Argentina = 23:00 UTC (pg_cron usa UTC; Argentina no tiene horario de verano).
 do $$
 begin
@@ -678,6 +731,11 @@ begin
   end if;
   create extension if not exists pg_cron;
   create extension if not exists pg_net with schema extensions;
+  -- El secreto del cron lo genera la base (nadie lo escribe ni lo ve); la función lo lee con secretos_avisos().
+  if not exists (select 1 from vault.secrets where name = 'resumen_semanal_secreto') then
+    perform vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'resumen_semanal_secreto',
+                                'Secreto del cron de los avisos de los domingos');
+  end if;
   if exists (select 1 from cron.job where jobname = 'resumen-semanal') then
     perform cron.unschedule('resumen-semanal');
   end if;
@@ -690,8 +748,8 @@ begin
       body := '{}'::jsonb,
       timeout_milliseconds := 30000)
   $cron$);
-  -- Sin los dos secretos, el trabajo falla cada domingo y solo se ve en cron.job_run_details: se avisa ahora.
-  if (select count(*) from vault.decrypted_secrets where name in ('resumen_semanal_url', 'resumen_semanal_secreto')) < 2 then
-    raise warning 'Faltan en Vault resumen_semanal_url o resumen_semanal_secreto: el resumen de los domingos no va a salir hasta cargarlos';
+  -- Sin la URL de la función, el trabajo falla cada domingo y solo se ve en cron.job_run_details: se avisa ahora.
+  if not exists (select 1 from vault.secrets where name = 'resumen_semanal_url') then
+    raise warning 'Falta en Vault resumen_semanal_url (la URL de la Edge Function): el resumen de los domingos no va a salir hasta cargarla';
   end if;
 end $$;

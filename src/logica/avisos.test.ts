@@ -26,9 +26,9 @@ describe('estadoAvisos', () => {
     expect(estadoAvisos(entorno({ esIOS: true, instalada: true }))).toBe('disponible');
   });
 
-  test('sin Push API o sin clave pública, no se puede; bloqueados por el usuario, tampoco', () => {
+  test('sin Push API no se puede; sin clave pública todavía no; bloqueados por el usuario, tampoco', () => {
     expect(estadoAvisos(entorno({ soportado: false }))).toBe('sin-soporte');
-    expect(estadoAvisos(entorno({ configurada: false }))).toBe('sin-soporte');
+    expect(estadoAvisos(entorno({ configurada: false }))).toBe('sin-configurar');
     expect(estadoAvisos(entorno({ permiso: 'denied' }))).toBe('bloqueados');
   });
 });
@@ -38,6 +38,7 @@ describe('textoEstado', () => {
     expect(textoEstado('disponible')).toBeNull();
     expect(textoEstado('demo')).toBe('En la demo no hay avisos.');
     expect(textoEstado('sin-soporte')).toBe('Este navegador no permite avisos.');
+    expect(textoEstado('sin-configurar')).toBe('Los avisos todavía no están listos.');
     expect(textoEstado('bloqueados')).toBe('Bloqueaste los avisos para esta app. Se habilitan desde los ajustes del navegador.');
     expect(textoEstado('instalar-ios')).toBe('En iPhone, primero agregá la app a la pantalla de inicio (Compartir → Agregar a inicio).');
   });

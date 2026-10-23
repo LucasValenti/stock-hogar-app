@@ -73,3 +73,33 @@ export function autorizado(cabecera: string | null, secreto: string | undefined)
 export function codigoHttp(r: Resultado): number {
   return r.fallidos > 0 && r.enviados + r.borrados === 0 ? 502 : 200;
 }
+
+/** Lo que devuelve secretos_avisos() (migración 009): los secretos que haya en Vault, por nombre. */
+export type SecretosAvisos = Partial<Record<'resumen_semanal_secreto' | 'avisos_vapid_publica' | 'avisos_vapid_privada', string>>;
+
+export type Claves = { cron: string; publica: string; privada: string };
+
+/**
+ * El secreto del cron y el par VAPID, sin que nadie los escriba: el secreto lo generó la migración y el par lo
+ * genera la función la primera vez. Después de guardar se vuelve a leer: si otra corrida guardó antes, gana esa.
+ */
+export async function prepararClaves({
+  leer,
+  generar,
+  guardar,
+}: {
+  leer(): Promise<SecretosAvisos>;
+  generar(): Promise<{ publicKey: string; privateKey: string }>;
+  guardar(publica: string, privada: string): Promise<void>;
+}): Promise<Claves> {
+  let s = await leer();
+  const cron = s.resumen_semanal_secreto;
+  if (!cron) throw new Error('Falta resumen_semanal_secreto en Vault (lo crea la migración 009)');
+  if (!s.avisos_vapid_publica || !s.avisos_vapid_privada) {
+    const par = await generar();
+    await guardar(par.publicKey, par.privateKey);
+    s = await leer();
+  }
+  if (!s.avisos_vapid_publica || !s.avisos_vapid_privada) throw new Error('No quedó guardado el par VAPID en Vault');
+  return { cron, publica: s.avisos_vapid_publica, privada: s.avisos_vapid_privada };
+}

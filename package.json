@@ -34,6 +34,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:herramientas": "node --test \"herramientas/**/*.test.mjs\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "audit": "node herramientas/auditar.mjs",
@@ -43,7 +44,8 @@
     "db:probar:con-datos": "node herramientas/pg/correr.mjs --antes supabase/tests/casa-existente.sql",
     "publicar:web": "node herramientas/publicar-web.mjs",
     "publicar:demo": "node herramientas/publicar-web.mjs --demo",
-    "verificar": "npm run lint && npm run typecheck && npm test && npm run build && npm run db:probar && npm run db:probar:migracion && npm run db:probar:con-datos && npm run audit"
+    "empaquetar:funcion": "node herramientas/empaquetar-funcion.mjs",
+    "verificar": "npm run lint && npm run typecheck && npm test && npm run test:herramientas && npm run build && npm run db:probar && npm run db:probar:migracion && npm run db:probar:con-datos && npm run audit"
   },
   "private": true,
   "type": "module",

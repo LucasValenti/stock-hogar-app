@@ -2,10 +2,8 @@
 // está instalada. Aparte para que la pantalla se pruebe sin navegador (los tests lo reemplazan).
 import { claveAplicacion, conPlazo, type Entorno } from '@/logica/avisos';
 
-/** Clave pública VAPID: no es secreta (la privada vive solo en los secretos de la Edge Function). */
-export const CLAVE_PUBLICA: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '';
-
-export function entornoAvisos(demo: boolean): Entorno {
+/** El entorno de este navegador. `configurada`: si ya hay clave pública VAPID (la pide la pantalla a la base). */
+export function entornoAvisos(demo: boolean, configurada: boolean): Entorno {
   const hayNavegador = typeof window !== 'undefined' && typeof navigator !== 'undefined';
   const soportado = hayNavegador && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const ua = hayNavegador ? navigator.userAgent : '';
@@ -21,7 +19,7 @@ export function entornoAvisos(demo: boolean): Entorno {
     permiso: soportado ? Notification.permission : 'default',
     esIOS,
     instalada,
-    configurada: CLAVE_PUBLICA.length > 0,
+    configurada,
   };
 }
 

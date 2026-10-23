@@ -3,7 +3,7 @@
 // cuenta en un dispositivo compartido, figura apagado). Donde no se puede, explica por qué.
 import { useEffect, useMemo, useState } from 'react';
 
-import { CLAVE_PUBLICA, entornoAvisos, pedirPermiso, suscribir, suscripcionDelNavegador } from '@/avisos/navegador';
+import { entornoAvisos, pedirPermiso, suscribir, suscripcionDelNavegador } from '@/avisos/navegador';
 import { datos } from '@/datos';
 import { aSuscripcion, estadoAvisos, textoEstado } from '@/logica/avisos';
 import { mensajeError } from '@/logica/errores';
@@ -16,7 +16,9 @@ import comunes from '../Ajustes.module.css';
 
 export function Avisos() {
   const { demo } = useSesion();
-  const entorno = useMemo(() => entornoAvisos(demo), [demo]);
+  // La clave pública VAPID la da la base: `undefined` mientras llega, `null` si todavía no hay.
+  const [clave, setClave] = useState<string | null | undefined>(undefined);
+  const entorno = useMemo(() => entornoAvisos(demo, clave !== null), [demo, clave]);
   const [permiso, setPermiso] = useState(entorno.permiso);
   const estado = estadoAvisos({ ...entorno, permiso });
   // `null` mientras se averigua si ya estaban prendidos.
@@ -24,8 +26,22 @@ export function Avisos() {
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Solo se pide si este navegador puede recibir avisos.
+  const soportado = entorno.soportado;
   useEffect(() => {
-    if (estado !== 'disponible') return;
+    if (demo || !soportado) return;
+    let vigente = true;
+    datos.clavePublicaAvisos().then(
+      (c) => vigente && setClave(c),
+      () => vigente && setClave(null),
+    );
+    return () => {
+      vigente = false;
+    };
+  }, [demo, soportado]);
+
+  useEffect(() => {
+    if (estado !== 'disponible' || clave === undefined) return;
     let vigente = true;
     (async () => {
       try {
@@ -41,9 +57,10 @@ export function Avisos() {
     return () => {
       vigente = false;
     };
-  }, [estado]);
+  }, [estado, clave]);
 
   async function activar() {
+    if (!clave) return;
     setError(null);
     setOcupado(true);
     let sub: PushSubscription | null = null;
@@ -55,7 +72,7 @@ export function Avisos() {
       if (respuesta === 'default') setError('Para recibir el resumen, aceptá el permiso de avisos que pide el navegador.'); // [PENDIENTE: validar con Lucas]
       if (respuesta !== 'granted') return;
       const previa = await suscripcionDelNavegador();
-      sub = previa ?? (await suscribir(CLAVE_PUBLICA));
+      sub = previa ?? (await suscribir(clave));
       creadaAhora = !previa;
       const suscripcion = aSuscripcion(sub.toJSON());
       if (!suscripcion) throw new Error('El navegador no dio una suscripción para los avisos.'); // [PENDIENTE: validar con Lucas]

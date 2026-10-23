@@ -1426,6 +1426,51 @@ begin
   end if;
 end $$;
 
+-- Claves de los avisos: la pública la pide cualquier cuenta de la casa; los secretos y guardar claves, solo el servidor.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"email":"prueba-a@example.com","role":"authenticated"}', true);
+do $$
+begin
+  -- En PGlite no hay Vault: no hay clave todavía, pero la función responde.
+  if clave_publica_avisos() is not null and to_regclass('vault.decrypted_secrets') is null then
+    raise exception 'FALLA: clave_publica_avisos inventó una clave';
+  end if;
+  begin
+    perform secretos_avisos();
+    raise exception 'FALLA: una cuenta de la casa leyó los secretos de los avisos';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform guardar_claves_vapid('x', 'y');
+    raise exception 'FALLA: una cuenta de la casa guardó claves VAPID';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+set local role anon;
+do $$
+begin
+  begin
+    perform clave_publica_avisos();
+    raise exception 'FALLA: anon pidió la clave pública de los avisos';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform secretos_avisos();
+    raise exception 'FALLA: anon leyó los secretos de los avisos';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '', true);
+set local role service_role;
+do $$
+begin
+  if secretos_avisos() is null then raise exception 'FALLA: service_role no pudo leer los secretos de los avisos'; end if;
+end $$;
+reset role;
+
 -- El servidor (la clave de servicio de la Edge Function) sí puede pedir los datos del resumen.
 set local role service_role;
 do $$

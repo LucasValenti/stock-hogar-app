@@ -651,6 +651,11 @@ export function crearDatosEnMemoria(semilla: Semilla = semillaDeEjemplo(), opcio
       return suscripciones.filter((s) => s.integrante_id === yo).map((s) => s.endpoint);
     },
 
+    // Sin servidor de avisos: la casa de ejemplo no tiene clave.
+    async clavePublicaAvisos() {
+      return null;
+    },
+
     escucharCambios(alCambiar) {
       const f = () => alCambiar();
       oyentes.add(f);

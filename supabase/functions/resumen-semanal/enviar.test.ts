@@ -1,6 +1,6 @@
 import { formatear } from '@/logica/dinero';
 
-import { autorizado, codigoHttp, enviarResumen, type DatosSemana, type Suscripcion } from './enviar';
+import { autorizado, codigoHttp, enviarResumen, prepararClaves, type DatosSemana, type Suscripcion } from './enviar';
 
 const sub = (n: number): Suscripcion => ({ endpoint: `https://push.example.com/${n}`, p256dh: 'p'.repeat(87), auth: 'a'.repeat(22) });
 const datos = (extra: Partial<DatosSemana> = {}): DatosSemana => ({
@@ -96,5 +96,38 @@ describe('codigoHttp', () => {
 
   test('502 si fallaron todos los envíos (queda marcado en el historial del cron)', () => {
     expect(codigoHttp(r(0, 0, 3))).toBe(502);
+  });
+});
+
+describe('prepararClaves', () => {
+  const conClaves = { resumen_semanal_secreto: 'cron', avisos_vapid_publica: 'pub', avisos_vapid_privada: 'priv' };
+
+  test('si ya hay par VAPID, lo usa sin generar otro', async () => {
+    const generar = vi.fn();
+    const guardar = vi.fn();
+    expect(await prepararClaves({ leer: async () => conClaves, generar, guardar })).toEqual({ cron: 'cron', publica: 'pub', privada: 'priv' });
+    expect(generar).not.toHaveBeenCalled();
+    expect(guardar).not.toHaveBeenCalled();
+  });
+
+  test('la primera vez genera el par, lo guarda y usa el que quedó guardado', async () => {
+    const leidas = [{ resumen_semanal_secreto: 'cron' }, conClaves];
+    const leer = vi.fn(async () => leidas.shift() ?? {});
+    const guardar = vi.fn(async () => undefined);
+    const r = await prepararClaves({ leer, generar: async () => ({ publicKey: 'nueva-pub', privateKey: 'nueva-priv' }), guardar });
+    expect(guardar).toHaveBeenCalledWith('nueva-pub', 'nueva-priv');
+    // Gana lo guardado (otra corrida pudo guardar antes): por eso se vuelve a leer.
+    expect(r).toEqual({ cron: 'cron', publica: 'pub', privada: 'priv' });
+  });
+
+  test('sin secreto del cron o si no quedó el par guardado, falla (no manda nada a medias)', async () => {
+    await expect(prepararClaves({ leer: async () => ({}), generar: vi.fn(), guardar: vi.fn() })).rejects.toThrow('resumen_semanal_secreto');
+    await expect(
+      prepararClaves({
+        leer: async () => ({ resumen_semanal_secreto: 'cron' }),
+        generar: async () => ({ publicKey: 'p', privateKey: 'q' }),
+        guardar: async () => undefined,
+      }),
+    ).rejects.toThrow('VAPID');
   });
 });

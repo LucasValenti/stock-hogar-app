@@ -12,6 +12,7 @@ const m = vi.hoisted(() => ({
   sub: null as null | { endpoint: string; toJSON: () => unknown; unsubscribe: ReturnType<typeof vi.fn> },
   permiso: 'granted' as NotificationPermission,
   datos: {
+    clavePublicaAvisos: vi.fn(async () => 'clave-publica' as string | null),
     misSuscripciones: vi.fn(async () => [] as string[]),
     guardarSuscripcion: vi.fn(async () => undefined),
     borrarSuscripcion: vi.fn(async () => undefined),
@@ -23,8 +24,7 @@ const m = vi.hoisted(() => ({
 vi.mock('@/sesion/sesion', () => ({ useSesion: () => ({ demo: m.demo }) }));
 vi.mock('@/datos', () => ({ datos: m.datos }));
 vi.mock('@/avisos/navegador', () => ({
-  CLAVE_PUBLICA: 'clave-publica',
-  entornoAvisos: () => m.entorno,
+  entornoAvisos: (_demo: boolean, configurada: boolean) => ({ ...m.entorno, configurada }),
   suscripcionDelNavegador: async () => m.sub,
   pedirPermiso: async () => m.permiso,
   suscribir: (clave: string) => m.suscribir(clave),
@@ -41,6 +41,7 @@ beforeEach(() => {
   m.sub = null;
   m.permiso = 'granted';
   m.demo = false;
+  m.datos.clavePublicaAvisos.mockReset().mockResolvedValue('clave-publica');
   m.datos.misSuscripciones.mockReset().mockResolvedValue([]);
   m.datos.guardarSuscripcion.mockReset().mockResolvedValue(undefined);
   m.datos.borrarSuscripcion.mockReset().mockResolvedValue(undefined);
@@ -103,12 +104,21 @@ test('si la base falla, deshace la suscripción del navegador, muestra el error 
   expect(screen.getByRole('alert')).toBeInTheDocument();
 });
 
+test('si la función todavía no generó la clave pública, avisa que los avisos no están listos', async () => {
+  m.datos.clavePublicaAvisos.mockResolvedValue(null);
+  render(<Avisos />);
+  expect(await screen.findByText('Los avisos todavía no están listos.')).toBeInTheDocument();
+  expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+});
+
 test('en la demo no hay interruptor ni se habla con la base', async () => {
   m.entorno = { ...m.entorno, demo: true };
+  m.demo = true;
   render(<Avisos />);
   expect(screen.getByText('En la demo no hay avisos.')).toBeInTheDocument();
   expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   expect(m.datos.misSuscripciones).not.toHaveBeenCalled();
+  expect(m.datos.clavePublicaAvisos).not.toHaveBeenCalled();
 });
 
 test('en iPhone sin instalar, explica que primero hay que agregarla a la pantalla de inicio', () => {

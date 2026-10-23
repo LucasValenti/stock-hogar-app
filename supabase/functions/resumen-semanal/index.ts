@@ -2,13 +2,14 @@
 // (migración 009) y manda el resumen a cada suscripción. La lógica está en enviar.ts (probada con Vitest).
 //
 // Se despliega SIN verificación de JWT (supabase/config.toml, verify_jwt = false): el único que la llama es el
-// cron, que se identifica con la cabecera x-cron-secret. Con la CLI, no desde el editor del panel.
-// Secretos de la función: CRON_SECRET, VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY (los carga Lucas en el panel).
-// SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY los pone Supabase.
+// cron, que se identifica con la cabecera x-cron-secret.
+// No usa secretos de entorno propios: el secreto del cron y el par VAPID viven en Vault y los lee con la clave
+// de servicio (secretos_avisos); el par lo genera la primera vez que corre. SUPABASE_URL y
+// SUPABASE_SERVICE_ROLE_KEY los pone Supabase.
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
-import { sendNotification, WebPushError } from 'npm:web-push-neo@0.1.2';
+import { generateVAPIDKeys, sendNotification, WebPushError } from 'npm:web-push-neo@0.1.2';
 
-import { autorizado, codigoHttp, enviarResumen, type DatosSemana } from './enviar.ts';
+import { autorizado, codigoHttp, enviarResumen, prepararClaves, type DatosSemana, type SecretosAvisos } from './enviar.ts';
 
 const REMITENTE = 'https://kusak.dev';
 const ESPERA_MS = 10_000;
@@ -21,16 +22,31 @@ function variable(nombre: string): string {
 
 Deno.serve(async (pedido) => {
   if (pedido.method !== 'POST') return new Response('Método no permitido', { status: 405 });
-  if (!autorizado(pedido.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) {
-    return new Response('No autorizado', { status: 401 });
-  }
 
   const supabase = createClient(variable('SUPABASE_URL'), variable('SUPABASE_SERVICE_ROLE_KEY'), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const vapidDetails = { subject: REMITENTE, publicKey: variable('VAPID_PUBLIC_KEY'), privateKey: variable('VAPID_PRIVATE_KEY') };
+  const leer = async (): Promise<SecretosAvisos> => {
+    const { data, error } = await supabase.rpc('secretos_avisos');
+    if (error) throw error;
+    return (data ?? {}) as SecretosAvisos;
+  };
 
   try {
+    const secretos = await leer();
+    if (!autorizado(pedido.headers.get('x-cron-secret'), secretos.resumen_semanal_secreto)) {
+      return new Response('No autorizado', { status: 401 });
+    }
+    const claves = await prepararClaves({
+      leer,
+      generar: () => generateVAPIDKeys(),
+      async guardar(publica, privada) {
+        const { error } = await supabase.rpc('guardar_claves_vapid', { p_publica: publica, p_privada: privada });
+        if (error) throw error;
+      },
+    });
+    const vapidDetails = { subject: REMITENTE, publicKey: claves.publica, privateKey: claves.privada };
+
     const resultado = await enviarResumen({
       ahora: new Date(),
       async pedirDatos(desde, hasta) {
@@ -50,7 +66,7 @@ Deno.serve(async (pedido) => {
           return r.statusCode;
         } catch (e) {
           if (e instanceof WebPushError) return e.statusCode;
-          // Red, tiempo agotado o clave VAPID mal cargada: solo el tipo de error, sin el endpoint.
+          // Red, tiempo agotado o clave VAPID inválida: solo el tipo de error, sin el endpoint.
           console.error('resumen-semanal: envío fallido', e instanceof Error ? e.name : typeof e);
           throw e;
         }

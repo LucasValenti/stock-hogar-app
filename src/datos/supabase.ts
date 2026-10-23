@@ -253,6 +253,10 @@ export function crearDatosSupabase(supabase: SupabaseClient): Datos {
       return ok<Array<{ endpoint: string }>>(await supabase.from('suscripciones_push').select('endpoint')).map((s) => s.endpoint);
     },
 
+    async clavePublicaAvisos() {
+      return ok<string | null>(await supabase.rpc('clave_publica_avisos')) ?? null;
+    },
+
     escucharCambios: (alCambiar) => escucharCambios(supabase, alCambiar),
   };
 }

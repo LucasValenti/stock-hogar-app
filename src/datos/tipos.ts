@@ -151,6 +151,8 @@ export interface Datos {
   borrarSuscripcion(endpoint: string): Promise<void>;
   /** Endpoints con avisos activos de quien usa la app. */
   misSuscripciones(): Promise<string[]>;
+  /** Clave pública VAPID para suscribir este navegador; `null` si todavía no hay (la genera la Edge Function). */
+  clavePublicaAvisos(): Promise<string | null>;
   /** Avisa ante cualquier cambio (también de anotaciones); devuelve la función para dejar de escuchar. */
   escucharCambios(alCambiar: () => void): () => void;
 }
